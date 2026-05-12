@@ -24,9 +24,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       syntax: { passed: isSuccess, score: isSuccess ? 100 : 40 },
       semantic: { passed: isSuccess, score: isSuccess ? Math.round(baseConf * 100) : 30 },
       exists: { passed: isSuccess, score: isSuccess ? 100 : 0 },
-      unique: { passed: isSuccess, score: isSuccess ? Math.round(90 + Math.random() * 10) : 50 },
-      visible: { passed: isSuccess, score: isSuccess ? Math.round(85 + Math.random() * 15) : 20 },
-      interactable: { passed: isSuccess, score: isSuccess ? Math.round(80 + Math.random() * 20) : 10 },
+      unique: { passed: true, score: 95 },
+      visible: { passed: isSuccess, score: isSuccess ? 90 : 20 },
+      interactable: { passed: isSuccess, score: isSuccess ? 85 : 10 },
       security: { passed: true, score: 100 },
     };
 
@@ -40,9 +40,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const result = {
       id: action?.id ?? 0,
-      executionId: action?.executionId ?? 0,
+      executionId: action?.testExecutionId ?? 0,
       testName: action?.testName ?? '',
-      repository: action?.execution?.repository ?? 'unknown',
+      repository: action?.execution?.testName ?? 'unknown',
       status: isSuccess ? 'healed' : 'failed',
       strategy,
       timestamp: action?.createdAt?.toISOString() ?? '',
@@ -62,6 +62,6 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Healing detail API error:', error);
-    return NextResponse.json({ error: 'Failed to fetch healing detail' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch healing detail', details: error?.message || String(error) }, { status: 500 });
   }
 }
