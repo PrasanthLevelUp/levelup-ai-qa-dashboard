@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -44,7 +44,7 @@ export function Sidebar() {
             </div>
             <div>
               <h1 className="text-base font-bold text-white font-display tracking-tight">LevelUp AI</h1>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest">QA Dashboard</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest">QA Reliability Platform</p>
             </div>
           </div>
         </div>
@@ -72,6 +72,19 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        {/* Product Badge */}
+        <div className="px-4 py-3">
+          <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/10 p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Shield size={14} className="text-emerald-400" />
+              <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">AI-Powered</span>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Self-healing QA that learns and saves 99% on AI costs
+            </p>
+          </div>
+        </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-[#1e293b]">

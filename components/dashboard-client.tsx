@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { Activity, CheckCircle2, Zap, Coins, RefreshCw } from 'lucide-react';
+import { Activity, CheckCircle2, Coins, RefreshCw } from 'lucide-react';
 import { MetricCard } from '@/components/metric-card';
+import { HeroMetric } from '@/components/hero-metric';
 import { SuccessTrendChart } from '@/components/charts/success-trend-chart';
 import { StrategyPieChart } from '@/components/charts/strategy-pie-chart';
 import { CostSavingsPanel } from '@/components/cost-savings-panel';
@@ -48,13 +49,20 @@ export function DashboardClient() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  // Compute hero metric data from strategies
+  const ruleCount = strategies?.find?.((s: any) => s?.name === 'Rule Engine')?.value ?? 0;
+  const patternCount = strategies?.find?.((s: any) => s?.name === 'Pattern Engine')?.value ?? 0;
+  const aiCount = strategies?.find?.((s: any) => s?.name === 'AI Engine')?.value ?? 0;
+  const totalHealings = ruleCount + patternCount + aiCount;
+  const aiCallsPrevented = totalHealings > 0 ? ((ruleCount + patternCount) / totalHealings) * 100 : 0;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white font-display tracking-tight flex items-center gap-2">
-            <span className="text-emerald-400">🎯</span> Dashboard Overview
+          <h1 className="text-2xl font-bold text-white font-display tracking-tight">
+            AI-Powered QA Reliability Platform
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             Self-healing test automation performance
@@ -88,8 +96,17 @@ export function DashboardClient() {
         </div>
       </div>
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {/* HERO METRIC - AI Calls Prevented */}
+      <HeroMetric
+        aiCallsPrevented={aiCallsPrevented}
+        ruleEngineCount={ruleCount}
+        patternEngineCount={patternCount}
+        aiEngineCount={aiCount}
+        totalHealings={totalHealings}
+      />
+
+      {/* Supporting Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MetricCard
           title="Total Test Runs"
           value={overview?.totalRuns ?? 0}
@@ -108,22 +125,13 @@ export function DashboardClient() {
           trendLabel={`vs prev ${period}`}
         />
         <MetricCard
-          title="AI Calls Saved"
-          value={overview?.aiCallsSaved ?? 0}
-          icon={Zap}
-          color="blue"
-          format="percent"
-          trend={overview?.trends?.savings}
-          trendLabel="by rules+patterns"
-        />
-        <MetricCard
           title="Tokens Used"
           value={overview?.totalTokens ?? 0}
           icon={Coins}
           color="amber"
           format="compact"
           trend={overview?.trends?.tokens}
-          trendLabel="decreasing"
+          trendLabel="decreasing is good"
         />
       </div>
 
@@ -134,7 +142,7 @@ export function DashboardClient() {
           <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
             📈 Healing Success Trend
           </h3>
-          <p className="text-xs text-slate-500 mb-4">Success rate over time</p>
+          <p className="text-xs text-slate-500 mb-4">Success rate over time — proves the system is getting smarter</p>
           <div className="h-[280px]">
             {loading ? (
               <div className="flex items-center justify-center h-full text-slate-500 text-sm">Loading chart...</div>
@@ -160,7 +168,7 @@ export function DashboardClient() {
         </div>
       </div>
 
-      {/* Cost + Patterns Row */}
+      {/* Cost + Recent Healings Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1">
           <CostSavingsPanel data={costSavings} />
