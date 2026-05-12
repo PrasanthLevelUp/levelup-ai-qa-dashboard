@@ -67,7 +67,7 @@ npx prisma db push
 
 # Step 6: Seed demo data
 echo "🌱 Seeding demo data..."
-npx ts-node scripts/seed.ts
+npx tsx scripts/seed.ts
 
 echo ""
 echo "✅ Setup complete! Run: npm run dev"
