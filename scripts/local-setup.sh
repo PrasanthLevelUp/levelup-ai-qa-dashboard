@@ -6,11 +6,10 @@ set -e
 echo "🎯 LevelUp AI QA Dashboard - Local Setup"
 echo "========================================="
 
-# Step 1: Use standalone package.json
-if [ -L "package.json" ] || grep -q "hostedapp" package.json 2>/dev/null; then
-  echo "📦 Setting up standalone package.json..."
-  cp package.standalone.json package.json
-fi
+# Step 1: Use standalone package.json (always overwrite for local dev)
+echo "📦 Setting up standalone package.json..."
+cp package.standalone.json package.json
+rm -rf node_modules package-lock.json
 
 # Step 2: Fix Prisma schema for local development
 echo "🔧 Fixing Prisma schema for local development..."
