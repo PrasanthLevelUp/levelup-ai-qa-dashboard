@@ -15,10 +15,10 @@ export async function GET(request: Request) {
 
     const result = (actions ?? []).map((a: any) => ({
       id: a?.id ?? 0,
-      executionId: a?.executionId ?? 0,
+      executionId: a?.testExecutionId ?? 0,
       timestamp: a?.createdAt?.toISOString() ?? '',
       testName: a?.testName ?? '',
-      repository: a?.execution?.repository ?? 'unknown',
+      repository: a?.execution?.testName ?? 'unknown',
       failedLocator: a?.failedLocator ?? '',
       healedLocator: a?.healedLocator ?? '',
       status: a?.success ? 'healed' : 'failed',

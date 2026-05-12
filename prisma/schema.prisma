@@ -11,57 +11,53 @@ datasource db {
 model TestExecution {
   id               Int       @id @default(autoincrement())
   testName         String    @map("test_name")
-  repository       String    @default("default")
   status           String
   errorMessage     String?   @map("error_message")
-  healingStrategy  String?   @map("healing_strategy")
-  healingAttempted Boolean   @default(false) @map("healing_attempted")
-  healingSucceeded Boolean   @default(false) @map("healing_succeeded")
-  durationMs       Int       @default(0) @map("duration_ms")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  healingAttempted Boolean?  @default(false) @map("healing_attempted")
+  healingSucceeded Boolean?  @default(false) @map("healing_succeeded")
+  durationMs       Int?      @default(0) @map("duration_ms")
+  createdAt        DateTime? @default(now()) @map("created_at")
   healingActions   HealingAction[]
 
-  @@index([createdAt])
   @@index([status])
   @@map("test_executions")
 }
 
 model HealingAction {
-  id               Int       @id @default(autoincrement())
-  executionId      Int       @map("execution_id")
-  testName         String    @map("test_name")
-  failedLocator    String    @map("failed_locator")
-  healedLocator    String?   @map("healed_locator")
-  healingStrategy  String    @map("healing_strategy")
-  aiTokensUsed     Int       @default(0) @map("ai_tokens_used")
-  success          Boolean   @default(false)
-  confidence       Float     @default(0)
-  errorContext     String?   @map("error_context")
-  validationStatus String?   @map("validation_status")
-  validationReason String?   @map("validation_reason")
-  patchPath        String?   @map("patch_path")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  execution        TestExecution @relation(fields: [executionId], references: [id])
+  id                 Int       @id @default(autoincrement())
+  testExecutionId    Int       @map("test_execution_id")
+  testName           String    @map("test_name")
+  failedLocator      String    @map("failed_locator")
+  healedLocator      String?   @map("healed_locator")
+  healingStrategy    String    @map("healing_strategy")
+  aiTokensUsed       Int?      @default(0) @map("ai_tokens_used")
+  success            Boolean?  @default(false)
+  confidence         Float?    @default(0)
+  errorContext       String?   @map("error_context")
+  validationStatus   String?   @map("validation_status")
+  validationReason   String?   @map("validation_reason")
+  patchPath          String?   @map("patch_path")
+  createdAt          DateTime? @default(now()) @map("created_at")
+  execution          TestExecution @relation(fields: [testExecutionId], references: [id])
 
-  @@index([executionId])
-  @@index([createdAt])
+  @@index([testExecutionId])
   @@map("healing_actions")
 }
 
 model LearnedPattern {
-  id              Int       @id @default(autoincrement())
-  testName        String    @map("test_name")
-  errorPattern    String    @map("error_pattern")
-  failedLocator   String    @map("failed_locator")
-  healedLocator   String    @map("healed_locator")
-  solutionStrategy String   @map("solution_strategy")
-  confidence      Float     @default(0)
-  successCount    Int       @default(1) @map("success_count")
-  failureCount    Int       @default(0) @map("failure_count")
-  usageCount      Int       @default(0) @map("usage_count")
-  avgTokensSaved  Int       @default(0) @map("avg_tokens_saved")
-  lastUsed        DateTime  @default(now()) @map("last_used")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id               Int       @id @default(autoincrement())
+  testName         String    @map("test_name")
+  errorPattern     String    @map("error_pattern")
+  failedLocator    String    @map("failed_locator")
+  healedLocator    String    @map("healed_locator")
+  solutionStrategy String    @map("solution_strategy")
+  confidence       Float?    @default(0)
+  successCount     Int?      @default(1) @map("success_count")
+  failureCount     Int?      @default(0) @map("failure_count")
+  usageCount       Int?      @default(0) @map("usage_count")
+  avgTokensSaved   Int?      @default(0) @map("avg_tokens_saved")
+  lastUsed         DateTime? @default(now()) @map("last_used")
+  createdAt        DateTime? @default(now()) @map("created_at")
 
   @@unique([testName, errorPattern, failedLocator])
   @@map("learned_patterns")
@@ -69,12 +65,28 @@ model LearnedPattern {
 
 model TokenUsage {
   id         Int       @id @default(autoincrement())
-  date       DateTime
+  date       String
   engine     String
   tokensUsed Int       @map("tokens_used")
   costUsd    Float     @default(0) @map("cost_usd")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  createdAt  DateTime? @default(now()) @map("created_at")
 
   @@index([date])
   @@map("token_usage")
+}
+
+model HealingJob {
+  id             String    @id
+  repositoryId   String    @map("repository_id")
+  repositoryUrl  String?   @map("repository_url")
+  branch         String?
+  testFile       String?   @map("test_file")
+  failureLog     String?   @map("failure_log")
+  status         String    @default("queued")
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  result         String?
+  error          String?
+
+  @@map("healing_jobs")
 }
