@@ -23,6 +23,6 @@ export async function GET() {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Patterns API error:', error);
-    return NextResponse.json([], { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch patterns', details: error?.message || String(error) }, { status: 500 });
   }
 }

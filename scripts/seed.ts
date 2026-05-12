@@ -15,8 +15,6 @@ const TEST_NAMES = [
   'User can reset password',
 ];
 
-const REPOS = ['orangehrm-tests', 'e-commerce-tests', 'crm-tests'];
-
 const LOCATORS: { failed: string; healed: string; strategy: string }[] = [
   { failed: '#login-btn-broken', healed: "page.getByRole('button', { name: /login|sign in/i })", strategy: 'rule_based' },
   { failed: '.submit-form', healed: "page.getByRole('button', { name: /submit/i })", strategy: 'rule_based' },
@@ -44,20 +42,16 @@ function randomDate(daysAgo: number): Date {
 async function main() {
   console.log('Seeding demo data...');
 
-  // Seed test executions with healing actions
   for (let i = 0; i < 140; i++) {
     const testName = TEST_NAMES[i % TEST_NAMES.length] as string;
-    const repo = REPOS[i % REPOS.length] as string;
-    const daysAgo = Math.floor(i / 5); // spread over ~28 days
+    const daysAgo = Math.floor(i / 5);
     const date = randomDate(Math.min(daysAgo + 1, 30));
     const locator = LOCATORS[i % LOCATORS.length] as (typeof LOCATORS)[0];
 
-    // Determine status - ~20% pass without healing, ~70% healed, ~5% failed, ~5% timedOut
     const roll = Math.random();
     let status: string;
     let healingAttempted = false;
     let healingSucceeded = false;
-    let strategy: string | null = null;
 
     if (roll < 0.20) {
       status = 'passed';
@@ -65,12 +59,10 @@ async function main() {
       status = 'healed';
       healingAttempted = true;
       healingSucceeded = true;
-      strategy = locator.strategy;
     } else if (roll < 0.95) {
       status = 'failed';
       healingAttempted = true;
       healingSucceeded = false;
-      strategy = 'ai';
     } else {
       status = 'timedOut';
       healingAttempted = false;
@@ -81,9 +73,7 @@ async function main() {
       update: {},
       create: {
         testName,
-        repository: repo,
         status,
-        healingStrategy: strategy,
         healingAttempted,
         healingSucceeded,
         durationMs: Math.floor(2000 + Math.random() * 28000),
@@ -91,19 +81,19 @@ async function main() {
       },
     });
 
-    // Create healing action for healed/failed attempts
     if (healingAttempted) {
       const confidence = status === 'healed'
         ? 0.85 + Math.random() * 0.15
         : 0.3 + Math.random() * 0.4;
 
+      const strategy = locator.strategy;
       const tokensUsed = strategy === 'ai' ? Math.floor(200 + Math.random() * 800) : 0;
 
       await prisma.healingAction.upsert({
         where: { id: i + 1 },
         update: {},
         create: {
-          executionId: exec.id,
+          testExecutionId: exec.id,
           testName,
           failedLocator: locator.failed,
           healedLocator: status === 'healed' ? locator.healed : null,
@@ -122,25 +112,25 @@ async function main() {
     }
   }
 
-  // Seed token usage - daily entries for last 30 days
+  // Seed token usage - daily entries for last 30 days (date is String in Railway DB)
   const now = new Date('2026-05-12T10:00:00Z');
   for (let d = 0; d < 30; d++) {
-    const date = new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
-    date.setHours(0, 0, 0, 0);
+    const dateObj = new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
+    dateObj.setHours(0, 0, 0, 0);
+    const dateStr = dateObj.toISOString().split('T')[0] as string;
 
-    // AI engine tokens decrease over time (learning effect)
     const aiTokens = Math.max(50, Math.floor(500 - d * 10 + Math.random() * 100));
-    const costPerToken = 0.000003; // ~$3 per 1M tokens
+    const costPerToken = 0.000003;
 
     await prisma.tokenUsage.upsert({
       where: { id: d + 1 },
       update: {},
       create: {
-        date,
+        date: dateStr,
         engine: 'ai',
         tokensUsed: aiTokens,
         costUsd: Math.round(aiTokens * costPerToken * 10000) / 10000,
-        createdAt: date,
+        createdAt: dateObj,
       },
     });
   }
