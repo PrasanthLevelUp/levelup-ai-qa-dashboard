@@ -15,24 +15,45 @@ fi
 # Step 2: Fix Prisma schema for local development
 echo "🔧 Fixing Prisma schema for local development..."
 # Remove hardcoded output path (only needed for hosted environment)
-sed -i.bak '/output.*=.*"\/home\/ubuntu/d' prisma/schema.prisma
-rm -f prisma/schema.prisma.bak
+if grep -q '/home/ubuntu' prisma/schema.prisma 2>/dev/null; then
+  sed -i.bak '/output.*=.*"\/home\/ubuntu/d' prisma/schema.prisma
+  rm -f prisma/schema.prisma.bak
+  echo "   ✅ Removed hardcoded output path"
+fi
 
-# Step 3: Check for .env file
+# Step 3: Choose database
 if [ ! -f ".env" ]; then
-  echo "📝 Creating .env file..."
-  echo '# Choose ONE database option:' > .env
-  echo '' >> .env
-  echo '# Option A: SQLite (easiest - no database install needed)' >> .env
-  echo '# First change provider in prisma/schema.prisma from "postgresql" to "sqlite"' >> .env
-  echo '# DATABASE_URL="file:./dev.db"' >> .env
-  echo '' >> .env
-  echo '# Option B: PostgreSQL' >> .env
-  echo '# DATABASE_URL="postgresql://user:password@localhost:5432/levelup_qa_dashboard"' >> .env
-  echo '' >> .env
-  echo "⚠️  Please edit .env and uncomment ONE DATABASE_URL option"
-  echo "   For SQLite: also change 'postgresql' to 'sqlite' in prisma/schema.prisma"
-  exit 1
+  echo ""
+  echo "📦 Choose your database:"
+  echo "  1) SQLite  (easiest - no install needed) ⭐ Recommended"
+  echo "  2) PostgreSQL (production-like)"
+  echo ""
+  read -p "Enter choice [1/2] (default: 1): " DB_CHOICE
+  DB_CHOICE=${DB_CHOICE:-1}
+
+  if [ "$DB_CHOICE" = "2" ]; then
+    read -p "Enter PostgreSQL URL [postgresql://localhost:5432/levelup_qa]: " PG_URL
+    PG_URL=${PG_URL:-postgresql://localhost:5432/levelup_qa}
+    echo "DATABASE_URL=\"$PG_URL\"" > .env
+    echo "   ✅ Using PostgreSQL: $PG_URL"
+  else
+    # Switch Prisma provider to SQLite
+    sed -i.bak 's/provider = "postgresql"/provider = "sqlite"/' prisma/schema.prisma
+    rm -f prisma/schema.prisma.bak
+    # Remove @@index directives that SQLite handles differently
+    echo 'DATABASE_URL="file:./dev.db"' > .env
+    echo "   ✅ Using SQLite (file:./dev.db)"
+  fi
+else
+  echo "   .env file already exists, checking database provider..."
+  # Auto-detect: if DATABASE_URL starts with "file:" → ensure schema says sqlite
+  if grep -q 'file:' .env 2>/dev/null; then
+    if grep -q 'provider = "postgresql"' prisma/schema.prisma 2>/dev/null; then
+      echo "   🔧 Switching Prisma provider to SQLite (matches your DATABASE_URL)..."
+      sed -i.bak 's/provider = "postgresql"/provider = "sqlite"/' prisma/schema.prisma
+      rm -f prisma/schema.prisma.bak
+    fi
+  fi
 fi
 
 # Step 4: Install dependencies
