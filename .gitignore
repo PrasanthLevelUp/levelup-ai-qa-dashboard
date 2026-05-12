@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.build/
+.env
+.env.local
+*.log
+.DS_Store
+.vercel
+.yarn/
+.yarnrc.yml
+package.json
+yarn.lock

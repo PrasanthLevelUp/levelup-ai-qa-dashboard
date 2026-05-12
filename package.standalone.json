@@ -1,0 +1,40 @@
+{
+  "name": "levelup-ai-qa-dashboard",
+  "version": "1.0.0",
+  "description": "LevelUp AI QA Dashboard - Visualize self-healing test automation metrics",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "ts-node scripts/seed.ts",
+    "db:studio": "prisma studio",
+    "setup": "npm install && npx prisma generate && npx prisma db push && npx ts-node scripts/seed.ts"
+  },
+  "dependencies": {
+    "next": "14.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@prisma/client": "^5.14.0",
+    "recharts": "^2.12.7",
+    "tailwindcss": "^3.4.4",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "typescript": "^5.4.5",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.3.0",
+    "lucide-react": "^0.378.0",
+    "next-themes": "^0.3.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.14.0",
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.12.12",
+    "@types/react": "^18.3.2",
+    "@types/react-dom": "^18.3.0"
+  }
+}
