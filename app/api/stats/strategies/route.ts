@@ -29,6 +29,6 @@ export async function GET(request: Request) {
     return NextResponse.json(strategies);
   } catch (error: any) {
     console.error('Strategies API error:', error);
-    return NextResponse.json([], { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch strategies', details: error?.message || String(error) }, { status: 500 });
   }
 }

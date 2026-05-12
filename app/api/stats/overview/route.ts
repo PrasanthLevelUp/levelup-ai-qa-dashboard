@@ -47,6 +47,6 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error('Overview API error:', error);
-    return NextResponse.json({ error: 'Failed to fetch overview stats' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch overview stats', details: error?.message || String(error) }, { status: 500 });
   }
 }
