@@ -80,13 +80,15 @@ model HealingJob {
   repositoryId   String    @map("repository_id")
   repositoryUrl  String?   @map("repository_url")
   branch         String?
-  testFile       String?   @map("test_file")
-  failureLog     String?   @map("failure_log")
+  commitSha      String?   @map("commit_sha")
   status         String    @default("queued")
-  startedAt      DateTime? @map("started_at")
-  completedAt    DateTime? @map("completed_at")
+  progress       String?
+  createdAt      DateTime? @map("created_at") @db.Timestamptz(6)
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(6)
   result         String?
   error          String?
 
+  @@index([status], map: "idx_jobs_status")
   @@map("healing_jobs")
 }

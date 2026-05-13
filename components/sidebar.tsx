@@ -2,10 +2,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
+  { href: '/jobs', label: 'Healing Jobs', icon: Play },
   { href: '/analytics', label: 'Analytics', icon: Activity },
   { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
 ];

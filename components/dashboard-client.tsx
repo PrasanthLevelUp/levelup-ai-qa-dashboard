@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { Activity, CheckCircle2, Coins, RefreshCw } from 'lucide-react';
+import { Activity, CheckCircle2, Coins, RefreshCw, Zap, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 import { MetricCard } from '@/components/metric-card';
 import { HeroMetric } from '@/components/hero-metric';
 import { SuccessTrendChart } from '@/components/charts/success-trend-chart';
@@ -56,8 +57,40 @@ export function DashboardClient() {
   const totalHealings = ruleCount + patternCount + aiCount;
   const aiCallsPrevented = totalHealings > 0 ? ((ruleCount + patternCount) / totalHealings) * 100 : 0;
 
+  const hasData = !loading && (
+    (overview?.totalRuns ?? 0) > 0 ||
+    totalHealings > 0 ||
+    (trend?.length ?? 0) > 0 ||
+    (healings?.length ?? 0) > 0
+  );
+
   return (
     <div className="space-y-6">
+      {/* Empty State Banner */}
+      {!loading && !hasData && (
+        <div className="bg-gradient-to-r from-emerald-500/5 via-emerald-500/10 to-blue-500/5 border border-emerald-500/20 rounded-xl p-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+              <Zap size={24} className="text-emerald-400" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-white mb-1">Welcome to LevelUp AI QA</h2>
+              <p className="text-sm text-slate-400 leading-relaxed">
+                No test data yet. Trigger your first healing job to start seeing metrics, trends, and AI-powered insights.
+                Once your backend processes test runs and healing actions, this dashboard will automatically populate with real-time data.
+              </p>
+            </div>
+            <Link
+              href="/jobs"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors flex-shrink-0"
+            >
+              <ArrowRight size={14} />
+              Go to Healing Jobs
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
