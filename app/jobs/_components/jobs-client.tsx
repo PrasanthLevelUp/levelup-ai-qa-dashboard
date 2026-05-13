@@ -290,7 +290,7 @@ export function JobsClient() {
 
   const fetchRepos = useCallback(async () => {
     try {
-      const res = await fetch('/api/backend/repos');
+      const res = await fetch('/api/repos');
       if (!res.ok) return; // Backend may be unavailable
       const data = await res.json();
       const repoList = data.repositories || [];
