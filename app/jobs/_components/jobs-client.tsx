@@ -44,8 +44,10 @@ interface Job {
   repositoryId: string;
   repositoryUrl: string | null;
   branch: string | null;
-  testFile: string | null;
+  commitSha: string | null;
   status: string;
+  progress: string | null;
+  createdAt: string | null;
   startedAt: string | null;
   completedAt: string | null;
   result: string | null;

@@ -17,14 +17,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log('[Trigger Job] Calling backend:', `${BACKEND_URL}/api/heal`, {
+      repository, branch, testFile,
+      hasApiKey: !!API_KEY,
+      apiKeyPrefix: API_KEY ? API_KEY.slice(0, 10) + '...' : 'EMPTY',
+    });
+
     const response = await fetch(`${BACKEND_URL}/api/heal`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${API_KEY}`,
+        'x-api-key': API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ repository, branch, testFile }),
     });
+
+    console.log('[Trigger Job] Backend response status:', response.status);
 
     const data = await response.json().catch(() => ({}));
 
