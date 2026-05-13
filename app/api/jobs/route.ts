@@ -18,7 +18,8 @@ export async function GET(req: NextRequest) {
     });
 
     // Parse the result JSON string for each job
-    const parsed = jobs.map((job) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = jobs.map((job: any) => {
       let resultData = null;
       if (job.result) {
         try {
