@@ -21,19 +21,20 @@ async function proxyRequest(req: NextRequest, { params }: { params: { path: stri
     url.searchParams.set(key, value);
   });
 
-  // const headers: Record<string, string> = {
-  //   'Authorization': 'Bearer levelup_dev_test_key_2026',
-  //   'Content-Type': 'application/json',
-  // };
+    const headers: Record<string, string> = {
+      Authorization: 'Bearer levelup_dev_test_key_2026',
+      'x-api-key': 'levelup_dev_test_key_2026',
+      'Content-Type': 'application/json',
+    };
 
-  const headers = new Headers();
+//   const headers = new Headers();
 
-headers.set(
-  'Authorization',
-  'Bearer levelup_dev_test_key_2026'
-);
+// headers.set(
+//   'Authorization',
+//   'Bearer levelup_dev_test_key_2026'
+// );
 
-headers.set('Content-Type', 'application/json');
+// headers.set('Content-Type', 'application/json');
 
   let body: string | undefined;
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
