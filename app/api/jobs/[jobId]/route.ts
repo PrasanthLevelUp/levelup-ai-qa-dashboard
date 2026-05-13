@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8080';
 const API_KEY = process.env.BACKEND_API_KEY || '';
@@ -12,18 +11,23 @@ export async function GET(
 ) {
   try {
     const { jobId } = params;
+    const headers = { 'Authorization': `Bearer ${API_KEY}` };
 
-    // Get job from local DB
-    const job = await prisma.healingJob.findUnique({
-      where: { id: jobId },
-    });
+    // Get job from backend
+    let job = null;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/jobs/${jobId}`, { headers });
+      if (res.ok) {
+        job = await res.json();
+      }
+    } catch {
+      // Backend may be unreachable
+    }
 
-    // Also try to get live status from backend
+    // Get live status from backend
     let backendStatus = null;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/status/${jobId}`, {
-        headers: { 'Authorization': `Bearer ${API_KEY}` },
-      });
+      const res = await fetch(`${BACKEND_URL}/api/status/${jobId}`, { headers });
       if (res.ok) {
         backendStatus = await res.json();
       }
@@ -31,12 +35,10 @@ export async function GET(
       // Backend may be unreachable
     }
 
-    // Also try to get report
+    // Get report from backend
     let report = null;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/reports/${jobId}`, {
-        headers: { 'Authorization': `Bearer ${API_KEY}` },
-      });
+      const res = await fetch(`${BACKEND_URL}/api/reports/${jobId}`, { headers });
       if (res.ok) {
         report = await res.json();
       }
@@ -44,17 +46,8 @@ export async function GET(
       // No report available
     }
 
-    let resultData = null;
-    if (job?.result) {
-      try {
-        resultData = JSON.parse(job.result);
-      } catch {
-        resultData = { raw: job.result };
-      }
-    }
-
     return NextResponse.json({
-      job: job ? { ...job, resultData } : null,
+      job,
       backendStatus,
       report,
     });
