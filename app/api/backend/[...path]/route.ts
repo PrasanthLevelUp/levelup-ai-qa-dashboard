@@ -22,7 +22,7 @@ async function proxyRequest(req: NextRequest, { params }: { params: { path: stri
   });
 
     const headers: Record<string, string> = {
-      Authorization: 'Bearer levelup_dev_test_key_2026',
+      'Authorization': 'Bearer levelup_dev_test_key_2026',
       'x-api-key': 'levelup_dev_test_key_2026',
       'Content-Type': 'application/json',
     };
