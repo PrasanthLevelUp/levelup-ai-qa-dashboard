@@ -1,40 +1,54 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8080';
-const API_KEY = process.env.BACKEND_API_KEY || '';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl;
-    const limit = searchParams.get('limit') || '50';
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
     const status = searchParams.get('status') || '';
 
-    const params = new URLSearchParams();
-    if (limit) params.set('limit', limit);
-    if (status) params.set('status', status);
-
-    const url = `${BACKEND_URL}/api/jobs?${params.toString()}`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: data.message || data.error || 'Failed to fetch jobs', details: data },
-        { status: response.status }
-      );
+    const where: Record<string, unknown> = {};
+    if (status) {
+      where.status = status;
     }
 
-    return NextResponse.json(data);
+    const dbJobs = await prisma.healingJob.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    // Transform DB rows to match the frontend Job interface
+    const jobs = dbJobs.map((j) => {
+      let resultData = null;
+      if (j.result) {
+        try {
+          resultData = JSON.parse(j.result);
+        } catch {
+          resultData = null;
+        }
+      }
+
+      return {
+        id: j.id,
+        repositoryId: j.repositoryId,
+        repositoryUrl: j.repositoryUrl,
+        branch: j.branch,
+        commitSha: j.commitSha,
+        status: j.status,
+        progress: j.progress,
+        createdAt: j.createdAt?.toISOString() ?? null,
+        startedAt: j.startedAt?.toISOString() ?? null,
+        completedAt: j.completedAt?.toISOString() ?? null,
+        result: j.result,
+        resultData,
+        error: j.error,
+      };
+    });
+
+    return NextResponse.json({ jobs });
   } catch (error) {
     console.error('[Jobs API] Error:', error);
     return NextResponse.json(

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8080';
 const API_KEY = process.env.BACKEND_API_KEY || '';
@@ -11,21 +12,42 @@ export async function GET(
 ) {
   try {
     const { jobId } = params;
-    const headers = { 'Authorization': `Bearer ${API_KEY}` };
 
-    // Get job from backend
+    // Get job from database directly
+    const dbJob = await prisma.healingJob.findUnique({
+      where: { id: jobId },
+    });
+
     let job = null;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/jobs/${jobId}`, { headers });
-      if (res.ok) {
-        job = await res.json();
+    if (dbJob) {
+      let resultData = null;
+      if (dbJob.result) {
+        try {
+          resultData = JSON.parse(dbJob.result);
+        } catch {
+          resultData = null;
+        }
       }
-    } catch {
-      // Backend may be unreachable
+      job = {
+        id: dbJob.id,
+        repositoryId: dbJob.repositoryId,
+        repositoryUrl: dbJob.repositoryUrl,
+        branch: dbJob.branch,
+        commitSha: dbJob.commitSha,
+        status: dbJob.status,
+        progress: dbJob.progress,
+        createdAt: dbJob.createdAt?.toISOString() ?? null,
+        startedAt: dbJob.startedAt?.toISOString() ?? null,
+        completedAt: dbJob.completedAt?.toISOString() ?? null,
+        result: dbJob.result,
+        resultData,
+        error: dbJob.error,
+      };
     }
 
-    // Get live status from backend
+    // Get live status from backend (for running jobs)
     let backendStatus = null;
+    const headers = { 'Authorization': `Bearer ${API_KEY}` };
     try {
       const res = await fetch(`${BACKEND_URL}/api/status/${jobId}`, { headers });
       if (res.ok) {
