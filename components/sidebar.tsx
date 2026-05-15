@@ -1,8 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -11,9 +11,38 @@ const NAV_ITEMS = [
   { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
 ];
 
+interface UserInfo {
+  username: string;
+  role: string;
+  company: string | null;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.success) {
+          setUser(data.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <>
@@ -87,12 +116,36 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-[#1e293b]">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs text-slate-500">System Active</span>
-          </div>
+        {/* User Info + Logout */}
+        <div className="px-4 py-4 border-t border-[#1e293b]">
+          {user ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <User size={14} className="text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{user.username}</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider">
+                    {user.role}{user.company ? ` · ${user.company}` : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all duration-200"
+              >
+                <LogOut size={14} />
+                {loggingOut ? 'Signing out...' : 'Sign out'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-slate-500">System Active</span>
+            </div>
+          )}
         </div>
       </aside>
     </>

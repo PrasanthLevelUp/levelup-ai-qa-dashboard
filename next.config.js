@@ -6,7 +6,7 @@ const nextConfig = {
   output: process.env.NEXT_OUTPUT_MODE,
   productionBrowserSourceMaps: false,
   experimental: {
-    ...(process.env.NEXT_OUTPUT_MODE ? { outputFileTracingRoot: path.join(__dirname, '../') } : {}),
+    outputFileTracingRoot: path.join(__dirname, '../'),
   },
   eslint: {
     ignoreDuringBuilds: true,
