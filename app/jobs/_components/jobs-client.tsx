@@ -321,7 +321,10 @@ export function JobsClient() {
       const repo = repos.find(r => r.url === selectedRepo);
       const res = await fetch('/api/jobs/trigger', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json',
+          'Authorization': 'Bearer levelup_dev_test_key_2026',
+          'x-api-key': 'levelup_dev_test_key_2026'
+         },
         body: JSON.stringify({
           repository: selectedRepo,
           branch: repo?.branch || 'main',
