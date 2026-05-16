@@ -91,3 +91,47 @@ model HealingJob {
   @@index([status], map: "idx_jobs_status")
   @@map("healing_jobs")
 }
+
+model ProjectContext {
+  id                Int       @id @default(autoincrement())
+  name              String
+  appUrl            String    @map("app_url")
+  framework         String?
+  authMethod        String?   @map("auth_method")
+  selectorStrategy  String?   @map("selector_strategy")
+  appDescription    String?   @map("app_description")
+  navigationFlow    String?   @map("navigation_flow")
+  customRules       String?   @map("custom_rules")
+  credentials       String?
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime? @default(now()) @map("created_at")
+  updatedAt         DateTime? @updatedAt @map("updated_at")
+  scripts           GeneratedScript[]
+
+  @@map("project_contexts")
+}
+
+model GeneratedScript {
+  id                    Int       @id @default(autoincrement())
+  projectContextId      Int?      @map("project_context_id")
+  url                   String
+  pageType              String?   @map("page_type")
+  instructions          String?
+  scriptContent         String?   @map("script_content")
+  testPlan              Json?     @map("test_plan")
+  validationStatus      String?   @default("pending") @map("validation_status")
+  reliabilityScore      Float?    @default(0) @map("reliability_score")
+  reviewScore           Float?    @map("review_score")
+  reviewIssues          Json?     @map("review_issues")
+  tokensUsed            Int?      @default(0) @map("tokens_used")
+  model                 String?
+  generationTimeMs      Int?      @map("generation_time_ms")
+  filesGenerated        Json?     @map("files_generated")
+  negativeTestsIncluded Boolean?  @default(true) @map("negative_tests_included")
+  createdAt             DateTime? @default(now()) @map("created_at")
+  projectContext        ProjectContext? @relation(fields: [projectContextId], references: [id])
+
+  @@index([url], map: "idx_gs_url")
+  @@index([createdAt(sort: Desc)], map: "idx_gs_created")
+  @@map("generated_scripts")
+}
