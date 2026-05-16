@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Play,
   Loader2,
@@ -13,14 +13,17 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  Copy,
-  Check,
+  GitBranch,
+  ExternalLink,
+  Github,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
 interface ScriptGeneratorProps {
   projectContext: ProjectContext;
   onGenerated: () => void;
+  prefillScenarios?: string[] | null;
+  onPrefillConsumed?: () => void;
 }
 
 interface GenerationResult {
@@ -44,6 +47,21 @@ interface GenerationResult {
   error?: string;
 }
 
+interface PushResult {
+  success: boolean;
+  data?: {
+    scriptId: number;
+    repoUrl: string;
+    branchName: string;
+    branchUrl: string;
+    commitSha: string;
+    filesCount: number;
+    pullRequest: { prUrl: string; prNumber: number } | null;
+    message?: string;
+  };
+  error?: string;
+}
+
 const TEST_TYPE_OPTIONS = [
   { value: 'smoke', label: 'Smoke Tests', description: 'Quick validation of critical paths' },
   { value: 'functional', label: 'Functional Tests', description: 'Detailed feature testing' },
@@ -52,7 +70,7 @@ const TEST_TYPE_OPTIONS = [
   { value: 'navigation', label: 'Navigation Tests', description: 'Page routing & links' },
 ];
 
-export function ScriptGenerator({ projectContext, onGenerated }: ScriptGeneratorProps) {
+export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed }: ScriptGeneratorProps) {
   const [scenario, setScenario] = useState('');
   const [targetUrl, setTargetUrl] = useState(projectContext.appUrl);
   const [testTypes, setTestTypes] = useState<string[]>(['smoke', 'functional']);
@@ -60,8 +78,42 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [expandedFile, setExpandedFile] = useState<string | null>(null);
-  const [copiedFile, setCopiedFile] = useState<string | null>(null);
+
+  // GitHub push state
+  const [showPushDialog, setShowPushDialog] = useState(false);
+  const [repos, setRepos] = useState<Array<{ id: string; name: string; url: string; branch: string }>>([]);
+  const [pushRepoUrl, setPushRepoUrl] = useState('');
+  const [pushBranch, setPushBranch] = useState('');
+  const [createPR, setCreatePR] = useState(true);
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState<PushResult | null>(null);
+
+  // Auto-fill from CSV/Excel upload
+  useEffect(() => {
+    if (prefillScenarios && prefillScenarios.length > 0) {
+      const combined = prefillScenarios.map((s, i) => `${i + 1}. ${s}`).join('\n\n');
+      setScenario(combined);
+      onPrefillConsumed?.();
+    }
+  }, [prefillScenarios, onPrefillConsumed]);
+
+  // Fetch repos for the dropdown
+  const fetchRepos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/repos');
+      if (!res.ok) return;
+      const data = await res.json();
+      const repoList = data.repositories || [];
+      setRepos(repoList);
+      if (repoList.length > 0 && !pushRepoUrl) {
+        setPushRepoUrl(repoList[0].url);
+      }
+    } catch { /* backend may be unavailable */ }
+  }, [pushRepoUrl]);
+
+  useEffect(() => {
+    fetchRepos();
+  }, [fetchRepos]);
 
   const toggleTestType = (type: string) => {
     setTestTypes((prev) =>
@@ -73,6 +125,7 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
     if (!scenario.trim()) return;
     setGenerating(true);
     setResult(null);
+    setPushResult(null);
 
     try {
       const res = await fetch('/api/scripts/generate', {
@@ -90,7 +143,13 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
       const data = await res.json();
       setResult(data);
 
-      if (data.success) {
+      if (data.success && data.data?.id) {
+        // Auto-generate branch name from scenario
+        const slugScenario = scenario.trim().toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 40);
+        setPushBranch(`levelup/tests-${slugScenario}-${data.data.id}`);
         onGenerated();
       }
     } catch (err) {
@@ -103,12 +162,36 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
     }
   };
 
-  const handleCopyFile = async (content: string, path: string) => {
+  const handlePushToGitHub = async () => {
+    if (!result?.data?.id || !pushRepoUrl) return;
+    setPushing(true);
+    setPushResult(null);
+
     try {
-      await navigator.clipboard.writeText(content);
-      setCopiedFile(path);
-      setTimeout(() => setCopiedFile(null), 2000);
-    } catch { /* fallback */ }
+      const res = await fetch(`/api/scripts/${result.data.id}/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: pushRepoUrl,
+          baseBranch: repos.find(r => r.url === pushRepoUrl)?.branch || 'main',
+          branchName: pushBranch || undefined,
+          createPullRequest: createPR,
+        }),
+      });
+
+      const data = await res.json();
+      setPushResult(data);
+      if (data.success) {
+        setShowPushDialog(false);
+      }
+    } catch (err) {
+      setPushResult({
+        success: false,
+        error: 'Network error — backend may be unavailable',
+      });
+    } finally {
+      setPushing(false);
+    }
   };
 
   return (
@@ -134,7 +217,7 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
             <textarea
               value={scenario}
               onChange={(e) => setScenario(e.target.value)}
-              placeholder={`Describe the test scenario in plain English, e.g.:\n\n• "Test login with valid credentials, verify dashboard loads, check employee count is visible"\n• "Add a new employee, fill all required fields, verify success message and employee appears in list"\n• "Try login with wrong password 3 times, verify account lockout message"`}
+              placeholder={`Describe the test scenario in plain English, e.g.:\n\n\u2022 "Test login with valid credentials, verify dashboard loads, check employee count is visible"\n\u2022 "Add a new employee, fill all required fields, verify success message and employee appears in list"\n\u2022 "Try login with wrong password 3 times, verify account lockout message"`}
               rows={5}
               className="w-full px-3 py-2.5 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 resize-none"
               disabled={generating}
@@ -231,22 +314,170 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
           <div className={`px-5 py-4 border-b ${
             result.success ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'
           }`}>
-            <div className="flex items-center gap-2">
-              {result.success ? (
-                <CheckCircle2 size={18} className="text-emerald-400" />
-              ) : (
-                <XCircle size={18} className="text-red-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {result.success ? (
+                  <CheckCircle2 size={18} className="text-emerald-400" />
+                ) : (
+                  <XCircle size={18} className="text-red-400" />
+                )}
+                <h3 className={`text-sm font-semibold ${
+                  result.success ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  {result.success ? 'Scripts Generated Successfully!' : 'Generation Failed'}
+                </h3>
+              </div>
+
+              {/* Save to GitHub button */}
+              {result.success && result.data && (
+                <button
+                  onClick={() => setShowPushDialog(!showPushDialog)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-xs font-medium"
+                >
+                  <Github size={14} />
+                  Save to GitHub
+                </button>
               )}
-              <h3 className={`text-sm font-semibold ${
-                result.success ? 'text-emerald-400' : 'text-red-400'
-              }`}>
-                {result.success ? 'Scripts Generated Successfully!' : 'Generation Failed'}
-              </h3>
             </div>
             {result.error && (
               <p className="text-xs text-red-300/80 mt-1">{result.error}</p>
             )}
           </div>
+
+          {/* Push to GitHub Dialog */}
+          {showPushDialog && result.success && result.data && (
+            <div className="px-5 py-4 bg-[#0c1222] border-b border-[#2a3040]">
+              <div className="flex items-center gap-2 mb-3">
+                <GitBranch size={14} className="text-violet-400" />
+                <h4 className="text-sm font-semibold text-white">Push to GitHub Repository</h4>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Repository</label>
+                  <select
+                    value={pushRepoUrl}
+                    onChange={(e) => setPushRepoUrl(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    disabled={pushing}
+                  >
+                    {repos.length === 0 && <option value="">No repositories configured</option>}
+                    {repos.map((repo) => (
+                      <option key={repo.id} value={repo.url}>
+                        {repo.name} ({repo.branch})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Branch Name</label>
+                  <input
+                    type="text"
+                    value={pushBranch}
+                    onChange={(e) => setPushBranch(e.target.value)}
+                    placeholder="levelup/generated-tests"
+                    className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    disabled={pushing}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={createPR}
+                    onChange={(e) => setCreatePR(e.target.checked)}
+                    disabled={pushing}
+                    className="w-3.5 h-3.5 rounded border-[#334155] bg-[#1a1f2e] text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
+                  />
+                  <span className="text-xs text-slate-400">Create a Pull Request automatically</span>
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handlePushToGitHub}
+                    disabled={pushing || !pushRepoUrl}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-all"
+                  >
+                    {pushing ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" />
+                        Pushing to GitHub...
+                      </>
+                    ) : (
+                      <>
+                        <Github size={14} />
+                        Push & Create PR
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setShowPushDialog(false)}
+                    className="px-4 py-2.5 text-sm text-slate-400 hover:text-white transition-colors"
+                    disabled={pushing}
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                {/* Push error */}
+                {pushResult && !pushResult.success && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-xs text-red-400">
+                    {pushResult.error}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Push Success Banner */}
+          {pushResult?.success && pushResult.data && (
+            <div className="px-5 py-4 bg-emerald-500/5 border-b border-emerald-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 size={16} className="text-emerald-400" />
+                <h4 className="text-sm font-semibold text-emerald-400">Pushed to GitHub!</h4>
+              </div>
+              <div className="space-y-2">
+                {pushResult.data.message ? (
+                  <p className="text-xs text-slate-400">{pushResult.data.message}</p>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 text-xs">
+                      <GitBranch size={12} className="text-slate-500" />
+                      <span className="text-slate-400">Branch:</span>
+                      <a
+                        href={pushResult.data.branchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                      >
+                        {pushResult.data.branchName}
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                    {pushResult.data.pullRequest && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <Github size={12} className="text-slate-500" />
+                        <span className="text-slate-400">Pull Request:</span>
+                        <a
+                          href={pushResult.data.pullRequest.prUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                        >
+                          PR #{pushResult.data.pullRequest.prNumber}
+                          <ExternalLink size={10} />
+                        </a>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-600">
+                      Commit: {pushResult.data.commitSha?.slice(0, 8)} · {pushResult.data.filesCount} files
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Result Stats */}
           {result.success && result.data && (
@@ -314,21 +545,13 @@ export function ScriptGenerator({ projectContext, onGenerated }: ScriptGenerator
                   <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Generated Files</p>
                   <div className="space-y-2">
                     {result.data.files.map((file) => (
-                      <div key={file.path} className="bg-[#0c1222] rounded-lg border border-[#1e293b]">
-                        <div
-                          className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-[#1e293b]/50 transition-colors"
-                          onClick={() => setExpandedFile(expandedFile === file.path ? null : file.path)}
-                        >
-                          <div className="flex items-center gap-2">
-                            <FileCode size={12} className="text-violet-400" />
-                            <span className="text-xs text-slate-300 font-mono">{file.path}</span>
-                            <span className="text-[10px] text-slate-600">
-                              {file.type} · {(file.size / 1024).toFixed(1)}KB
-                            </span>
-                          </div>
-                          {expandedFile === file.path
-                            ? <ChevronUp size={12} className="text-slate-500" />
-                            : <ChevronDown size={12} className="text-slate-500" />}
+                      <div key={file.path} className="bg-[#0c1222] rounded-lg border border-[#1e293b] px-3 py-2 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileCode size={12} className="text-violet-400" />
+                          <span className="text-xs text-slate-300 font-mono">{file.path}</span>
+                          <span className="text-[10px] text-slate-600">
+                            {file.type} · {(file.size / 1024).toFixed(1)}KB
+                          </span>
                         </div>
                       </div>
                     ))}

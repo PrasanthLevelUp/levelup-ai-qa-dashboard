@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { ProjectSetup } from './project-setup';
 import { ScriptGenerator } from './script-generator';
 import { ScriptHistory } from './script-history';
+import { UploadTestCases } from './upload-test-cases';
 import {
   Settings,
   Pencil,
@@ -13,6 +14,8 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export interface ProjectContext {
@@ -294,9 +297,9 @@ export function ScriptsClient() {
         </div>
       )}
 
-      {/* Script Generator */}
+      {/* Input Mode Tabs + Generator */}
       {activeContext && (
-        <ScriptGenerator
+        <InputModes
           projectContext={activeContext}
           onGenerated={handleScriptGenerated}
         />
@@ -304,6 +307,71 @@ export function ScriptsClient() {
 
       {/* Script History */}
       <ScriptHistory scripts={scripts} />
+    </div>
+  );
+}
+
+type InputMode = 'scenario' | 'upload';
+
+function InputModes({
+  projectContext,
+  onGenerated,
+}: {
+  projectContext: ProjectContext;
+  onGenerated: () => void;
+}) {
+  const [mode, setMode] = useState<InputMode>('scenario');
+  const [uploadScenarios, setUploadScenarios] = useState<string[] | null>(null);
+
+  const handleScenariosReady = (scenarios: string[]) => {
+    setUploadScenarios(scenarios);
+    setMode('scenario'); // Switch to scenario mode with pre-filled scenarios
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Mode Tabs */}
+      <div className="flex gap-1 bg-[#0c1222] p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setMode('scenario')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            mode === 'scenario'
+              ? 'bg-[#1a1f2e] text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Sparkles size={12} />
+          Plain English
+        </button>
+        <button
+          onClick={() => setMode('upload')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            mode === 'upload'
+              ? 'bg-[#1a1f2e] text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <FileSpreadsheet size={12} />
+          Upload CSV/Excel
+        </button>
+      </div>
+
+      {/* Active Mode */}
+      {mode === 'scenario' && (
+        <ScriptGenerator
+          projectContext={projectContext}
+          onGenerated={onGenerated}
+          prefillScenarios={uploadScenarios}
+          onPrefillConsumed={() => setUploadScenarios(null)}
+        />
+      )}
+
+      {mode === 'upload' && (
+        <UploadTestCases
+          projectContext={projectContext}
+          onScenariosReady={handleScenariosReady}
+        />
+      )}
     </div>
   );
 }
