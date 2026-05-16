@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ConnectDialog } from './connect-dialog';
+import { ActivityLog } from './activity-log';
 
 /* ------------------------------------------------------------------ */
 /* Tool Registry — static definition of all supported integrations     */
@@ -390,6 +391,11 @@ export function ToolsClient() {
           </div>
         );
       })}
+
+      {/* Notification Activity Log */}
+      <div className="border-t border-[#2a3040] pt-8">
+        <ActivityLog />
+      </div>
 
       {/* Connect Dialog */}
       {connectingTool && (
