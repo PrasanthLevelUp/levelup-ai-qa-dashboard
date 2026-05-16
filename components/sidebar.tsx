@@ -2,12 +2,13 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User, FileCode } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User, FileCode, Plug } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
   { href: '/jobs', label: 'Healing Jobs', icon: Play },
   { href: '/scripts', label: 'Script Gen', icon: FileCode },
+  { href: '/tools', label: 'Tools', icon: Plug },
   { href: '/analytics', label: 'Analytics', icon: Activity },
   { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
 ];
