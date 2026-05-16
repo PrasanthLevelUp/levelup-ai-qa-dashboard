@@ -136,17 +136,5 @@ model GeneratedScript {
   @@map("generated_scripts")
 }
 
-model ToolConnection {
-  id             Int       @id @default(autoincrement())
-  toolType       String    @unique @map("tool_type")
-  displayName    String    @map("display_name")
-  status         String    @default("disconnected")
-  config         Json?     @default("{}")
-  connectedAt    DateTime? @map("connected_at")
-  lastTestedAt   DateTime? @map("last_tested_at")
-  lastTestResult String?   @map("last_test_result")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  @@map("tool_connections")
-}
+// ToolConnection model removed — tool configs stored in Railway DB only.
+// Dashboard proxies /api/tools to backend API.

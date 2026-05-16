@@ -9,7 +9,6 @@ const nextConfig = {
   },
 };
 
-// Only set outputFileTracingRoot when building in Abacus standalone mode
 if (process.env.NEXT_OUTPUT_MODE === 'standalone') {
   nextConfig.output = 'standalone';
   nextConfig.outputFileTracingRoot = path.join(__dirname, '../');

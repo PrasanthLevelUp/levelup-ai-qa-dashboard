@@ -1,104 +1,52 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+
+const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
+const API_KEY = process.env.BACKEND_API_KEY || '';
+
+const headers = (): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+});
 
 /**
- * GET /api/tools — List all tool connections
+ * GET /api/tools — List all tool connections (proxy to backend)
  */
 export async function GET() {
   try {
-    const connections = await prisma.toolConnection.findMany({
-      orderBy: { createdAt: 'asc' },
+    const res = await fetch(`${BACKEND_URL}/api/notifications/config`, {
+      headers: headers(),
     });
-
-    // Sanitize — never expose raw tokens to frontend
-    const sanitized = connections.map((c) => ({
-      ...c,
-      config: sanitizeConfig(c.toolType, c.config as Record<string, any> | null),
-    }));
-
-    return NextResponse.json({ success: true, data: sanitized });
+    const data = await res.json();
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('[Tools GET]', error);
+    console.error('[Tools GET proxy]', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch tools' },
-      { status: 500 }
+      { success: false, error: 'Failed to reach backend' },
+      { status: 502 }
     );
   }
 }
 
 /**
- * POST /api/tools — Create or update a tool connection
+ * POST /api/tools — Create or update a tool connection (proxy to backend)
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { toolType, displayName, config } = body;
-
-    if (!toolType || !displayName) {
-      return NextResponse.json(
-        { success: false, error: 'toolType and displayName are required' },
-        { status: 400 }
-      );
-    }
-
-    const connection = await prisma.toolConnection.upsert({
-      where: { toolType },
-      create: {
-        toolType,
-        displayName,
-        status: 'connected',
-        config: config || {},
-        connectedAt: new Date(),
-      },
-      update: {
-        displayName,
-        status: 'connected',
-        config: config || {},
-        connectedAt: new Date(),
-        lastTestResult: null,
-      },
+    const res = await fetch(`${BACKEND_URL}/api/notifications/config`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body),
     });
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...connection,
-        config: sanitizeConfig(connection.toolType, connection.config as Record<string, any> | null),
-      },
-    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
-    console.error('[Tools POST]', error);
+    console.error('[Tools POST proxy]', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to save tool connection' },
-      { status: 500 }
+      { success: false, error: 'Failed to reach backend' },
+      { status: 502 }
     );
   }
-}
-
-/** Strip secret values — show only masked versions */
-function sanitizeConfig(
-  toolType: string,
-  config: Record<string, any> | null
-): Record<string, any> {
-  if (!config) return {};
-  const safe = { ...config };
-
-  const sensitiveKeys: Record<string, string[]> = {
-    slack: ['botToken'],
-    jira: ['apiToken'],
-    teams: ['webhookUrl'],
-    github: ['token'],
-    gitlab: ['token'],
-  };
-
-  const keys = sensitiveKeys[toolType] || [];
-  for (const key of keys) {
-    if (safe[key] && typeof safe[key] === 'string') {
-      const val = safe[key] as string;
-      safe[key] = val.length > 8 ? val.slice(0, 4) + '••••' + val.slice(-4) : '••••••••';
-    }
-  }
-  return safe;
 }

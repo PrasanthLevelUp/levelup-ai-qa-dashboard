@@ -1,62 +1,59 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+
+const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
+const API_KEY = process.env.BACKEND_API_KEY || '';
+
+const headers = (): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+});
 
 /**
- * DELETE /api/tools/:id — Disconnect a tool
+ * DELETE /api/tools/:id — Disconnect a tool (proxy to backend)
  */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const id = parseInt(params.id, 10);
-    if (isNaN(id)) {
-      return NextResponse.json({ success: false, error: 'Invalid ID' }, { status: 400 });
-    }
-
-    await prisma.toolConnection.delete({ where: { id } });
-    return NextResponse.json({ success: true });
+    const res = await fetch(`${BACKEND_URL}/api/notifications/config/${params.id}`, {
+      method: 'DELETE',
+      headers: headers(),
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
-    console.error('[Tools DELETE]', error);
+    console.error('[Tools DELETE proxy]', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to disconnect tool' },
-      { status: 500 }
+      { success: false, error: 'Failed to reach backend' },
+      { status: 502 }
     );
   }
 }
 
 /**
- * PATCH /api/tools/:id — Update tool config
+ * PATCH /api/tools/:id — Update tool config (proxy to backend)
  */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const id = parseInt(params.id, 10);
-    if (isNaN(id)) {
-      return NextResponse.json({ success: false, error: 'Invalid ID' }, { status: 400 });
-    }
-
     const body = await req.json();
-    const { config, displayName } = body;
-
-    const updated = await prisma.toolConnection.update({
-      where: { id },
-      data: {
-        ...(config && { config }),
-        ...(displayName && { displayName }),
-      },
+    const res = await fetch(`${BACKEND_URL}/api/notifications/config/${params.id}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify(body),
     });
-
-    return NextResponse.json({ success: true, data: updated });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
-    console.error('[Tools PATCH]', error);
+    console.error('[Tools PATCH proxy]', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update tool' },
-      { status: 500 }
+      { success: false, error: 'Failed to reach backend' },
+      { status: 502 }
     );
   }
 }
