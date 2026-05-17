@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User, FileCode, Plug, Bug } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User, FileCode, Plug, Bug, Database } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/scripts', label: 'Script Gen', icon: FileCode },
   { href: '/tools', label: 'Tools', icon: Plug },
   { href: '/flaky', label: 'Flaky Tests', icon: Bug },
+  { href: '/dom-memory', label: 'DOM Memory', icon: Database },
   { href: '/analytics', label: 'Analytics', icon: Activity },
   { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
 ];
