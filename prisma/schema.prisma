@@ -7,6 +7,17 @@ datasource db {
     url      = env("DATABASE_URL")
 }
 
+model Company {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  slug      String    @unique
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime? @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  @@map("companies")
+}
+
 model TestExecution {
   id               Int       @id @default(autoincrement())
   testName         String    @map("test_name")
@@ -15,10 +26,12 @@ model TestExecution {
   healingAttempted Boolean?  @default(false) @map("healing_attempted")
   healingSucceeded Boolean?  @default(false) @map("healing_succeeded")
   durationMs       Int?      @default(0) @map("duration_ms")
+  companyId        Int?      @map("company_id")
   createdAt        DateTime? @default(now()) @map("created_at")
   healingActions   HealingAction[]
 
   @@index([status])
+  @@index([companyId], map: "idx_te_company")
   @@map("test_executions")
 }
 
@@ -36,10 +49,12 @@ model HealingAction {
   validationStatus   String?   @map("validation_status")
   validationReason   String?   @map("validation_reason")
   patchPath          String?   @map("patch_path")
+  companyId          Int?      @map("company_id")
   createdAt          DateTime? @default(now()) @map("created_at")
   execution          TestExecution @relation(fields: [testExecutionId], references: [id])
 
   @@index([testExecutionId])
+  @@index([companyId], map: "idx_ha_company")
   @@map("healing_actions")
 }
 
@@ -55,6 +70,7 @@ model LearnedPattern {
   failureCount     Int?      @default(0) @map("failure_count")
   usageCount       Int?      @default(0) @map("usage_count")
   avgTokensSaved   Int?      @default(0) @map("avg_tokens_saved")
+  companyId        Int?      @map("company_id")
   lastUsed         DateTime? @default(now()) @map("last_used")
   createdAt        DateTime? @default(now()) @map("created_at")
 
@@ -68,6 +84,7 @@ model TokenUsage {
   engine     String
   tokensUsed Int       @map("tokens_used")
   costUsd    Float     @default(0) @map("cost_usd")
+  companyId  Int?      @map("company_id")
   createdAt  DateTime? @default(now()) @map("created_at")
 
   @@index([date])
@@ -80,6 +97,7 @@ model HealingJob {
   repositoryUrl  String?   @map("repository_url")
   branch         String?
   commitSha      String?   @map("commit_sha")
+  companyId      Int?      @map("company_id")
   status         String    @default("queued")
   progress       String?
   createdAt      DateTime? @map("created_at") @db.Timestamptz(6)
@@ -128,6 +146,7 @@ model GeneratedScript {
   generationTimeMs      Int?      @map("generation_time_ms")
   filesGenerated        Json?     @map("files_generated")
   negativeTestsIncluded Boolean?  @default(true) @map("negative_tests_included")
+  companyId             Int?      @map("company_id")
   createdAt             DateTime? @default(now()) @map("created_at")
   projectContext        ProjectContext? @relation(fields: [projectContextId], references: [id])
 

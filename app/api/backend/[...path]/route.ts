@@ -27,6 +27,12 @@ async function proxyRequest(req: NextRequest, { params }: { params: { path: stri
     'Content-Type': 'application/json',
   };
 
+  // Forward session cookie so backend company middleware can resolve tenant
+  const sessionCookie = req.cookies.get('levelup_session')?.value;
+  if (sessionCookie) {
+    headers['Cookie'] = `levelup_session=${sessionCookie}`;
+  }
+
   let body: string | undefined;
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     try {

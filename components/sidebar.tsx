@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: '/learning', label: 'Learning Engine', icon: Brain },
   { href: '/analytics', label: 'Analytics', icon: Activity },
   { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
+  { href: '/companies', label: 'Companies', icon: Building2 },
 ];
 
 interface UserInfo {

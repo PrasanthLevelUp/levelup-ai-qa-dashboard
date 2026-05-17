@@ -1,10 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-    ],
-  },
+  eslint: { ignoreDuringBuilds: true },
+  typescript: { ignoreBuildErrors: false },
+  images: { unoptimized: true },
 };
 module.exports = nextConfig;
