@@ -1,0 +1,875 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "LevelUp AI QA — API Reference",
+    "description": "Complete API documentation for the LevelUp AI QA self-healing test automation platform. All protected endpoints require `Authorization: Bearer <API_KEY>` header.",
+    "version": "2.0.0",
+    "contact": { "name": "LevelUp AI", "url": "https://leveluptesting.in" }
+  },
+  "servers": [
+    { "url": "https://levelup-ai-qa-agent-production.up.railway.app", "description": "Production (Railway)" },
+    { "url": "https://app.leveluptesting.in", "description": "Dashboard Proxy (Vercel)" }
+  ],
+  "tags": [
+    { "name": "Health", "description": "Server health check" },
+    { "name": "Auth", "description": "Authentication — login, logout, session" },
+    { "name": "Healing", "description": "Trigger self-healing jobs on repositories" },
+    { "name": "Jobs", "description": "Healing job status & progress" },
+    { "name": "Reports", "description": "Job execution reports" },
+    { "name": "Repos", "description": "Repository management CRUD" },
+    { "name": "RCA", "description": "Root Cause Analysis for test failures" },
+    { "name": "Flaky Tests", "description": "Flaky test detection & analytics" },
+    { "name": "RCA Intelligence", "description": "Environment-aware failure classification" },
+    { "name": "Script Generation", "description": "AI-powered Playwright test script generation" },
+    { "name": "PR Automation", "description": "GitHub Pull Request automation" },
+    { "name": "DOM Memory", "description": "DOM snapshots, selector health, locator evolution" },
+    { "name": "Learning Engine", "description": "Pattern learning, strategy effectiveness" },
+    { "name": "Similarity Engine", "description": "Vector similarity matching for locators" },
+    { "name": "Release Risk", "description": "Release risk assessment & scoring" },
+    { "name": "Release Signoff", "description": "AI-assisted release signoff decisions" },
+    { "name": "ROI", "description": "Return on Investment & maintenance cost analysis" },
+    { "name": "Test Coverage", "description": "AI Test Coverage Intelligence Engine" },
+    { "name": "Notifications", "description": "Slack, Jira, Teams integration config" },
+    { "name": "Companies", "description": "Multi-tenant company management" },
+    { "name": "Webhook", "description": "GitHub webhook receiver" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key passed as Bearer token"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "details": { "type": "string" }
+        }
+      },
+      "HealingJob": {
+        "type": "object",
+        "properties": {
+          "jobId": { "type": "string", "format": "uuid" },
+          "repository": { "type": "string" },
+          "branch": { "type": "string" },
+          "status": { "type": "string", "enum": ["queued", "cloning", "installing", "running_tests", "analyzing", "healing", "rerunning", "complete", "failed"] },
+          "progress": { "type": "integer" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Repository": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "name": { "type": "string" },
+          "branch": { "type": "string" },
+          "lastHealed": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TestCoverageRequest": {
+        "type": "object",
+        "required": ["title", "description"],
+        "properties": {
+          "title": { "type": "string", "example": "Users should login using email OTP" },
+          "description": { "type": "string", "example": "Implement OTP-based login. OTP expires in 5 min. Account locks after 5 failed attempts." },
+          "jiraId": { "type": "string", "example": "PROJ-1234" },
+          "businessFlow": { "type": "string", "example": "User enters email → receives OTP → enters OTP → session created" },
+          "acceptanceCriteria": { "type": "string" },
+          "apiDocs": { "type": "string" },
+          "releaseNotes": { "type": "string" },
+          "module": { "type": "string", "example": "Authentication" },
+          "coverageTypes": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["positive", "negative", "edge_cases", "boundary", "security", "api", "ui", "mobile", "accessibility", "performance", "integration", "regression", "cross_browser", "data_validation", "role_based", "localization"] }
+          }
+        }
+      },
+      "TestCoverageResult": {
+        "type": "object",
+        "properties": {
+          "requirementId": { "type": "integer" },
+          "requirementAnalysis": {
+            "type": "object",
+            "properties": {
+              "featureType": { "type": "string" },
+              "riskLevel": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+              "businessCriticality": { "type": "string" },
+              "impactedModules": { "type": "array", "items": { "type": "string" } },
+              "userRolesAffected": { "type": "array", "items": { "type": "string" } },
+              "apiDependencies": { "type": "array", "items": { "type": "string" } },
+              "workflowSteps": { "type": "array", "items": { "type": "string" } },
+              "summary": { "type": "string" }
+            }
+          },
+          "scenarios": { "type": "array", "items": { "$ref": "#/components/schemas/TestScenario" } },
+          "testCases": { "type": "array", "items": { "$ref": "#/components/schemas/TestCase" } },
+          "coverageGaps": { "type": "array", "items": { "$ref": "#/components/schemas/CoverageGap" } },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "totalScenarios": { "type": "integer" },
+              "totalTestCases": { "type": "integer" },
+              "automationReadyCount": { "type": "integer" },
+              "gapsFound": { "type": "integer" },
+              "tokensUsed": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "TestScenario": {
+        "type": "object",
+        "properties": {
+          "scenario": { "type": "string" },
+          "coverageType": { "type": "string" },
+          "priority": { "type": "string", "enum": ["P0", "P1", "P2", "P3"] },
+          "riskArea": { "type": "string" }
+        }
+      },
+      "TestCase": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "example": "Verify session token invalidation after password reset" },
+          "preconditions": { "type": "string" },
+          "steps": { "type": "array", "items": { "type": "string" } },
+          "expectedResult": { "type": "string" },
+          "testData": { "type": "string" },
+          "priority": { "type": "string", "enum": ["P0", "P1", "P2", "P3"] },
+          "severity": { "type": "string", "enum": ["critical", "major", "minor", "trivial"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "automationReady": { "type": "boolean" },
+          "automationComplexity": { "type": "string", "enum": ["low", "medium", "high"] },
+          "selectorAvailability": { "type": "string", "enum": ["high", "medium", "low", "unknown"] }
+        }
+      },
+      "CoverageGap": {
+        "type": "object",
+        "properties": {
+          "area": { "type": "string" },
+          "description": { "type": "string" },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "suggestion": { "type": "string" }
+        }
+      },
+      "ApplicationKnowledge": {
+        "type": "object",
+        "required": ["module"],
+        "properties": {
+          "module": { "type": "string", "example": "Authentication" },
+          "workflow": { "type": "string" },
+          "businessRules": { "type": "string" },
+          "dependencies": { "type": "string" },
+          "apis": { "type": "string" },
+          "historicalBugs": { "type": "string" }
+        }
+      },
+      "RiskAssessment": {
+        "type": "object",
+        "properties": {
+          "overallScore": { "type": "integer", "description": "0-100, higher = more risky" },
+          "grade": { "type": "string", "enum": ["A", "B", "C", "D", "F"] },
+          "recommendation": { "type": "string" },
+          "signals": { "type": "array", "items": { "$ref": "#/components/schemas/RiskSignal" } },
+          "riskAreas": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "RiskSignal": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "category": { "type": "string" },
+          "score": { "type": "integer" },
+          "weight": { "type": "number" },
+          "value": { "type": "string" },
+          "status": { "type": "string", "enum": ["good", "warning", "critical"] },
+          "detail": { "type": "string" }
+        }
+      },
+      "SignoffReport": {
+        "type": "object",
+        "properties": {
+          "decision": { "type": "string", "enum": ["APPROVE", "REVIEW_REQUIRED", "REJECT"] },
+          "decisionReason": { "type": "string" },
+          "riskAssessment": { "$ref": "#/components/schemas/RiskAssessment" },
+          "sections": { "type": "array", "items": { "type": "object" } },
+          "executiveSummary": { "type": "string" },
+          "windowDays": { "type": "integer" }
+        }
+      },
+      "ScriptGenRequest": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "example": "https://example.com/login" },
+          "instructions": { "type": "string", "example": "Test login with valid and invalid credentials" },
+          "testTypes": { "type": "array", "items": { "type": "string", "enum": ["e2e", "smoke", "regression", "visual", "accessibility", "api", "performance"] } },
+          "credentials": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" } } },
+          "includeNegativeTests": { "type": "boolean", "default": true },
+          "includeAccessibilityTests": { "type": "boolean", "default": false }
+        }
+      }
+    }
+  },
+  "security": [{ "BearerAuth": [] }],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "security": [],
+        "responses": { "200": { "description": "Server is healthy" } }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login with username & password",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["username", "password"], "properties": { "username": { "type": "string" }, "password": { "type": "string" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Login successful. Sets HTTP-only `levelup_session` JWT cookie (24h expiry)." },
+          "401": { "description": "Invalid credentials" },
+          "429": { "description": "Rate limited — 5 attempts / 15 min" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logout & invalidate session",
+        "responses": { "200": { "description": "Logged out, cookie cleared" } }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get current user info",
+        "responses": { "200": { "description": "User info — username, role, company" } }
+      }
+    },
+    "/api/auth/users": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "List all users (admin only)",
+        "responses": { "200": { "description": "Array of user records" } }
+      }
+    },
+    "/api/heal": {
+      "post": {
+        "tags": ["Healing"],
+        "summary": "Trigger a self-healing job",
+        "description": "Queues a healing job — clones repo, runs tests, analyzes failures, applies fixes, reruns.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["repository"], "properties": { "repository": { "type": "string", "example": "https://github.com/user/repo.git" }, "branch": { "type": "string", "default": "main" }, "commit": { "type": "string" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Job queued", "content": { "application/json": { "schema": { "type": "object", "properties": { "jobId": { "type": "string" }, "message": { "type": "string" } } } } } },
+          "400": { "description": "Missing repository" }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "List all healing jobs",
+        "responses": { "200": { "description": "Array of all jobs with status" } }
+      }
+    },
+    "/api/status/{jobId}": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "Get job status & progress",
+        "parameters": [{ "name": "jobId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Job status, progress, steps" }, "404": { "description": "Job not found" } }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "List all job statuses",
+        "responses": { "200": { "description": "Array of all job statuses" } }
+      }
+    },
+    "/api/reports/{jobId}": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Get job report (JSON)",
+        "parameters": [{ "name": "jobId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Detailed job report with test results" } }
+      }
+    },
+    "/api/reports/{jobId}/html": {
+      "get": {
+        "tags": ["Reports"],
+        "summary": "Get job report (HTML)",
+        "parameters": [{ "name": "jobId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "HTML report", "content": { "text/html": {} } } }
+      }
+    },
+    "/api/repos": {
+      "get": {
+        "tags": ["Repos"],
+        "summary": "List all repositories",
+        "responses": { "200": { "description": "Array of repositories" } }
+      },
+      "post": {
+        "tags": ["Repos"],
+        "summary": "Add a repository",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["url"], "properties": { "url": { "type": "string" }, "name": { "type": "string" }, "branch": { "type": "string", "default": "main" } } } } }
+        },
+        "responses": { "201": { "description": "Repository created" } }
+      }
+    },
+    "/api/repos/{id}": {
+      "get": {
+        "tags": ["Repos"],
+        "summary": "Get repository by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Repository details" } }
+      },
+      "put": {
+        "tags": ["Repos"],
+        "summary": "Update repository",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Repos"],
+        "summary": "Delete repository",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/api/rca/stats": {
+      "get": {
+        "tags": ["RCA"],
+        "summary": "RCA aggregate statistics",
+        "responses": { "200": { "description": "Total analyses, severity breakdown, common categories" } }
+      }
+    },
+    "/api/rca/job/{jobId}": {
+      "get": {
+        "tags": ["RCA"],
+        "summary": "RCA results for a job",
+        "parameters": [{ "name": "jobId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "RCA analyses for all failures in the job" } }
+      }
+    },
+    "/api/rca/{executionId}": {
+      "get": {
+        "tags": ["RCA"],
+        "summary": "RCA for a single test execution",
+        "parameters": [{ "name": "executionId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Root cause analysis details" } }
+      }
+    },
+    "/api/rca/analyze": {
+      "post": {
+        "tags": ["RCA"],
+        "summary": "Trigger RCA analysis on a test execution",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "executionId": { "type": "integer" } } } } }
+        },
+        "responses": { "200": { "description": "Analysis result" } }
+      }
+    },
+    "/api/rca/flaky": {
+      "get": {
+        "tags": ["Flaky Tests"],
+        "summary": "List flaky tests with classification",
+        "responses": { "200": { "description": "Flaky test list with count, rate, severity" } }
+      }
+    },
+    "/api/rca/flaky/trend": {
+      "get": {
+        "tags": ["Flaky Tests"],
+        "summary": "Flaky test 30-day trend",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Daily flaky test counts" } }
+      }
+    },
+    "/api/rca/flaky/history/{testName}": {
+      "get": {
+        "tags": ["Flaky Tests"],
+        "summary": "Flaky history for a specific test",
+        "parameters": [{ "name": "testName", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Historical flaky occurrences with classification" } }
+      }
+    },
+    "/api/rca-intelligence/report": {
+      "get": {
+        "tags": ["RCA Intelligence"],
+        "summary": "Environment intelligence report",
+        "description": "Classifies failures into 4 domains: application, environment, test_quality, unknown.",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Classification breakdown, domain summaries, insights" } }
+      }
+    },
+    "/api/rca-intelligence/trend": {
+      "get": {
+        "tags": ["RCA Intelligence"],
+        "summary": "Classification trend over time",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Daily classification counts by domain" } }
+      }
+    },
+    "/api/rca-intelligence/heatmap": {
+      "get": {
+        "tags": ["RCA Intelligence"],
+        "summary": "Component failure heatmap",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Component × classification heatmap matrix" } }
+      }
+    },
+    "/api/rca-intelligence/recent": {
+      "get": {
+        "tags": ["RCA Intelligence"],
+        "summary": "Recent RCA analyses",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }],
+        "responses": { "200": { "description": "Recent RCA results with classification" } }
+      }
+    },
+    "/api/scripts/generate": {
+      "post": {
+        "tags": ["Script Generation"],
+        "summary": "Generate Playwright test scripts from URL",
+        "description": "AI crawls the target URL, understands the page, and generates production-ready Playwright test scripts.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ScriptGenRequest" } } } },
+        "responses": { "200": { "description": "Generated scripts with test cases" } }
+      }
+    },
+    "/api/scripts/recent": {
+      "get": {
+        "tags": ["Script Generation"],
+        "summary": "List recent generated scripts",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }],
+        "responses": { "200": { "description": "Array of generated script records" } }
+      }
+    },
+    "/api/scripts/{id}": {
+      "get": {
+        "tags": ["Script Generation"],
+        "summary": "Get generated script by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Full script details" } }
+      }
+    },
+    "/api/scripts/{id}/review": {
+      "post": {
+        "tags": ["Script Generation"],
+        "summary": "Submit review for a generated script",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "enum": ["approved", "rejected", "needs_changes"] }, "feedback": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Review saved" } }
+      }
+    },
+    "/api/scripts/{id}/export": {
+      "post": {
+        "tags": ["Script Generation"],
+        "summary": "Export script as downloadable file",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Exported project files" } }
+      }
+    },
+    "/api/scripts/{id}/push": {
+      "post": {
+        "tags": ["Script Generation"],
+        "summary": "Push generated script to GitHub repository",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "repoUrl": { "type": "string" }, "branch": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Pushed to GitHub" } }
+      }
+    },
+    "/api/pr/recent": {
+      "get": {
+        "tags": ["PR Automation"],
+        "summary": "List recent PR automations",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }],
+        "responses": { "200": { "description": "Array of PR records" } }
+      }
+    },
+    "/api/pr/job/{jobId}": {
+      "get": {
+        "tags": ["PR Automation"],
+        "summary": "Get PR for a specific healing job",
+        "parameters": [{ "name": "jobId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "PR details with URL, status" } }
+      }
+    },
+    "/api/pr/{id}/status": {
+      "patch": {
+        "tags": ["PR Automation"],
+        "summary": "Update PR status (merge/close)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "enum": ["merged", "closed"] } } } } } },
+        "responses": { "200": { "description": "Status updated" } }
+      }
+    },
+    "/api/dom/stats": {
+      "get": {
+        "tags": ["DOM Memory"],
+        "summary": "DOM memory aggregate statistics",
+        "responses": { "200": { "description": "Total snapshots, selectors, avg scores" } }
+      }
+    },
+    "/api/dom/snapshots": {
+      "get": {
+        "tags": ["DOM Memory"],
+        "summary": "List DOM snapshots",
+        "responses": { "200": { "description": "Paginated DOM snapshots with element counts" } }
+      }
+    },
+    "/api/dom/selectors": {
+      "get": {
+        "tags": ["DOM Memory"],
+        "summary": "Selector health scores",
+        "responses": { "200": { "description": "Selectors sorted by health score" } }
+      }
+    },
+    "/api/dom/selectors/distribution": {
+      "get": {
+        "tags": ["DOM Memory"],
+        "summary": "Selector score distribution",
+        "responses": { "200": { "description": "Score distribution buckets" } }
+      }
+    },
+    "/api/dom/locators": {
+      "get": {
+        "tags": ["DOM Memory"],
+        "summary": "Locator evolution history",
+        "responses": { "200": { "description": "Failed→healed locator pairs with strategies" } }
+      }
+    },
+    "/api/dom/trend": {
+      "get": {
+        "tags": ["DOM Memory"],
+        "summary": "DOM activity trend",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Daily DOM snapshot counts" } }
+      }
+    },
+    "/api/learning/stats": {
+      "get": {
+        "tags": ["Learning Engine"],
+        "summary": "Learning engine statistics",
+        "responses": { "200": { "description": "Total patterns, usages, avg confidence, tokens saved" } }
+      }
+    },
+    "/api/learning/patterns": {
+      "get": {
+        "tags": ["Learning Engine"],
+        "summary": "List all learned patterns",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }],
+        "responses": { "200": { "description": "Patterns with failed/healed locators, confidence" } }
+      }
+    },
+    "/api/learning/top": {
+      "get": {
+        "tags": ["Learning Engine"],
+        "summary": "Top reused patterns",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 } }],
+        "responses": { "200": { "description": "Most frequently reused patterns" } }
+      }
+    },
+    "/api/learning/strategies": {
+      "get": {
+        "tags": ["Learning Engine"],
+        "summary": "Strategy effectiveness comparison",
+        "responses": { "200": { "description": "Per-strategy success rates, confidence, usage" } }
+      }
+    },
+    "/api/learning/velocity": {
+      "get": {
+        "tags": ["Learning Engine"],
+        "summary": "Learning velocity over time",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Daily new patterns learned" } }
+      }
+    },
+    "/api/similarity/stats": {
+      "get": {
+        "tags": ["Similarity Engine"],
+        "summary": "Similarity engine statistics",
+        "responses": { "200": { "description": "Total matches, avg confidence, top strategies" } }
+      }
+    },
+    "/api/similarity/distribution": {
+      "get": {
+        "tags": ["Similarity Engine"],
+        "summary": "Confidence score distribution",
+        "responses": { "200": { "description": "Histogram of confidence scores" } }
+      }
+    },
+    "/api/similarity/trend": {
+      "get": {
+        "tags": ["Similarity Engine"],
+        "summary": "Similarity match trend",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Daily similarity match counts" } }
+      }
+    },
+    "/api/similarity/top-matches": {
+      "get": {
+        "tags": ["Similarity Engine"],
+        "summary": "Top similarity matches",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }],
+        "responses": { "200": { "description": "Highest confidence matches" } }
+      }
+    },
+    "/api/similarity/pairs": {
+      "get": {
+        "tags": ["Similarity Engine"],
+        "summary": "Recurring locator pair analysis",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }],
+        "responses": { "200": { "description": "Locator pairs with occurrence counts" } }
+      }
+    },
+    "/api/similarity/locator-types": {
+      "get": {
+        "tags": ["Similarity Engine"],
+        "summary": "Locator type analysis",
+        "responses": { "200": { "description": "Breakdown by locator type (CSS, XPath, etc.)" } }
+      }
+    },
+    "/api/similarity/compare": {
+      "post": {
+        "tags": ["Similarity Engine"],
+        "summary": "Compare two locators for similarity",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "required": ["locator1", "locator2"], "properties": { "locator1": { "type": "string" }, "locator2": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Similarity score with breakdown" } }
+      }
+    },
+    "/api/release-risk/assess": {
+      "get": {
+        "tags": ["Release Risk"],
+        "summary": "Assess release risk",
+        "description": "Computes overall risk score (0-100), grade (A-F), signals, and risk areas.",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RiskAssessment" } } } } }
+      }
+    },
+    "/api/release-risk/trend": {
+      "get": {
+        "tags": ["Release Risk"],
+        "summary": "Risk score trend",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Daily risk scores" } }
+      }
+    },
+    "/api/release-risk/signals": {
+      "get": {
+        "tags": ["Release Risk"],
+        "summary": "Individual risk signals",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Detailed risk signal breakdown" } }
+      }
+    },
+    "/api/release-risk/modules": {
+      "get": {
+        "tags": ["Release Risk"],
+        "summary": "High-risk modules",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Modules ranked by risk" } }
+      }
+    },
+    "/api/release-signoff/generate": {
+      "get": {
+        "tags": ["Release Signoff"],
+        "summary": "Generate full signoff report",
+        "description": "Aggregates risk data, test health, flaky analysis, and learning stats into a structured signoff report with APPROVE/REVIEW_REQUIRED/REJECT decision.",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SignoffReport" } } } } }
+      }
+    },
+    "/api/release-signoff/decision": {
+      "get": {
+        "tags": ["Release Signoff"],
+        "summary": "Quick signoff decision",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Decision + reason only" } }
+      }
+    },
+    "/api/roi/report": {
+      "get": {
+        "tags": ["ROI"],
+        "summary": "Full ROI & cost savings report",
+        "description": "Calculates time/cost savings from auto-healing, flaky investigation, PR automation, and pattern reuse.",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "ROI breakdown with savings, hours, cost reduction" } }
+      }
+    },
+    "/api/roi/trend": {
+      "get": {
+        "tags": ["ROI"],
+        "summary": "Daily ROI trend",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Time series with daily savings" } }
+      }
+    },
+    "/api/roi/summary": {
+      "get": {
+        "tags": ["ROI"],
+        "summary": "Quick ROI summary",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30 } }],
+        "responses": { "200": { "description": "Key ROI metrics at a glance" } }
+      }
+    },
+    "/api/test-coverage/generate": {
+      "post": {
+        "tags": ["Test Coverage"],
+        "summary": "Generate AI test coverage from requirement",
+        "description": "3-phase LLM pipeline: requirement analysis → test generation → coverage gap analysis. Generates senior-QA-level test scenarios and cases.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCoverageRequest" } } } },
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCoverageResult" } } } } }
+      }
+    },
+    "/api/test-coverage/requirements": {
+      "get": {
+        "tags": ["Test Coverage"],
+        "summary": "List all test requirements",
+        "responses": { "200": { "description": "Requirements with scenario/case counts" } }
+      }
+    },
+    "/api/test-coverage/requirements/{id}": {
+      "get": {
+        "tags": ["Test Coverage"],
+        "summary": "Get requirement with scenarios & test cases",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Full requirement + scenarios + test cases" } }
+      },
+      "delete": {
+        "tags": ["Test Coverage"],
+        "summary": "Delete requirement (cascades to scenarios & cases)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/api/test-coverage/stats": {
+      "get": {
+        "tags": ["Test Coverage"],
+        "summary": "Coverage statistics",
+        "responses": { "200": { "description": "Totals, coverage type breakdown, priority distribution" } }
+      }
+    },
+    "/api/test-coverage/knowledge": {
+      "get": {
+        "tags": ["Test Coverage"],
+        "summary": "List application knowledge entries",
+        "responses": { "200": { "description": "Module knowledge with workflows, rules, APIs" } }
+      },
+      "post": {
+        "tags": ["Test Coverage"],
+        "summary": "Add/update application knowledge",
+        "description": "Upserts a module's knowledge — the AI uses this context to generate smarter test cases.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplicationKnowledge" } } } },
+        "responses": { "200": { "description": "Saved" } }
+      }
+    },
+    "/api/test-coverage/knowledge/{id}": {
+      "delete": {
+        "tags": ["Test Coverage"],
+        "summary": "Delete knowledge entry",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/api/notifications/config": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List notification configs (Slack, Jira, Teams)",
+        "responses": { "200": { "description": "Array of tool configurations" } }
+      },
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Create/update notification config",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "required": ["toolType"], "properties": { "toolType": { "type": "string", "enum": ["slack", "jira", "teams", "github"] }, "webhookUrl": { "type": "string" }, "apiToken": { "type": "string" }, "projectKey": { "type": "string" }, "isActive": { "type": "boolean" } } } } } },
+        "responses": { "200": { "description": "Config saved" } }
+      }
+    },
+    "/api/notifications/config/{id}": {
+      "delete": {
+        "tags": ["Notifications"],
+        "summary": "Delete notification config",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/api/notifications/test": {
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Send test notification",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "toolType": { "type": "string" }, "configId": { "type": "integer" } } } } } },
+        "responses": { "200": { "description": "Test notification sent" } }
+      }
+    },
+    "/api/notifications/logs": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "Notification activity logs",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }],
+        "responses": { "200": { "description": "Notification send history" } }
+      }
+    },
+    "/api/notifications/jira/projects": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List Jira projects (for config)",
+        "responses": { "200": { "description": "Jira project list" } }
+      }
+    },
+    "/api/notifications/jira/issue-types": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List Jira issue types",
+        "responses": { "200": { "description": "Jira issue type list" } }
+      }
+    },
+    "/api/companies": {
+      "get": {
+        "tags": ["Companies"],
+        "summary": "List all companies",
+        "responses": { "200": { "description": "Array of company records" } }
+      },
+      "post": {
+        "tags": ["Companies"],
+        "summary": "Create a company",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "slug": { "type": "string" } } } } } },
+        "responses": { "201": { "description": "Company created" } }
+      }
+    },
+    "/api/companies/{id}": {
+      "get": {
+        "tags": ["Companies"],
+        "summary": "Get company by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Company details" } }
+      },
+      "put": {
+        "tags": ["Companies"],
+        "summary": "Update company",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Updated" } }
+      }
+    },
+    "/api/webhook/github": {
+      "post": {
+        "tags": ["Webhook"],
+        "summary": "GitHub webhook receiver",
+        "description": "Receives push events and auto-triggers healing jobs.",
+        "security": [],
+        "responses": { "200": { "description": "Webhook processed" } }
+      }
+    }
+  }
+}
