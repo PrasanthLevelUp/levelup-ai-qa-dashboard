@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: '/similarity', label: 'Similarity Engine', icon: Fingerprint },
   { href: '/release-risk', label: 'Release Risk', icon: ShieldAlert },
   { href: '/release-signoff', label: 'Release Signoff', icon: ClipboardCheck },
+  { href: '/rca-intelligence', label: 'RCA Intelligence', icon: Microscope },
   { href: '/analytics', label: 'Analytics', icon: Activity },
   { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
   { href: '/companies', label: 'Companies', icon: Building2 },

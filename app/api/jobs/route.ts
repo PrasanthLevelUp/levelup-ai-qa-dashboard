@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Transform DB rows to match the frontend Job interface
-    const jobs = dbJobs.map((j) => {
+    const jobs = dbJobs.map((j: any) => {
       let resultData = null;
       if (j.result) {
         try {

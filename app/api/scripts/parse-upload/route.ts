@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+// @ts-ignore
 import * as XLSX from 'xlsx';
 
 interface ParsedTestCase {
@@ -94,7 +95,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Parse test cases
-    const testCases: ParsedTestCase[] = rawData.map((row, idx) => {
+    const testCases: ParsedTestCase[] = rawData.map((row: any, idx: any) => {
       const id = idCol ? String(row[idCol] || `TC-${idx + 1}`) : `TC-${idx + 1}`;
       const title = titleCol ? String(row[titleCol] || '') : '';
       const steps = stepsCol ? String(row[stepsCol] || '') : '';
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
         module,
         scenario: scenarioParts.join('. ') || `Test case ${id}`,
       };
-    }).filter(tc => tc.title || tc.steps); // Remove empty rows
+    }).filter((tc: any) => tc.title || tc.steps); // Remove empty rows
 
     // Group by module if available
     const modules = [...new Set(testCases.map(tc => tc.module).filter(Boolean))];
