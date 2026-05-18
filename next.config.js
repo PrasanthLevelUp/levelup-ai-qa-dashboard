@@ -1,12 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-    ],
-  },
-  experimental: {
-    outputFileTracingRoot: require('path').join(__dirname, '../'),
-  },
+  images: { remotePatterns: [{ protocol: 'https', hostname: '**' }] },
 };
 module.exports = nextConfig;
