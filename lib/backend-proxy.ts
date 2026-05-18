@@ -17,7 +17,7 @@ export function proxyHeaders(): Record<string, string> {
   const h: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (API_KEY) h['x-api-key'] = API_KEY;
+  if (API_KEY) h['Authorization'] = `Bearer ${API_KEY}`;
 
   // Forward session cookie so backend company middleware can resolve tenant
   try {

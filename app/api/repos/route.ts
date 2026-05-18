@@ -10,7 +10,6 @@ export async function GET() {
     const response = await fetch(`${BACKEND_URL}/api/repos`, {
       headers: {
         'Authorization': `Bearer ${API_KEY}`,
-        'x-api-key': API_KEY,
       },
       cache: 'no-store',
     });

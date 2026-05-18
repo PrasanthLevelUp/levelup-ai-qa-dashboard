@@ -7,7 +7,7 @@ const API_KEY = process.env.BACKEND_API_KEY || '';
 
 const headers = (): Record<string, string> => ({
   'Content-Type': 'application/json',
-  ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+  ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
 });
 
 /** GET /api/dom-memory/selectors — Selector health (proxy) */

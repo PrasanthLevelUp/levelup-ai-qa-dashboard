@@ -23,7 +23,6 @@ async function proxyRequest(req: NextRequest, { params }: { params: { path: stri
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${API_KEY}`,
-    'x-api-key': API_KEY,
     'Content-Type': 'application/json',
   };
 
