@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   CreditCard, Check, ArrowRight, Zap, Rocket, Crown, Building2,
   Star, Globe, AlertTriangle, Download, Calendar, Receipt,
   ChevronDown, ChevronUp, Sparkles, Shield, Clock, RefreshCw,
-  BadgeCheck, Info, ExternalLink, Gauge
+  BadgeCheck, Info, ExternalLink, Gauge, Loader2
 } from 'lucide-react';
 
 type BillingCycle = 'monthly' | 'annually';
@@ -18,11 +18,10 @@ interface Invoice {
   plan: string;
 }
 
-/* Demo data simulating a Growth plan subscriber */
-const CURRENT_PLAN = {
+/* ─── Fallback demo data (used when backend is unavailable) ─── */
+const DEMO_CURRENT_PLAN = {
   id: 'growth',
   name: 'Growth',
-  icon: Crown,
   monthlyPrice: '$999',
   annualPrice: '$799',
   billingCycle: 'monthly' as BillingCycle,
@@ -31,37 +30,13 @@ const CURRENT_PLAN = {
   creditsUsed: 3247,
   usersTotal: 25,
   usersActive: 12,
-  reposTotal: -1, // unlimited
+  reposTotal: -1,
   reposUsed: 8,
   retentionDays: 90,
   startDate: '2026-04-19',
 };
 
-const PLANS = [
-  {
-    id: 'free', name: 'Free POC', icon: Zap, monthlyUSD: '0', annualUSD: '0',
-    credits: 50, users: 1, repos: '1', retention: '7 days',
-    gradient: 'from-slate-500/10', border: 'border-slate-500/20', color: 'slate',
-  },
-  {
-    id: 'starter', name: 'Starter', icon: Rocket, monthlyUSD: '149', annualUSD: '119',
-    credits: 500, users: 5, repos: '5', retention: '30 days',
-    gradient: 'from-blue-500/10', border: 'border-blue-500/20', color: 'blue',
-  },
-  {
-    id: 'growth', name: 'Growth', icon: Crown, monthlyUSD: '999', annualUSD: '799',
-    credits: 5000, users: 25, repos: 'Unlimited', retention: '90 days',
-    gradient: 'from-emerald-500/10', border: 'border-emerald-500/30', color: 'emerald',
-    popular: true,
-  },
-  {
-    id: 'enterprise', name: 'Enterprise', icon: Building2, monthlyUSD: 'Custom', annualUSD: 'Custom',
-    credits: -1, users: -1, repos: 'Unlimited', retention: 'Unlimited',
-    gradient: 'from-amber-500/10', border: 'border-amber-500/20', color: 'amber',
-  },
-];
-
-const INVOICES: Invoice[] = [
+const DEMO_INVOICES: Invoice[] = [
   { id: 'INV-2026-005', date: '2026-05-19', amount: '$999.00', status: 'paid', plan: 'Growth' },
   { id: 'INV-2026-004', date: '2026-04-19', amount: '$999.00', status: 'paid', plan: 'Growth' },
   { id: 'INV-2026-003', date: '2026-03-19', amount: '$149.00', status: 'paid', plan: 'Starter' },
@@ -69,19 +44,161 @@ const INVOICES: Invoice[] = [
   { id: 'INV-2026-001', date: '2026-01-19', amount: '$0.00', status: 'paid', plan: 'Free POC' },
 ];
 
-const PAYMENT_METHODS = [
+const DEMO_PAYMENT_METHODS = [
   { type: 'card', last4: '4242', brand: 'Visa', expiry: '12/28', isDefault: true },
   { type: 'card', last4: '8888', brand: 'Mastercard', expiry: '06/27', isDefault: false },
 ];
+
+/* Plan display config */
+const PLAN_CONFIG: Record<string, { icon: any; gradient: string; border: string; color: string; popular?: boolean }> = {
+  free: { icon: Zap, gradient: 'from-slate-500/10', border: 'border-slate-500/20', color: 'slate' },
+  starter: { icon: Rocket, gradient: 'from-blue-500/10', border: 'border-blue-500/20', color: 'blue' },
+  growth: { icon: Crown, gradient: 'from-emerald-500/10', border: 'border-emerald-500/30', color: 'emerald', popular: true },
+  enterprise: { icon: Building2, gradient: 'from-amber-500/10', border: 'border-amber-500/20', color: 'amber' },
+};
+
+async function fetchBillingData(endpoint: string) {
+  try {
+    const res = await fetch(`/api/backend/billing/${endpoint}`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.success ? json.data : null;
+  } catch { return null; }
+}
 
 export default function BillingClient() {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [showInvoices, setShowInvoices] = useState(false);
   const [showChangePlan, setShowChangePlan] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
 
-  const creditsPercent = Math.round((CURRENT_PLAN.creditsUsed / CURRENT_PLAN.creditsTotal) * 100);
-  const creditsRemaining = CURRENT_PLAN.creditsTotal - CURRENT_PLAN.creditsUsed;
+  // Live data state
+  const [currentPlan, setCurrentPlan] = useState(DEMO_CURRENT_PLAN);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>(DEMO_INVOICES);
+  const [paymentMethods, setPaymentMethods] = useState(DEMO_PAYMENT_METHODS);
+  const [usageBreakdown, setUsageBreakdown] = useState<any[]>([]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [subData, plansData, invoicesData, pmData, breakdownData] = await Promise.all([
+        fetchBillingData('subscription'),
+        fetchBillingData('plans'),
+        fetchBillingData('invoices'),
+        fetchBillingData('payment-methods'),
+        fetchBillingData('usage/breakdown'),
+      ]);
+
+      if (subData?.subscription) {
+        const sub = subData.subscription;
+        const usage = subData.usage || {};
+        setCurrentPlan({
+          id: sub.plan_slug || 'free',
+          name: sub.plan_name || 'Free POC',
+          monthlyPrice: `$${sub.price_usd_monthly || 0}`,
+          annualPrice: `$${Math.round((sub.price_usd_annually || 0) / 12)}`,
+          billingCycle: sub.billing_cycle || 'monthly',
+          nextBillingDate: sub.current_period_end ? new Date(sub.current_period_end).toISOString().split('T')[0] : DEMO_CURRENT_PLAN.nextBillingDate,
+          creditsTotal: usage.creditsAllowed || sub.credits_monthly || 50,
+          creditsUsed: usage.creditsUsed || 0,
+          usersTotal: sub.max_users === -1 ? -1 : (sub.max_users || 1),
+          usersActive: 1,
+          reposTotal: sub.max_repos === -1 ? -1 : (sub.max_repos || 1),
+          reposUsed: 0,
+          retentionDays: sub.retention_days || 7,
+          startDate: sub.current_period_start ? new Date(sub.current_period_start).toISOString().split('T')[0] : DEMO_CURRENT_PLAN.startDate,
+        });
+        setIsLive(true);
+      }
+
+      if (plansData && Array.isArray(plansData) && plansData.length > 0) {
+        setPlans(plansData);
+      }
+
+      if (invoicesData && Array.isArray(invoicesData) && invoicesData.length > 0) {
+        setInvoices(invoicesData.map((inv: any) => ({
+          id: inv.invoice_number || `INV-${inv.id}`,
+          date: inv.created_at,
+          amount: `$${parseFloat(inv.amount || 0).toFixed(2)}`,
+          status: inv.status === 'completed' ? 'paid' : inv.status,
+          plan: inv.plan_name || 'Unknown',
+        })));
+      }
+
+      if (pmData && Array.isArray(pmData) && pmData.length > 0) {
+        setPaymentMethods(pmData.map((pm: any) => ({
+          type: pm.type || 'card',
+          last4: pm.last_four || '****',
+          brand: pm.brand || 'Card',
+          expiry: pm.exp_month && pm.exp_year ? `${String(pm.exp_month).padStart(2, '0')}/${String(pm.exp_year).slice(-2)}` : 'N/A',
+          isDefault: pm.is_default,
+        })));
+      }
+
+      if (breakdownData && Array.isArray(breakdownData)) {
+        setUsageBreakdown(breakdownData);
+      }
+    } catch (err) {
+      console.error('[Billing] Failed to load data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const creditsPercent = currentPlan.creditsTotal > 0
+    ? Math.round((currentPlan.creditsUsed / currentPlan.creditsTotal) * 100)
+    : 0;
+  const creditsRemaining = currentPlan.creditsTotal - currentPlan.creditsUsed;
   const isNearLimit = creditsPercent >= 80;
+
+  // Handle plan switch
+  const handleSwitchPlan = async (planSlug: string) => {
+    if (planSlug === 'enterprise') return;
+    try {
+      const res = await fetch('/api/backend/billing/subscribe', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planSlug, billingCycle, currency: 'USD' }),
+      });
+      if (res.ok) {
+        await loadData();
+        setShowChangePlan(false);
+      }
+    } catch (err) {
+      console.error('[Billing] Switch plan failed:', err);
+    }
+  };
+
+  // Display plans (from API or defaults)
+  const displayPlans = plans.length > 0 ? plans.map((p: any) => ({
+    ...(PLAN_CONFIG[p.slug] || PLAN_CONFIG.free),
+    id: p.slug,
+    name: p.name,
+    monthlyUSD: p.slug === 'enterprise' ? 'Custom' : String(p.price_usd_monthly || 0),
+    annualUSD: p.slug === 'enterprise' ? 'Custom' : String(Math.round((p.price_usd_annually || 0) / 12)),
+    credits: p.credits_monthly,
+    users: p.max_users,
+    repos: p.max_repos === -1 ? 'Unlimited' : String(p.max_repos),
+    retention: p.retention_days === -1 ? 'Unlimited' : `${p.retention_days} days`,
+  })) : [
+    { id: 'free', name: 'Free POC', monthlyUSD: '0', annualUSD: '0', credits: 50, users: 1, repos: '1', retention: '7 days', ...PLAN_CONFIG.free },
+    { id: 'starter', name: 'Starter', monthlyUSD: '149', annualUSD: '119', credits: 500, users: 5, repos: '5', retention: '30 days', ...PLAN_CONFIG.starter },
+    { id: 'growth', name: 'Growth', monthlyUSD: '999', annualUSD: '799', credits: 5000, users: 25, repos: 'Unlimited', retention: '90 days', ...PLAN_CONFIG.growth },
+    { id: 'enterprise', name: 'Enterprise', monthlyUSD: 'Custom', annualUSD: 'Custom', credits: -1, users: -1, repos: 'Unlimited', retention: 'Unlimited', ...PLAN_CONFIG.enterprise },
+  ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
+        <Loader2 size={32} className="text-emerald-400 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0f172a] p-6 lg:p-10">
@@ -125,14 +242,14 @@ export default function BillingClient() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold text-white">{CURRENT_PLAN.name} Plan</h2>
+                    <h2 className="text-xl font-bold text-white">{currentPlan.name} Plan</h2>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase">Active</span>
                   </div>
-                  <p className="text-sm text-slate-400">Since {new Date(CURRENT_PLAN.startDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+                  <p className="text-sm text-slate-400">Since {new Date(currentPlan.startDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold text-white">{CURRENT_PLAN.monthlyPrice}<span className="text-sm text-slate-500">/mo</span></div>
+                <div className="text-2xl font-bold text-white">{currentPlan.monthlyPrice}<span className="text-sm text-slate-500">/mo</span></div>
                 <p className="text-xs text-slate-500">Billed monthly</p>
               </div>
             </div>
@@ -146,9 +263,9 @@ export default function BillingClient() {
                 </div>
                 <span className="text-sm text-slate-400">
                   <span className={isNearLimit ? 'text-amber-400 font-semibold' : 'text-emerald-400 font-semibold'}>
-                    {CURRENT_PLAN.creditsUsed.toLocaleString()}
+                    {currentPlan.creditsUsed.toLocaleString()}
                   </span>
-                  {' / '}{CURRENT_PLAN.creditsTotal.toLocaleString()} used
+                  {' / '}{currentPlan.creditsTotal.toLocaleString()} used
                 </span>
               </div>
               <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
@@ -161,17 +278,17 @@ export default function BillingClient() {
               </div>
               <div className="flex items-center justify-between mt-1.5">
                 <span className="text-xs text-slate-500">{creditsRemaining.toLocaleString()} credits remaining</span>
-                <span className="text-xs text-slate-500">Resets {CURRENT_PLAN.nextBillingDate}</span>
+                <span className="text-xs text-slate-500">Resets {currentPlan.nextBillingDate}</span>
               </div>
             </div>
 
             {/* Plan Limits Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: 'Team Members', value: `${CURRENT_PLAN.usersActive}/${CURRENT_PLAN.usersTotal}`, icon: Shield },
-                { label: 'Repositories', value: CURRENT_PLAN.reposTotal === -1 ? `${CURRENT_PLAN.reposUsed} (Unlimited)` : `${CURRENT_PLAN.reposUsed}/${CURRENT_PLAN.reposTotal}`, icon: Globe },
-                { label: 'Data Retention', value: `${CURRENT_PLAN.retentionDays} days`, icon: Clock },
-                { label: 'Next Billing', value: new Date(CURRENT_PLAN.nextBillingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), icon: Calendar },
+                { label: 'Team Members', value: `${currentPlan.usersActive}/${currentPlan.usersTotal}`, icon: Shield },
+                { label: 'Repositories', value: currentPlan.reposTotal === -1 ? `${currentPlan.reposUsed} (Unlimited)` : `${currentPlan.reposUsed}/${currentPlan.reposTotal}`, icon: Globe },
+                { label: 'Data Retention', value: `${currentPlan.retentionDays} days`, icon: Clock },
+                { label: 'Next Billing', value: new Date(currentPlan.nextBillingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), icon: Calendar },
               ].map((item, i) => (
                 <div key={i} className="rounded-xl bg-[#0f172a]/60 border border-slate-700/40 p-3">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -224,8 +341,8 @@ export default function BillingClient() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {PLANS.map((plan) => {
-                  const isCurrent = plan.id === CURRENT_PLAN.id;
+                {displayPlans.map((plan) => {
+                  const isCurrent = plan.id === currentPlan.id;
                   const price = billingCycle === 'monthly' ? plan.monthlyUSD : plan.annualUSD;
                   const Icon = plan.icon;
                   return (
@@ -262,6 +379,7 @@ export default function BillingClient() {
                       </div>
                       <button
                         disabled={isCurrent}
+                        onClick={() => handleSwitchPlan(plan.id)}
                         className={`w-full py-2 rounded-lg text-xs font-semibold transition-all ${
                           isCurrent
                             ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
@@ -291,7 +409,7 @@ export default function BillingClient() {
                 { operation: 'Pattern healing', credits: 0, count: 843, icon: Shield, color: 'slate', free: true },
                 { operation: 'Rule healing', credits: 0, count: 2104, icon: Shield, color: 'slate', free: true },
               ].map((item, i) => {
-                const pct = CURRENT_PLAN.creditsTotal > 0 ? (item.credits / CURRENT_PLAN.creditsTotal) * 100 : 0;
+                const pct = currentPlan.creditsTotal > 0 ? (item.credits / currentPlan.creditsTotal) * 100 : 0;
                 return (
                   <div key={i} className="flex items-center gap-4">
                     <div className="w-40 flex items-center gap-2 shrink-0">
@@ -337,7 +455,7 @@ export default function BillingClient() {
 
             {showInvoices && (
               <div className="mt-4 space-y-2">
-                {INVOICES.map((inv) => (
+                {invoices.map((inv) => (
                   <div key={inv.id} className="flex items-center justify-between p-3 rounded-xl bg-[#0f172a]/60 border border-slate-700/40">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
@@ -375,7 +493,7 @@ export default function BillingClient() {
               <button className="text-xs text-emerald-400 hover:text-emerald-300 font-medium">+ Add</button>
             </div>
             <div className="space-y-3">
-              {PAYMENT_METHODS.map((pm, i) => (
+              {paymentMethods.map((pm, i) => (
                 <div key={i} className={`rounded-xl p-4 border transition-colors ${
                   pm.isDefault ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-[#0f172a]/60 border-slate-700/40'
                 }`}>
