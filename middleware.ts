@@ -18,7 +18,11 @@ const PUBLIC_PATHS = [
   '/icons',
 ];
 
+// File extensions that should never be auth-gated
+const STATIC_EXTENSIONS = /\.(png|jpg|jpeg|gif|svg|ico|webp|webmanifest|json|xml|txt|woff|woff2|ttf|eot|css|js|map)$/;
+
 function isPublicPath(pathname: string): boolean {
+  if (STATIC_EXTENSIONS.test(pathname)) return true;
   return PUBLIC_PATHS.some(path => pathname.startsWith(path));
 }
 
@@ -68,7 +72,7 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match all paths except static files
-    '/((?!_next/static|_next/image|favicon.ico|images|icons).*)',
+    // Match all paths except static files and public assets
+    '/((?!_next/static|_next/image|favicon\\.ico|favicon-.*\\.png|logo.*\\.png|apple-touch-icon\\.png|og-.*\\.jpg|og-.*\\.png|manifest\\.webmanifest|images|icons).*)',
   ],
 };
