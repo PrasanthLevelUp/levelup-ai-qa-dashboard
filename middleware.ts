@@ -17,6 +17,7 @@ const PUBLIC_PATHS = [
   '/images',
   '/icons',
   '/demo-video',
+  '/reels',
   '/pricing',
 ];
 
