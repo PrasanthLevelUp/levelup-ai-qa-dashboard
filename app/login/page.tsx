@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Zap, Lock, User, AlertCircle, Loader2, Eye, EyeOff, Shield } from 'lucide-react';
+import Image from 'next/image';
+import { Lock, User, AlertCircle, Loader2, Eye, EyeOff, Shield } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -56,8 +57,8 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/25 mb-4">
-            <Zap size={28} className="text-white" />
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" priority />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">LevelUp AI</h1>
           <p className="text-sm text-slate-500 mt-1">QA Reliability Platform</p>

@@ -15,13 +15,18 @@ export const metadata = {
   description: 'Self-healing test automation dashboard - visualize healing performance, cost savings, and AI efficiency.',
   metadataBase: new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
   },
+  manifest: '/manifest.json',
   openGraph: {
     title: 'LevelUp AI QA Dashboard',
-    description: 'Self-healing test automation dashboard',
-    images: ['/og-image.png'],
+    description: 'Self-healing test automation dashboard — visualize healing performance, cost savings, and AI efficiency.',
+    images: ['/og-logo.jpg'],
   },
 }
 

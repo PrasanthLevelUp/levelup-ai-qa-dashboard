@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText } from 'lucide-react';
 
 interface NavSection {
@@ -122,8 +123,8 @@ export function Sidebar() {
         {/* Logo */}
         <div className="px-6 py-6 border-b border-[#1e293b]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
-              <Zap size={18} className="text-white" />
+            <div className="w-9 h-9 relative flex-shrink-0">
+              <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" priority />
             </div>
             <div>
               <h1 className="text-base font-bold text-white font-display tracking-tight">LevelUp AI</h1>
