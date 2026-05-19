@@ -98,4 +98,9 @@
 @layer utilities {
   .scrollbar-none::-webkit-scrollbar { display: none; }
   .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background-color: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background-color: hsl(217 33% 22%); border-radius: 9999px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background-color: hsl(215 20% 40%); }
+  .scrollbar-thin { scrollbar-width: thin; }
 }

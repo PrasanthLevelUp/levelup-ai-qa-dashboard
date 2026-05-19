@@ -2,26 +2,66 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { href: '/', label: 'Overview', icon: LayoutDashboard },
-  { href: '/jobs', label: 'Healing Jobs', icon: Play },
-  { href: '/scripts', label: 'Script Gen', icon: FileCode },
-  { href: '/tools', label: 'Tools', icon: Plug },
-  { href: '/flaky', label: 'Flaky Tests', icon: Bug },
-  { href: '/dom-memory', label: 'DOM Memory', icon: Database },
-  { href: '/learning', label: 'Learning Engine', icon: Brain },
-  { href: '/similarity', label: 'Similarity Engine', icon: Fingerprint },
-  { href: '/release-risk', label: 'Release Risk', icon: ShieldAlert },
-  { href: '/release-signoff', label: 'Release Signoff', icon: ClipboardCheck },
-  { href: '/rca-intelligence', label: 'RCA Intelligence', icon: Microscope },
-  { href: '/roi', label: 'ROI Dashboard', icon: DollarSign },
-  { href: '/test-coverage', label: 'Test Coverage', icon: FlaskConical },
-  { href: '/analytics', label: 'Analytics', icon: Activity },
-  { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
-  { href: '/companies', label: 'Companies', icon: Building2 },
-  { href: '/api-docs', label: 'API Docs', icon: FileText },
+interface NavSection {
+  title?: string;
+  items: { href: string; label: string; icon: React.ElementType }[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    title: 'Platform',
+    items: [
+      { href: '/', label: 'Overview', icon: LayoutDashboard },
+      { href: '/jobs', label: 'Healing Jobs', icon: Play },
+      { href: '/scripts', label: 'Script Gen', icon: FileCode },
+      { href: '/tools', label: 'Tools', icon: Plug },
+    ],
+  },
+  {
+    title: 'Intelligence',
+    items: [
+      { href: '/flaky', label: 'Flaky Tests', icon: Bug },
+      { href: '/dom-memory', label: 'DOM Memory', icon: Database },
+      { href: '/learning', label: 'Learning Engine', icon: Brain },
+      { href: '/similarity', label: 'Similarity Engine', icon: Fingerprint },
+      { href: '/rca-intelligence', label: 'RCA Intelligence', icon: Microscope },
+    ],
+  },
+  {
+    title: 'Release',
+    items: [
+      { href: '/release-risk', label: 'Release Risk', icon: ShieldAlert },
+      { href: '/release-signoff', label: 'Release Signoff', icon: ClipboardCheck },
+      { href: '/test-coverage', label: 'Test Coverage', icon: FlaskConical },
+    ],
+  },
+  {
+    title: 'Insights',
+    items: [
+      { href: '/roi', label: 'ROI Dashboard', icon: DollarSign },
+      { href: '/usage', label: 'Usage Metering', icon: BarChart3 },
+      { href: '/analytics', label: 'Analytics', icon: Activity },
+      { href: '/patterns', label: 'Learned Patterns', icon: BookOpen },
+    ],
+  },
+  {
+    title: 'Business',
+    items: [
+      { href: '/billing', label: 'Billing', icon: CreditCard },
+      { href: '/pricing', label: 'Pricing', icon: DollarSign },
+      { href: '/companies', label: 'Companies', icon: Building2 },
+    ],
+  },
+  {
+    title: 'Admin',
+    items: [
+      { href: '/admin/roles', label: 'Roles & Access', icon: Users },
+      { href: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText },
+      { href: '/api-docs', label: 'API Docs', icon: FileText },
+    ],
+  },
 ];
 
 interface UserInfo {
@@ -93,27 +133,38 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group ${
-                  isActive
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    : 'text-slate-400 hover:text-white hover:bg-[#1e293b]'
-                }`}
-              >
-                <Icon size={18} className={isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'} />
-                <span>{item.label}</span>
-                {isActive && <ChevronRight size={14} className="ml-auto text-emerald-500" />}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4 scrollbar-thin">
+          {NAV_SECTIONS.map((section, si) => (
+            <div key={si}>
+              {section.title && (
+                <div className="px-3 mb-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600">{section.title}</span>
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setOpen(false)}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 group ${
+                        isActive
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'text-slate-400 hover:text-white hover:bg-[#1e293b]'
+                      }`}
+                    >
+                      <Icon size={15} className={isActive ? 'text-emerald-400' : 'text-slate-500 group-hover:text-slate-300'} />
+                      <span>{item.label}</span>
+                      {isActive && <ChevronRight size={12} className="ml-auto text-emerald-500" />}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Product Badge */}
