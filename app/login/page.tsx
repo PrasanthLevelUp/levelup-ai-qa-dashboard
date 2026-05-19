@@ -57,8 +57,8 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="relative w-16 h-16 mx-auto mb-4">
-            <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" priority />
+          <div className="relative w-24 h-24 mx-auto mb-4">
+            <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" sizes="96px" priority />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">LevelUp AI</h1>
           <p className="text-sm text-slate-500 mt-1">QA Reliability Platform</p>

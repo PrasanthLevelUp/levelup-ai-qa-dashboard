@@ -123,8 +123,8 @@ export function Sidebar() {
         {/* Logo */}
         <div className="px-6 py-6 border-b border-[#1e293b]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 relative flex-shrink-0">
-              <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" priority />
+            <div className="w-10 h-10 relative flex-shrink-0">
+              <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" sizes="40px" priority />
             </div>
             <div>
               <h1 className="text-base font-bold text-white font-display tracking-tight">LevelUp AI</h1>

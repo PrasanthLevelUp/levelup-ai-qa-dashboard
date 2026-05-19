@@ -22,7 +22,6 @@ export const metadata = {
     ],
     apple: '/apple-touch-icon.png',
   },
-  manifest: '/manifest.json',
   openGraph: {
     title: 'LevelUp AI QA Dashboard',
     description: 'Self-healing test automation dashboard — visualize healing performance, cost savings, and AI efficiency.',
