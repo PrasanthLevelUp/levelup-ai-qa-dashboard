@@ -16,6 +16,8 @@ const PUBLIC_PATHS = [
   '/favicon.ico',
   '/images',
   '/icons',
+  '/demo-video',
+  '/pricing',
 ];
 
 // File extensions that should never be auth-gated
