@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu } from 'lucide-react';
 
 interface NavSection {
   title?: string;
@@ -17,6 +17,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
       { href: '/jobs', label: 'Healing Jobs', icon: Play },
       { href: '/scripts', label: 'Script Gen', icon: FileCode },
+      { href: '/repo-intelligence', label: 'Repo Intelligence', icon: Cpu },
       { href: '/tools', label: 'Tools', icon: Plug },
     ],
   },

@@ -16,6 +16,8 @@ import {
   GitBranch,
   ExternalLink,
   Github,
+  Cpu,
+  Brain,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
@@ -79,6 +81,14 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Repo intelligence state
+  const [selectedRepoId, setSelectedRepoId] = useState('');
+  const [repoContextLoaded, setRepoContextLoaded] = useState(false);
+  const [repoContextSummary, setRepoContextSummary] = useState<{
+    framework?: string; testPattern?: string; locatorStrategy?: string;
+    helpers?: number; pageObjects?: number; flows?: number;
+  } | null>(null);
+
   // GitHub push state
   const [showPushDialog, setShowPushDialog] = useState(false);
   const [repos, setRepos] = useState<Array<{ id: string; name: string; url: string; branch: string }>>([]);
@@ -115,6 +125,39 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     fetchRepos();
   }, [fetchRepos]);
 
+  // Load repo intelligence when repo selected
+  useEffect(() => {
+    if (!selectedRepoId) {
+      setRepoContextLoaded(false);
+      setRepoContextSummary(null);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(selectedRepoId)}`);
+        const data = await res.json();
+        if (data.success && data.profile) {
+          const p = data.profile;
+          setRepoContextSummary({
+            framework: p.framework,
+            testPattern: p.testPattern,
+            locatorStrategy: p.locatorStrategy,
+            helpers: p.helperFunctions?.length || 0,
+            pageObjects: p.pageObjects?.length || 0,
+            flows: p.businessFlows?.length || 0,
+          });
+          setRepoContextLoaded(true);
+        } else {
+          setRepoContextLoaded(false);
+          setRepoContextSummary(null);
+        }
+      } catch {
+        setRepoContextLoaded(false);
+        setRepoContextSummary(null);
+      }
+    })();
+  }, [selectedRepoId]);
+
   const toggleTestType = (type: string) => {
     setTestTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
@@ -137,6 +180,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           scenario: scenario.trim(),
           testTypes,
           includeNegativeTests: includeNegative,
+          ...(selectedRepoId ? { repoId: selectedRepoId } : {}),
         }),
       });
 
@@ -281,6 +325,58 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 />
                 <span className="text-xs text-slate-400">Include negative test cases</span>
               </label>
+            </div>
+          )}
+
+          {/* Repository Intelligence */}
+          {repos.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Brain size={14} className="text-violet-400" />
+                <span className="text-xs font-medium text-slate-300">Repository Intelligence</span>
+                {repoContextLoaded && (
+                  <span className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400">
+                    <CheckCircle2 size={10} /> Context loaded
+                  </span>
+                )}
+              </div>
+              <select
+                value={selectedRepoId}
+                onChange={(e) => setSelectedRepoId(e.target.value)}
+                disabled={generating}
+                className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white focus:outline-none focus:ring-1 focus:ring-violet-500 appearance-none"
+              >
+                <option value="">No repo context (generic generation)</option>
+                {repos.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name} — {r.branch || 'main'}</option>
+                ))}
+              </select>
+              {repoContextSummary && (
+                <div className="bg-[#0c1222] rounded-lg p-3 border border-[#1e293b] space-y-2">
+                  <div className="grid grid-cols-3 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-500">Framework</span>
+                      <p className="text-violet-300 font-medium">{repoContextSummary.framework || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Pattern</span>
+                      <p className="text-blue-300 font-medium">{repoContextSummary.testPattern || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Locators</span>
+                      <p className="text-emerald-300 font-medium">{repoContextSummary.locatorStrategy || '—'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1 border-t border-[#1e293b]">
+                    <span>{repoContextSummary.helpers || 0} helpers</span>
+                    <span>{repoContextSummary.pageObjects || 0} page objects</span>
+                    <span>{repoContextSummary.flows || 0} flows</span>
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    AI will use your repo&apos;s patterns, helpers &amp; page objects for contextual generation
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

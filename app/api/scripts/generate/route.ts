@@ -9,7 +9,7 @@ const API_KEY = process.env.BACKEND_API_KEY || '';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { projectContextId, url, scenario, testTypes, includeNegativeTests } = body;
+    const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId } = body;
 
     if (!url || !scenario) {
       return NextResponse.json(
@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
         includeNegativeTests: includeNegativeTests ?? true,
         followLinks: false,
         maxPages: 3,
+        ...(repoId ? { repoId } : {}),
       }),
     });
 
