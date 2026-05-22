@@ -6,7 +6,7 @@ import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 /** GET /api/test-coverage/knowledge — List application knowledge */
 export async function GET() {
   try {
-    const res = await fetch(backendUrl('/api/test-coverage/knowledge'), { headers: proxyHeaders() });
+    const res = await fetch(backendUrl('/api/test-coverage/knowledge'), { headers: proxyHeaders(), cache: 'no-store' });
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {
@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: proxyHeaders(),
       body: JSON.stringify(body),
+      cache: 'no-store',
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });

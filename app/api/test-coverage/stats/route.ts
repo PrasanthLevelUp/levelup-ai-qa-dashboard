@@ -6,7 +6,7 @@ import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 /** GET /api/test-coverage/stats — Coverage statistics */
 export async function GET() {
   try {
-    const res = await fetch(backendUrl('/api/test-coverage/stats'), { headers: proxyHeaders() });
+    const res = await fetch(backendUrl('/api/test-coverage/stats'), { headers: proxyHeaders(), cache: 'no-store' });
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {

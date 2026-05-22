@@ -9,6 +9,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const res = await fetch(backendUrl(`/api/test-coverage/knowledge/${params.id}`), {
       method: 'DELETE',
       headers: proxyHeaders(),
+      cache: 'no-store',
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });

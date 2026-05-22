@@ -115,7 +115,7 @@ export function TestCoverageClient() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'generate' && <GenerateTab />}
+      {activeTab === 'generate' && <GenerateTab onViewHistory={() => setActiveTab('history')} />}
       {activeTab === 'history' && <HistoryTab />}
       {activeTab === 'knowledge' && <KnowledgeTab />}
       {activeTab === 'stats' && <StatsTab />}
@@ -127,10 +127,11 @@ export function TestCoverageClient() {
 /*  Generate Tab                                                       */
 /* ------------------------------------------------------------------ */
 
-function GenerateTab() {
+function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -148,6 +149,7 @@ function GenerateTab() {
   const handleGenerate = async () => {
     if (!title.trim() || !description.trim()) return;
     setLoading(true);
+    setError(null);
     setStep(3);
     try {
       const res = await fetch('/api/test-coverage/generate', {
@@ -164,9 +166,18 @@ function GenerateTab() {
         }),
       });
       const data = await res.json();
-      setResult(data);
-    } catch (err) {
+      if (!res.ok) {
+        setError(data?.details || data?.error || `Server returned ${res.status}`);
+        setResult(null);
+      } else if (data?.error && !data?.requirementAnalysis) {
+        setError(data.error);
+        setResult(null);
+      } else {
+        setResult(data);
+      }
+    } catch (err: any) {
       console.error('Generation failed:', err);
+      setError(err?.message || 'Network error — could not reach backend');
     } finally {
       setLoading(false);
     }
@@ -175,6 +186,7 @@ function GenerateTab() {
   const handleReset = () => {
     setStep(1);
     setResult(null);
+    setError(null);
     setTitle('');
     setDescription('');
     setJiraId('');
@@ -368,16 +380,21 @@ function GenerateTab() {
               <h3 className="text-lg font-semibold text-white mb-2">Generating Test Coverage</h3>
               <p className="text-sm text-slate-400">AI is analyzing requirements, generating scenarios, and identifying coverage gaps...</p>
               <div className="flex items-center justify-center gap-4 mt-6 text-xs text-slate-500">
-                <span>Phase 1: Analyzing requirement...</span>
+                <span>This may take 15-30 seconds...</span>
               </div>
             </div>
           ) : result ? (
-            <ResultsDisplay result={result} onReset={handleReset} />
+            <ResultsDisplay result={result} onReset={handleReset} onViewHistory={onViewHistory} />
           ) : (
             <div className="bg-slate-800/50 rounded-xl border border-red-500/30 p-8 text-center">
               <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
               <h3 className="text-lg font-semibold text-white mb-2">Generation Failed</h3>
-              <p className="text-sm text-slate-400 mb-4">Could not generate test coverage. Please try again.</p>
+              <p className="text-sm text-slate-400 mb-2">Could not generate test coverage. Please try again.</p>
+              {error && (
+                <p className="text-xs text-red-400/80 bg-red-500/10 rounded-lg px-3 py-2 mb-4 max-w-lg mx-auto">
+                  {error}
+                </p>
+              )}
               <button onClick={handleReset} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">
                 Start Over
               </button>
@@ -393,7 +410,7 @@ function GenerateTab() {
 /*  Results Display                                                    */
 /* ------------------------------------------------------------------ */
 
-function ResultsDisplay({ result, onReset }: { result: any; onReset: () => void }) {
+function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onReset: () => void; onViewHistory: () => void }) {
   const [expandedScenarios, setExpandedScenarios] = useState<Set<number>>(new Set([0]));
   const [expandedCases, setExpandedCases] = useState<Set<number>>(new Set());
   const [showGaps, setShowGaps] = useState(true);
@@ -403,6 +420,8 @@ function ResultsDisplay({ result, onReset }: { result: any; onReset: () => void 
   const testCases = result.testCases || [];
   const gaps = result.coverageGaps || [];
   const stats = result.stats || {};
+  const isSaved = result.requirementId != null;
+  const warning = result._warning;
 
   const toggleScenario = (i: number) => {
     setExpandedScenarios(prev => {
@@ -423,24 +442,41 @@ function ResultsDisplay({ result, onReset }: { result: any; onReset: () => void 
   return (
     <div className="space-y-6">
       {/* Success Banner */}
-      <div className="bg-gradient-to-r from-emerald-600/20 to-violet-600/20 border border-emerald-500/30 rounded-xl p-5">
+      <div className={`bg-gradient-to-r ${isSaved ? 'from-emerald-600/20 to-violet-600/20 border-emerald-500/30' : 'from-amber-600/20 to-orange-600/20 border-amber-500/30'} border rounded-xl p-5`}>
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+            <CheckCircle2 className={`w-8 h-8 ${isSaved ? 'text-emerald-400' : 'text-amber-400'}`} />
             <div>
               <h3 className="text-lg font-semibold text-white">Coverage Generated Successfully</h3>
               <p className="text-sm text-slate-300 mt-0.5">
-                {stats.totalScenarios} scenarios • {stats.totalTestCases} test cases • {stats.automationReadyCount} automation-ready • {stats.gapsFound} gaps found
+                {stats.totalScenarios || scenarios.length} scenarios • {stats.totalTestCases || testCases.length} test cases • {stats.automationReadyCount ?? testCases.filter((tc: any) => tc.automationReady).length} automation-ready • {stats.gapsFound ?? gaps.length} gaps found
               </p>
+              {warning && (
+                <p className="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  {warning}
+                </p>
+              )}
             </div>
           </div>
-          <button
-            onClick={onReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/80 hover:bg-slate-600 text-sm text-slate-300 rounded-lg transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New Generation
-          </button>
+          <div className="flex gap-2">
+            {isSaved && (
+              <button
+                onClick={onViewHistory}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/80 hover:bg-violet-500 text-sm text-white rounded-lg transition-all"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                View in History
+              </button>
+            )}
+            <button
+              onClick={onReset}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/80 hover:bg-slate-600 text-sm text-slate-300 rounded-lg transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New
+            </button>
+          </div>
         </div>
       </div>
 
@@ -660,16 +696,27 @@ function ResultsDisplay({ result, onReset }: { result: any; onReset: () => void 
 function HistoryTab() {
   const [requirements, setRequirements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedReq, setSelectedReq] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const fetchRequirements = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch('/api/test-coverage/requirements');
-      const data = await res.json();
-      setRequirements(Array.isArray(data) ? data : []);
-    } catch { setRequirements([]); }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setFetchError(errData?.details || errData?.error || `Backend returned ${res.status}`);
+        setRequirements([]);
+      } else {
+        const data = await res.json();
+        setRequirements(Array.isArray(data) ? data : []);
+      }
+    } catch (err: any) {
+      setFetchError(err?.message || 'Could not reach backend');
+      setRequirements([]);
+    }
     setLoading(false);
   }, []);
 
@@ -713,13 +760,22 @@ function HistoryTab() {
         </button>
       </div>
 
-      {requirements.length === 0 ? (
+      {fetchError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-4">
+          <div className="flex items-center gap-2 text-sm text-red-400">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>Failed to load history: {fetchError}</span>
+          </div>
+        </div>
+      )}
+
+      {requirements.length === 0 && !fetchError ? (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
           <ClipboardList className="w-10 h-10 text-slate-600 mx-auto mb-3" />
           <p className="text-slate-400">No test coverage generated yet</p>
           <p className="text-xs text-slate-500 mt-1">Use the Generate tab to create your first coverage</p>
         </div>
-      ) : (
+      ) : requirements.length === 0 ? null : (
         <div className="space-y-2">
           {requirements.map((req: any) => (
             <div key={req.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 hover:border-slate-600/50 transition-all">
