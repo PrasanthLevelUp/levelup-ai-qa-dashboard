@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   FileText, Sparkles, Database, BarChart3, ChevronDown, ChevronRight,
   CheckCircle2, AlertTriangle, Shield, Zap, Clock, Tag, Trash2,
-  Plus, Loader2, RefreshCw, ClipboardList, Lightbulb, Bot, Target,
-  ArrowRight, CheckSquare, XCircle, Eye, ChevronUp,
+  Plus, Loader2, RefreshCw, ClipboardList, Lightbulb, Target,
+  ArrowRight, CheckSquare, XCircle, Eye, ChevronUp, TestTubeDiagonal,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -75,7 +75,7 @@ const RISK_COLORS: Record<string, string> = {
 export function TestCoverageClient() {
   const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'knowledge' | 'stats'>('generate');
   const tabs = [
-    { key: 'generate' as const, label: 'Generate Coverage', icon: Sparkles },
+    { key: 'generate' as const, label: 'Generate Test Cases', icon: Sparkles },
     { key: 'history' as const, label: 'History', icon: ClipboardList },
     { key: 'knowledge' as const, label: 'App Knowledge', icon: Database },
     { key: 'stats' as const, label: 'Statistics', icon: BarChart3 },
@@ -87,11 +87,11 @@ export function TestCoverageClient() {
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-            <Bot className="w-5 h-5 text-white" />
+            <TestTubeDiagonal className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">AI Test Coverage Engine</h1>
-            <p className="text-sm text-slate-400">Transform requirements into senior-QA-level test coverage</p>
+            <h1 className="text-2xl font-bold text-white">Test Case Lab</h1>
+            <p className="text-sm text-slate-400">Generate comprehensive manual test cases with intelligent coverage analysis</p>
           </div>
         </div>
       </div>
@@ -225,7 +225,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
               <FileText className="w-5 h-5 text-violet-400" />
               Describe Your Requirement
             </h3>
-            <p className="text-sm text-slate-400 mb-6">Enter a Jira story, feature description, or plain English requirement. The more context you provide, the better the generated coverage.</p>
+            <p className="text-sm text-slate-400 mb-6">Enter a Jira story, feature description, or plain English requirement. AI will generate comprehensive manual test cases with step-by-step instructions, expected results, and coverage analysis.</p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
@@ -318,7 +318,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
               Select Coverage Types
             </h3>
             <p className="text-sm text-slate-400 mb-6">
-              Choose which types of test coverage to generate. This reduces noise and improves relevance.
+              Choose which types of manual test cases to generate. This reduces noise and ensures relevant coverage.
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -363,7 +363,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
                   className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium transition-all shadow-lg shadow-violet-600/20"
                 >
                   <Sparkles className="w-4 h-4" />
-                  Generate Test Coverage
+                  Generate Test Cases
                 </button>
               </div>
             </div>
@@ -377,8 +377,8 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           {loading ? (
             <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
               <Loader2 className="w-12 h-12 text-violet-400 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">Generating Test Coverage</h3>
-              <p className="text-sm text-slate-400">AI is analyzing requirements, generating scenarios, and identifying coverage gaps...</p>
+              <h3 className="text-lg font-semibold text-white mb-2">Generating Test Cases</h3>
+              <p className="text-sm text-slate-400">AI is analyzing your requirement, creating manual test scenarios, and identifying coverage gaps...</p>
               <div className="flex items-center justify-center gap-4 mt-6 text-xs text-slate-500">
                 <span>This may take 15-30 seconds...</span>
               </div>
@@ -389,7 +389,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
             <div className="bg-slate-800/50 rounded-xl border border-red-500/30 p-8 text-center">
               <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
               <h3 className="text-lg font-semibold text-white mb-2">Generation Failed</h3>
-              <p className="text-sm text-slate-400 mb-2">Could not generate test coverage. Please try again.</p>
+              <p className="text-sm text-slate-400 mb-2">Could not generate test cases. Please try again.</p>
               {error && (
                 <p className="text-xs text-red-400/80 bg-red-500/10 rounded-lg px-3 py-2 mb-4 max-w-lg mx-auto">
                   {error}
@@ -447,7 +447,7 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           <div className="flex items-center gap-3">
             <CheckCircle2 className={`w-8 h-8 ${isSaved ? 'text-emerald-400' : 'text-amber-400'}`} />
             <div>
-              <h3 className="text-lg font-semibold text-white">Coverage Generated Successfully</h3>
+              <h3 className="text-lg font-semibold text-white">Test Cases Generated Successfully</h3>
               <p className="text-sm text-slate-300 mt-0.5">
                 {stats.totalScenarios || scenarios.length} scenarios • {stats.totalTestCases || testCases.length} test cases • {stats.automationReadyCount ?? testCases.filter((tc: any) => tc.automationReady).length} automation-ready • {stats.gapsFound ?? gaps.length} gaps found
               </p>
@@ -754,7 +754,7 @@ function HistoryTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-lg font-semibold text-white">Generated Coverage History</h3>
+        <h3 className="text-lg font-semibold text-white">Generated Test Cases</h3>
         <button onClick={fetchRequirements} className="p-2 hover:bg-slate-700/50 rounded-lg transition-all">
           <RefreshCw className="w-4 h-4 text-slate-400" />
         </button>
@@ -772,8 +772,8 @@ function HistoryTab() {
       {requirements.length === 0 && !fetchError ? (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
           <ClipboardList className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">No test coverage generated yet</p>
-          <p className="text-xs text-slate-500 mt-1">Use the Generate tab to create your first coverage</p>
+          <p className="text-slate-400">No test cases generated yet</p>
+          <p className="text-xs text-slate-500 mt-1">Use the Generate Test Cases tab to create your first set of manual test cases</p>
         </div>
       ) : requirements.length === 0 ? null : (
         <div className="space-y-2">
@@ -989,7 +989,7 @@ function KnowledgeTab() {
         <div>
           <h3 className="text-lg font-semibold text-white">Application Knowledge Base</h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Store module details, workflows, and historical bugs. The AI uses this context to generate smarter test cases.
+            Store module details, workflows, and historical bugs. The AI uses this context to generate smarter, more relevant manual test cases.
           </p>
         </div>
         <button
@@ -1217,7 +1217,7 @@ function StatsTab() {
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-8 text-center">
           <BarChart3 className="w-10 h-10 text-slate-600 mx-auto mb-3" />
           <p className="text-slate-400">No statistics available yet</p>
-          <p className="text-xs text-slate-500 mt-1">Generate some test coverage to see statistics here</p>
+          <p className="text-xs text-slate-500 mt-1">Generate test cases to see statistics here</p>
         </div>
       )}
     </div>
