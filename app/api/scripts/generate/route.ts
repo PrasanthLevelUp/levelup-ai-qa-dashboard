@@ -1,10 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8080';
-const API_KEY = process.env.BACKEND_API_KEY || '';
+import { backendGet, backendPost, BACKEND_URL, API_KEY } from '@/lib/backend-api';
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,7 +11,7 @@ export async function POST(req: NextRequest) {
     if (!url || !scenario) {
       return NextResponse.json(
         { success: false, error: 'url and scenario are required' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -23,29 +20,32 @@ export async function POST(req: NextRequest) {
     let credentials: { username?: string; password?: string } | undefined;
 
     if (projectContextId) {
-      const ctx = await prisma.projectContext.findUnique({
-        where: { id: Number(projectContextId) },
-      });
-      if (ctx) {
-        const contextParts: string[] = [];
-        if (ctx.appDescription) contextParts.push(`Application: ${ctx.appDescription}`);
-        if (ctx.framework) contextParts.push(`Framework: ${ctx.framework}`);
-        if (ctx.authMethod) contextParts.push(`Auth: ${ctx.authMethod}`);
-        if (ctx.selectorStrategy) contextParts.push(`Selector convention: ${ctx.selectorStrategy}`);
-        if (ctx.navigationFlow) contextParts.push(`Navigation: ${ctx.navigationFlow}`);
-        if (ctx.customRules) contextParts.push(`Rules: ${ctx.customRules}`);
+      try {
+        const ctxRes = await backendGet(`/api/dashboard/project-context/${projectContextId}`);
+        const ctx = ctxRes?.data;
+        if (ctx) {
+          const contextParts: string[] = [];
+          if (ctx.app_description) contextParts.push(`Application: ${ctx.app_description}`);
+          if (ctx.framework) contextParts.push(`Framework: ${ctx.framework}`);
+          if (ctx.auth_method) contextParts.push(`Auth: ${ctx.auth_method}`);
+          if (ctx.selector_strategy) contextParts.push(`Selector convention: ${ctx.selector_strategy}`);
+          if (ctx.navigation_flow) contextParts.push(`Navigation: ${ctx.navigation_flow}`);
+          if (ctx.custom_rules) contextParts.push(`Rules: ${ctx.custom_rules}`);
 
-        if (contextParts.length > 0) {
-          enrichedInstructions = `PROJECT CONTEXT:\n${contextParts.join('\n')}\n\nTEST SCENARIO:\n${scenario}`;
-        }
+          if (contextParts.length > 0) {
+            enrichedInstructions = `PROJECT CONTEXT:\n${contextParts.join('\n')}\n\nTEST SCENARIO:\n${scenario}`;
+          }
 
-        if (ctx.credentials) {
-          try {
-            credentials = JSON.parse(ctx.credentials);
-          } catch {
-            // ignore parse errors
+          if (ctx.credentials) {
+            try {
+              credentials = typeof ctx.credentials === 'string' ? JSON.parse(ctx.credentials) : ctx.credentials;
+            } catch {
+              // ignore parse errors
+            }
           }
         }
+      } catch (ctxErr) {
+        console.error('[ScriptGen] Failed to load project context (non-blocking):', ctxErr);
       }
     }
 
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const response = await fetch(`${BACKEND_URL}/api/scripts/generate`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -75,33 +75,8 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       return NextResponse.json(
         { success: false, error: data.error || 'Backend generation failed', details: data },
-        { status: response.status }
+        { status: response.status },
       );
-    }
-
-    // Also save to dashboard DB for local history
-    if (data.success && data.data) {
-      try {
-        await prisma.generatedScript.create({
-          data: {
-            projectContextId: projectContextId ? Number(projectContextId) : null,
-            url,
-            pageType: data.data.testPlan?.pageType || 'unknown',
-            instructions: scenario,
-            scriptContent: data.data.files?.map((f: any) => `// === ${f.path} ===`).join('\n') || null,
-            testPlan: data.data.testPlan || null,
-            validationStatus: data.data.validationReport?.overallScore >= 80 ? 'passed' : 'needs_review',
-            reliabilityScore: data.data.validationReport?.overallScore || 0,
-            tokensUsed: data.data.stats?.tokensUsed || 0,
-            model: data.data.stats?.model || null,
-            generationTimeMs: data.data.generationTimeMs || 0,
-            filesGenerated: data.data.files || null,
-            negativeTestsIncluded: includeNegativeTests ?? true,
-          },
-        });
-      } catch (dbErr) {
-        console.error('[ScriptGen] Failed to save to dashboard DB (non-blocking):', dbErr);
-      }
     }
 
     return NextResponse.json(data);
@@ -109,7 +84,7 @@ export async function POST(req: NextRequest) {
     console.error('[ScriptGen] Generate error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to generate scripts', details: String(error) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
