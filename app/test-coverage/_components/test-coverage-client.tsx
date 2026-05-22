@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  FileText, Sparkles, Database, BarChart3, ChevronDown, ChevronRight,
+  FileText, Sparkles, BarChart3, ChevronDown, ChevronRight,
   CheckCircle2, AlertTriangle, Shield, Zap, Clock, Tag, Trash2,
   Plus, Loader2, RefreshCw, ClipboardList, Lightbulb, Target,
   ArrowRight, CheckSquare, XCircle, Eye, ChevronUp, TestTubeDiagonal,
@@ -73,11 +73,10 @@ const RISK_COLORS: Record<string, string> = {
 /* ------------------------------------------------------------------ */
 
 export function TestCoverageClient() {
-  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'knowledge' | 'stats'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'stats'>('generate');
   const tabs = [
     { key: 'generate' as const, label: 'Generate Test Cases', icon: Sparkles },
     { key: 'history' as const, label: 'History', icon: ClipboardList },
-    { key: 'knowledge' as const, label: 'App Knowledge', icon: Database },
     { key: 'stats' as const, label: 'Statistics', icon: BarChart3 },
   ];
 
@@ -117,7 +116,6 @@ export function TestCoverageClient() {
       {/* Tab Content */}
       {activeTab === 'generate' && <GenerateTab onViewHistory={() => setActiveTab('history')} />}
       {activeTab === 'history' && <HistoryTab />}
-      {activeTab === 'knowledge' && <KnowledgeTab />}
       {activeTab === 'stats' && <StatsTab />}
     </div>
   );
@@ -932,188 +930,6 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           })}
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Knowledge Tab                                                      */
-/* ------------------------------------------------------------------ */
-
-function KnowledgeTab() {
-  const [knowledge, setKnowledge] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    module: '', workflow: '', businessRules: '', dependencies: '', apis: '', historicalBugs: '',
-  });
-
-  const fetchKnowledge = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/test-coverage/knowledge');
-      const data = await res.json();
-      setKnowledge(Array.isArray(data) ? data : []);
-    } catch { setKnowledge([]); }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchKnowledge(); }, [fetchKnowledge]);
-
-  const handleSave = async () => {
-    if (!form.module.trim()) return;
-    setSaving(true);
-    try {
-      await fetch('/api/test-coverage/knowledge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      setShowForm(false);
-      setForm({ module: '', workflow: '', businessRules: '', dependencies: '', apis: '', historicalBugs: '' });
-      fetchKnowledge();
-    } catch { /* ignore */ }
-    setSaving(false);
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Delete this knowledge entry?')) return;
-    await fetch(`/api/test-coverage/knowledge/${id}`, { method: 'DELETE' });
-    fetchKnowledge();
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h3 className="text-lg font-semibold text-white">Application Knowledge Base</h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Store module details, workflows, and historical bugs. The AI uses this context to generate smarter, more relevant manual test cases.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-lg transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Add Module
-        </button>
-      </div>
-
-      {showForm && (
-        <div className="bg-slate-800/50 rounded-xl border border-violet-500/30 p-5">
-          <h4 className="text-sm font-semibold text-white mb-4">Add / Update Module Knowledge</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Module Name *</label>
-              <input
-                value={form.module}
-                onChange={e => setForm(f => ({ ...f, module: e.target.value }))}
-                placeholder="e.g. Authentication"
-                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Dependencies</label>
-              <input
-                value={form.dependencies}
-                onChange={e => setForm(f => ({ ...f, dependencies: e.target.value }))}
-                placeholder="e.g. User Service, Session Store, Redis"
-                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">Workflow</label>
-              <textarea
-                value={form.workflow}
-                onChange={e => setForm(f => ({ ...f, workflow: e.target.value }))}
-                rows={2}
-                placeholder="e.g. User enters email → OTP sent → OTP verified → session created"
-                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Business Rules</label>
-              <textarea
-                value={form.businessRules}
-                onChange={e => setForm(f => ({ ...f, businessRules: e.target.value }))}
-                rows={2}
-                placeholder="e.g. Max 5 login attempts, OTP expires in 5 min"
-                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">APIs</label>
-              <textarea
-                value={form.apis}
-                onChange={e => setForm(f => ({ ...f, apis: e.target.value }))}
-                rows={2}
-                placeholder="e.g. POST /auth/login, POST /auth/otp/verify"
-                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-slate-400 mb-1">Historical Bugs</label>
-              <textarea
-                value={form.historicalBugs}
-                onChange={e => setForm(f => ({ ...f, historicalBugs: e.target.value }))}
-                rows={2}
-                placeholder="e.g. Session not invalidated after password reset, Race condition on concurrent logins"
-                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setShowForm(false)} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm rounded-lg">
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!form.module.trim() || saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:bg-slate-700 text-white text-sm rounded-lg transition-all"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              Save
-            </button>
-          </div>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-violet-400 animate-spin" /></div>
-      ) : knowledge.length === 0 ? (
-        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
-          <Database className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">No application knowledge stored yet</p>
-          <p className="text-xs text-slate-500 mt-1">Add modules, workflows, and historical bugs to make AI-generated tests smarter</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {knowledge.map((k: any) => (
-            <div key={k.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
-                    <Database className="w-4 h-4 text-violet-400" />
-                  </div>
-                  <h4 className="text-sm font-semibold text-white">{k.module}</h4>
-                </div>
-                <button onClick={() => handleDelete(k.id)} className="p-1.5 hover:bg-red-500/20 rounded transition-all">
-                  <Trash2 className="w-3.5 h-3.5 text-slate-500 hover:text-red-400" />
-                </button>
-              </div>
-              <div className="space-y-2 text-xs">
-                {k.workflow && <div><span className="text-slate-500">Workflow:</span> <span className="text-slate-300">{k.workflow}</span></div>}
-                {k.business_rules && <div><span className="text-slate-500">Rules:</span> <span className="text-slate-300">{k.business_rules}</span></div>}
-                {k.apis && <div><span className="text-slate-500">APIs:</span> <span className="text-slate-300 font-mono">{k.apis}</span></div>}
-                {k.dependencies && <div><span className="text-slate-500">Deps:</span> <span className="text-slate-300">{k.dependencies}</span></div>}
-                {k.historical_bugs && <div><span className="text-amber-500">Bugs:</span> <span className="text-amber-300">{k.historical_bugs}</span></div>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
