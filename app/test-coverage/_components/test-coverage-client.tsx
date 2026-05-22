@@ -6,6 +6,7 @@ import {
   CheckCircle2, AlertTriangle, Shield, Zap, Clock, Tag, Trash2,
   Plus, Loader2, RefreshCw, ClipboardList, Lightbulb, Target,
   ArrowRight, CheckSquare, XCircle, Eye, ChevronUp, TestTubeDiagonal,
+  BookOpen, Search, X, Brain,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -67,6 +68,41 @@ const RISK_COLORS: Record<string, string> = {
   medium: 'text-amber-400',
   low: 'text-green-400',
 };
+
+const KNOWLEDGE_CATEGORY_COLORS: Record<string, string> = {
+  business_rule: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  workflow: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  architecture: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+  dependency: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  integration: 'bg-green-500/20 text-green-400 border-green-500/30',
+  automation: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+  manual_test: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
+  bug_pattern: 'bg-red-500/20 text-red-400 border-red-500/30',
+  domain: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+};
+
+const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
+  business_rule: 'Business Rule',
+  workflow: 'Workflow',
+  architecture: 'Architecture',
+  dependency: 'Dependency',
+  integration: 'Integration',
+  automation: 'Automation',
+  manual_test: 'Manual Test',
+  bug_pattern: 'Bug Pattern',
+  domain: 'Domain',
+};
+
+interface KnowledgeItemSuggestion {
+  id: number;
+  category: string;
+  title: string;
+  description: string;
+  tags: string[];
+  related_modules: string[];
+  priority: string;
+  relevance_score?: number;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
@@ -142,8 +178,56 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [module, setModule] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<CoverageType[]>(['positive', 'negative', 'edge_cases']);
 
+  // Knowledge selection state
+  const [selectedKnowledge, setSelectedKnowledge] = useState<KnowledgeItemSuggestion[]>([]);
+  const [knowledgeSuggestions, setKnowledgeSuggestions] = useState<KnowledgeItemSuggestion[]>([]);
+  const [knowledgeSearchTerm, setKnowledgeSearchTerm] = useState('');
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [showKnowledgePanel, setShowKnowledgePanel] = useState(false);
+
   const toggleType = (t: CoverageType) => {
     setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  };
+
+  // Auto-suggest knowledge when module changes
+  useEffect(() => {
+    if (!module.trim() && !knowledgeSearchTerm.trim()) {
+      // Fetch default suggestions on open
+      if (showKnowledgePanel) {
+        fetchKnowledgeSuggestions('', '');
+      }
+      return;
+    }
+    const timeout = setTimeout(() => {
+      fetchKnowledgeSuggestions(module.trim(), knowledgeSearchTerm.trim());
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [module, knowledgeSearchTerm, showKnowledgePanel]);
+
+  const fetchKnowledgeSuggestions = async (mod: string, search: string) => {
+    setKnowledgeLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (mod) params.set('module', mod);
+      if (search) params.set('searchTerm', search);
+      params.set('limit', '10');
+      const res = await fetch(`/api/knowledge/suggest?${params.toString()}`, { cache: 'no-store' });
+      if (res.ok) {
+        const items = await res.json();
+        setKnowledgeSuggestions(Array.isArray(items) ? items : []);
+      }
+    } catch { /* ignore */ }
+    finally { setKnowledgeLoading(false); }
+  };
+
+  const addKnowledge = (item: KnowledgeItemSuggestion) => {
+    if (!selectedKnowledge.find(k => k.id === item.id)) {
+      setSelectedKnowledge(prev => [...prev, item]);
+    }
+  };
+
+  const removeKnowledge = (id: number) => {
+    setSelectedKnowledge(prev => prev.filter(k => k.id !== id));
   };
 
   const handleGenerate = async () => {
@@ -163,6 +247,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           acceptanceCriteria: acceptanceCriteria.trim() || undefined,
           module: module.trim() || undefined,
           coverageTypes: selectedTypes,
+          knowledgeItemIds: selectedKnowledge.length > 0 ? selectedKnowledge.map(k => k.id) : undefined,
         }),
       });
       const data = await res.json();
@@ -194,6 +279,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setAcceptanceCriteria('');
     setModule('');
     setSelectedTypes(['positive', 'negative', 'edge_cases']);
+    setSelectedKnowledge([]);
+    setKnowledgeSuggestions([]);
+    setKnowledgeSearchTerm('');
+    setShowKnowledgePanel(false);
   };
 
   return (
@@ -295,6 +384,153 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
               </div>
             </div>
 
+            {/* Knowledge Integration Section */}
+            <div className="mt-6 pt-5 border-t border-slate-700/50">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Brain className="w-4 h-4 text-violet-400" />
+                  <span className="text-sm font-medium text-slate-300">
+                    Relevant Knowledge
+                    {selectedKnowledge.length > 0 && (
+                      <span className="ml-1.5 px-1.5 py-0.5 bg-violet-500/20 text-violet-400 text-[10px] rounded-full font-bold">
+                        {selectedKnowledge.length}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-slate-500">— Add context for smarter test cases</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowKnowledgePanel(!showKnowledgePanel)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    showKnowledgePanel
+                      ? 'bg-violet-600/20 text-violet-400 border border-violet-500/30'
+                      : 'bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-600/50'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  {showKnowledgePanel ? 'Hide' : 'Browse Knowledge'}
+                </button>
+              </div>
+
+              {/* Selected knowledge chips */}
+              {selectedKnowledge.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {selectedKnowledge.map(k => (
+                    <span
+                      key={k.id}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border ${KNOWLEDGE_CATEGORY_COLORS[k.category] || 'bg-slate-700/50 text-slate-400 border-slate-600/30'}`}
+                    >
+                      <BookOpen className="w-3 h-3" />
+                      {k.title}
+                      <button
+                        onClick={() => removeKnowledge(k.id)}
+                        className="ml-0.5 hover:opacity-70 transition-opacity"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {selectedKnowledge.length > 0 && !showKnowledgePanel && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-violet-500/5 border border-violet-500/10 rounded-lg">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                  <span className="text-xs text-violet-300">
+                    <span className="font-medium">Smart generation enabled</span> — AI will use {selectedKnowledge.length} knowledge item{selectedKnowledge.length > 1 ? 's' : ''} for contextual test cases
+                  </span>
+                </div>
+              )}
+
+              {/* Knowledge browser panel */}
+              {showKnowledgePanel && (
+                <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 space-y-3">
+                  {/* Search within knowledge */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                    <input
+                      type="text"
+                      value={knowledgeSearchTerm}
+                      onChange={e => setKnowledgeSearchTerm(e.target.value)}
+                      placeholder="Search knowledge items..."
+                      className="w-full pl-9 pr-4 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                    />
+                    {knowledgeSearchTerm && (
+                      <button onClick={() => setKnowledgeSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+
+                  {module.trim() && (
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                      <Lightbulb className="w-3 h-3 text-amber-400" />
+                      Showing suggestions relevant to module: <span className="text-violet-400 font-medium">{module}</span>
+                    </div>
+                  )}
+
+                  {/* Suggestions list */}
+                  <div className="space-y-1.5 max-h-[240px] overflow-y-auto">
+                    {knowledgeLoading ? (
+                      <div className="flex items-center gap-2 py-4 justify-center text-slate-500 text-xs">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading suggestions…
+                      </div>
+                    ) : knowledgeSuggestions.length === 0 ? (
+                      <div className="text-center py-4 text-xs text-slate-600">
+                        No knowledge items found. <a href="/knowledge" target="_blank" className="text-violet-400 hover:underline">Add knowledge →</a>
+                      </div>
+                    ) : (
+                      knowledgeSuggestions.map(item => {
+                        const isSelected = selectedKnowledge.some(k => k.id === item.id);
+                        return (
+                          <div
+                            key={item.id}
+                            className={`group flex items-start gap-2.5 p-2.5 rounded-lg transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-violet-600/10 border border-violet-500/20'
+                                : 'bg-slate-800/30 border border-transparent hover:border-slate-700/50 hover:bg-slate-800/50'
+                            }`}
+                            onClick={() => isSelected ? removeKnowledge(item.id) : addKnowledge(item)}
+                          >
+                            <div className="mt-0.5">
+                              {isSelected ? (
+                                <CheckSquare className="w-3.5 h-3.5 text-violet-400" />
+                              ) : (
+                                <div className="w-3.5 h-3.5 border border-slate-600 rounded" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="text-xs font-medium text-white truncate">{item.title}</span>
+                                <span className={`shrink-0 px-1.5 py-0 rounded text-[9px] font-medium border ${KNOWLEDGE_CATEGORY_COLORS[item.category] || 'bg-slate-700/50 text-slate-400 border-slate-600/30'}`}>
+                                  {KNOWLEDGE_CATEGORY_LABELS[item.category] || item.category}
+                                </span>
+                                {item.priority === 'critical' || item.priority === 'high' ? (
+                                  <span className="shrink-0 text-[9px] text-amber-400">★ {item.priority}</span>
+                                ) : null}
+                              </div>
+                              {item.description && (
+                                <p className="text-[10px] text-slate-500 line-clamp-1">{item.description}</p>
+                              )}
+                              {item.tags?.length > 0 && (
+                                <div className="flex gap-1 mt-0.5">
+                                  {item.tags.slice(0, 3).map(t => (
+                                    <span key={t} className="text-[9px] px-1 py-0 bg-slate-700/40 text-slate-500 rounded">{t}</span>
+                                  ))}
+                                  {item.tags.length > 3 && <span className="text-[9px] text-slate-600">+{item.tags.length - 3}</span>}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end mt-6">
               <button
                 onClick={() => setStep(2)}
@@ -347,8 +583,16 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
             </div>
 
             <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700/50">
-              <div className="text-sm text-slate-400">
-                {selectedTypes.length} type{selectedTypes.length !== 1 ? 's' : ''} selected
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-slate-400">
+                  {selectedTypes.length} type{selectedTypes.length !== 1 ? 's' : ''} selected
+                </span>
+                {selectedKnowledge.length > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded text-[10px] text-violet-300">
+                    <Brain className="w-3 h-3" />
+                    {selectedKnowledge.length} knowledge item{selectedKnowledge.length > 1 ? 's' : ''} attached
+                  </span>
+                )}
               </div>
               <div className="flex gap-3">
                 <button
@@ -379,6 +623,14 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
               <Loader2 className="w-12 h-12 text-violet-400 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-white mb-2">Generating Test Cases</h3>
               <p className="text-sm text-slate-400">AI is analyzing your requirement, creating manual test scenarios, and identifying coverage gaps...</p>
+              {selectedKnowledge.length > 0 && (
+                <div className="flex items-center justify-center gap-2 mt-3 px-4 py-2 bg-violet-500/10 border border-violet-500/20 rounded-lg mx-auto w-fit">
+                  <Brain className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-violet-300">
+                    Using {selectedKnowledge.length} knowledge item{selectedKnowledge.length > 1 ? 's' : ''} for contextual generation
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-center gap-4 mt-6 text-xs text-slate-500">
                 <span>This may take 15-30 seconds...</span>
               </div>
@@ -422,6 +674,7 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const stats = result.stats || {};
   const isSaved = result.requirementId != null;
   const warning = result._warning;
+  const knowledgeUsed: Array<{id: number; title: string; category: string}> = result.knowledgeUsed || [];
 
   const toggleScenario = (i: number) => {
     setExpandedScenarios(prev => {
@@ -456,6 +709,23 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                   <AlertTriangle className="w-3 h-3" />
                   {warning}
                 </p>
+              )}
+              {knowledgeUsed.length > 0 && (
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/15 border border-violet-500/20 rounded text-[10px] text-violet-300 font-medium">
+                    <Brain className="w-3 h-3" />
+                    Smart Generation
+                  </span>
+                  <span className="text-[10px] text-slate-500">Used knowledge:</span>
+                  {knowledgeUsed.map(k => (
+                    <span
+                      key={k.id}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${KNOWLEDGE_CATEGORY_COLORS[k.category] || 'bg-slate-700/50 text-slate-400 border-slate-600/30'}`}
+                    >
+                      {k.title}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -872,6 +1142,19 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
             </span>
           </div>
           <p className="text-sm text-slate-300">{analysis.summary}</p>
+          {analysis.knowledgeItemTitles?.length > 0 && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/30 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/15 border border-violet-500/20 rounded text-[10px] text-violet-300 font-medium">
+                <Brain className="w-3 h-3" />
+                Smart Generation
+              </span>
+              {analysis.knowledgeItemTitles.map((title: string, i: number) => (
+                <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                  {title}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
