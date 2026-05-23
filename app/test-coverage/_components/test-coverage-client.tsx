@@ -409,9 +409,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 /* ------------------------------------------------------------------ */
 
 function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onReset: () => void; onViewHistory: () => void }) {
-  const [expandedScenarios, setExpandedScenarios] = useState<Set<number>>(new Set([0]));
-  const [expandedCases, setExpandedCases] = useState<Set<number>>(new Set());
-  const [showGaps, setShowGaps] = useState(true);
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
+  const [expandedCases, setExpandedCases] = useState<Set<string>>(new Set());
+  const [showGaps, setShowGaps] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   const analysis = result.requirementAnalysis || {};
   const scenarios = result.scenarios || [];
@@ -421,36 +422,101 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const isSaved = result.requirementId != null;
   const warning = result._warning;
 
-  const toggleScenario = (i: number) => {
-    setExpandedScenarios(prev => {
+  // Build coverage type lookup
+  const labelMap: Record<string, { label: string; icon: string }> = {};
+  COVERAGE_OPTIONS.forEach(o => { labelMap[o.value] = { label: o.label, icon: o.icon }; });
+
+  // Group scenarios by coverage type, then map test cases to scenarios
+  const coverageGroups: Array<{
+    coverageType: string;
+    label: string;
+    icon: string;
+    scenarios: Array<{ scenario: any; scenarioIndex: number; cases: any[] }>;
+    totalCases: number;
+  }> = [];
+
+  const typeOrder: string[] = [];
+  const typeMap: Record<string, { scenarios: Array<{ scenario: any; scenarioIndex: number; cases: any[] }> }> = {};
+
+  scenarios.forEach((sc: any, si: number) => {
+    const ct = sc.coverageType || 'other';
+    if (!typeMap[ct]) {
+      typeMap[ct] = { scenarios: [] };
+      typeOrder.push(ct);
+    }
+    // Find test cases for this scenario using scenarioIndex or tag matching
+    const relatedCases = testCases.filter((tc: any, tci: number) => {
+      if (tc.scenarioIndex != null) return tc.scenarioIndex === si;
+      // Fallback: tag-based matching
+      return tc.tags?.some((t: string) =>
+        sc.coverageType?.includes(t) || sc.scenario?.toLowerCase().includes(t.toLowerCase())
+      );
+    });
+    typeMap[ct].scenarios.push({ scenario: sc, scenarioIndex: si, cases: relatedCases });
+  });
+
+  // Find orphan test cases (not matched to any scenario)
+  const matchedCaseIndices = new Set<number>();
+  Object.values(typeMap).forEach(group => {
+    group.scenarios.forEach(s => {
+      s.cases.forEach((tc: any) => {
+        const idx = testCases.indexOf(tc);
+        if (idx >= 0) matchedCaseIndices.add(idx);
+      });
+    });
+  });
+
+  typeOrder.forEach(ct => {
+    const info = labelMap[ct] || { label: ct.replace(/_/g, ' '), icon: '📋' };
+    const group = typeMap[ct];
+    const totalCases = group.scenarios.reduce((sum, s) => sum + s.cases.length, 0);
+    coverageGroups.push({
+      coverageType: ct,
+      label: info.label,
+      icon: info.icon,
+      scenarios: group.scenarios,
+      totalCases,
+    });
+  });
+
+  // Expand all coverage types by default
+  useEffect(() => {
+    setExpandedTypes(new Set(typeOrder));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleType = (ct: string) => {
+    setExpandedTypes(prev => {
       const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
+      next.has(ct) ? next.delete(ct) : next.add(ct);
       return next;
     });
   };
 
-  const toggleCase = (i: number) => {
+  const toggleCase = (key: string) => {
     setExpandedCases(prev => {
       const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
+      next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
   };
 
+  const totalAutoReady = stats.automationReadyCount ?? testCases.filter((tc: any) => tc.automationReady).length;
+  const autoPercent = testCases.length > 0 ? Math.round((totalAutoReady / testCases.length) * 100) : 0;
+
   return (
-    <div className="space-y-6">
-      {/* Success Banner */}
-      <div className={`bg-gradient-to-r ${isSaved ? 'from-emerald-600/20 to-violet-600/20 border-emerald-500/30' : 'from-amber-600/20 to-orange-600/20 border-amber-500/30'} border rounded-xl p-5`}>
-        <div className="flex items-start justify-between">
+    <div className="space-y-5">
+      {/* Coverage Summary Card */}
+      <div className={`bg-gradient-to-r ${isSaved ? 'from-emerald-600/15 to-violet-600/15 border-emerald-500/30' : 'from-amber-600/15 to-orange-600/15 border-amber-500/30'} border rounded-xl p-5`}>
+        <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            <CheckCircle2 className={`w-8 h-8 ${isSaved ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSaved ? 'bg-emerald-500/20' : 'bg-amber-500/20'}`}>
+              <CheckCircle2 className={`w-5 h-5 ${isSaved ? 'text-emerald-400' : 'text-amber-400'}`} />
+            </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Test Cases Generated Successfully</h3>
-              <p className="text-sm text-slate-300 mt-0.5">
-                {stats.totalScenarios || scenarios.length} scenarios • {stats.totalTestCases || testCases.length} test cases • {stats.automationReadyCount ?? testCases.filter((tc: any) => tc.automationReady).length} automation-ready • {stats.gapsFound ?? gaps.length} gaps found
-              </p>
+              <h3 className="text-lg font-semibold text-white">Generation Complete</h3>
               {warning && (
-                <p className="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
                   {warning}
                 </p>
@@ -459,223 +525,197 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           </div>
           <div className="flex gap-2">
             {isSaved && (
-              <button
-                onClick={onViewHistory}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/80 hover:bg-violet-500 text-sm text-white rounded-lg transition-all"
-              >
-                <ClipboardList className="w-3.5 h-3.5" />
-                View in History
+              <button onClick={onViewHistory} className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600/80 hover:bg-violet-500 text-sm text-white rounded-lg transition-all">
+                <ClipboardList className="w-3.5 h-3.5" /> View in History
               </button>
             )}
-            <button
-              onClick={onReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/80 hover:bg-slate-600 text-sm text-slate-300 rounded-lg transition-all"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              New
+            <button onClick={onReset} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/80 hover:bg-slate-600 text-sm text-slate-300 rounded-lg transition-all">
+              <Plus className="w-3.5 h-3.5" /> New
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Requirement Analysis */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
-        <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-          <Lightbulb className="w-4 h-4 text-amber-400" />
-          Requirement Analysis
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Feature Type</div>
-            <div className="text-sm font-medium text-white capitalize">{analysis.featureType || 'N/A'}</div>
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="bg-slate-900/40 rounded-lg px-3 py-2.5 text-center">
+            <div className="text-xl font-bold text-white">{scenarios.length}</div>
+            <div className="text-xs text-slate-400">Scenarios</div>
           </div>
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Risk Level</div>
-            <div className={`text-sm font-medium capitalize ${RISK_COLORS[analysis.riskLevel] || 'text-white'}`}>
-              {analysis.riskLevel || 'N/A'}
+          <div className="bg-slate-900/40 rounded-lg px-3 py-2.5 text-center">
+            <div className="text-xl font-bold text-white">{testCases.length}</div>
+            <div className="text-xs text-slate-400">Test Cases</div>
+          </div>
+          <div className="bg-slate-900/40 rounded-lg px-3 py-2.5 text-center">
+            <div className="text-xl font-bold text-white">{coverageGroups.length}</div>
+            <div className="text-xs text-slate-400">Coverage Types</div>
+          </div>
+          <div className="bg-slate-900/40 rounded-lg px-3 py-2.5 text-center">
+            <div className="text-xl font-bold text-emerald-400">{totalAutoReady}</div>
+            <div className="text-xs text-slate-400">Auto-Ready ({autoPercent}%)</div>
+          </div>
+          <div className="bg-slate-900/40 rounded-lg px-3 py-2.5 text-center">
+            <div className={`text-xl font-bold ${RISK_COLORS[analysis.riskLevel] || 'text-white'}`}>
+              {analysis.riskLevel ? analysis.riskLevel.charAt(0).toUpperCase() + analysis.riskLevel.slice(1) : 'N/A'}
             </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Impacted Modules</div>
-            <div className="text-sm font-medium text-white">{(analysis.impactedModules || []).length}</div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">User Roles</div>
-            <div className="text-sm font-medium text-white">{(analysis.userRolesAffected || []).length}</div>
+            <div className="text-xs text-slate-400">Risk Level</div>
           </div>
         </div>
-        {analysis.summary && (
-          <p className="text-sm text-slate-300 bg-slate-900/30 rounded-lg p-3">{analysis.summary}</p>
-        )}
-        {analysis.workflowSteps?.length > 0 && (
-          <div className="mt-3">
-            <div className="text-xs text-slate-500 mb-2">Workflow</div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {analysis.workflowSteps.map((s: string, i: number) => (
-                <span key={i} className="flex items-center gap-1">
-                  <span className="bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded text-xs font-medium">{s}</span>
-                  {i < analysis.workflowSteps.length - 1 && <ArrowRight className="w-3 h-3 text-slate-600" />}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Test Scenarios & Cases */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
-        <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+      {/* Test Coverage — Grouped by Coverage Type */}
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold text-white flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-blue-400" />
-          Test Scenarios ({scenarios.length})
+          Test Coverage
         </h3>
-        <div className="space-y-3">
-          {scenarios.map((sc: any, si: number) => {
-            const isExpanded = expandedScenarios.has(si);
-            const relatedCases = testCases.filter((tc: any) =>
-              tc.tags?.some((t: string) => sc.coverageType.includes(t) || sc.scenario.toLowerCase().includes(t.toLowerCase()))
-            );
-            return (
-              <div key={si} className="border border-slate-700/50 rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleScenario(si)}
-                  className="w-full flex items-center gap-3 p-3 hover:bg-slate-700/30 transition-all text-left"
-                >
-                  {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[sc.priority] || PRIORITY_COLORS.P2}`}>
-                    {sc.priority}
-                  </span>
-                  <span className="text-sm text-white flex-1">{sc.scenario}</span>
-                  <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">{sc.coverageType}</span>
-                </button>
-                {isExpanded && sc.riskArea && (
-                  <div className="px-3 pb-3 pt-0">
-                    <div className="text-xs text-slate-500 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" />
-                      Risk: {sc.riskArea}
+
+        {coverageGroups.map((group) => {
+          const isTypeExpanded = expandedTypes.has(group.coverageType);
+          return (
+            <div key={group.coverageType} className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+              {/* Coverage Type Header */}
+              <button
+                onClick={() => toggleType(group.coverageType)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-700/30 transition-all text-left"
+              >
+                {isTypeExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                <span className="text-base">{group.icon}</span>
+                <span className="text-sm font-semibold text-white uppercase tracking-wide">{group.label}</span>
+                <span className="text-xs text-slate-500">
+                  {group.scenarios.length} scenario{group.scenarios.length !== 1 ? 's' : ''}, {group.totalCases} case{group.totalCases !== 1 ? 's' : ''}
+                </span>
+              </button>
+
+              {/* Scenarios + Test Cases */}
+              {isTypeExpanded && (
+                <div className="border-t border-slate-700/30 px-4 pb-4 pt-2 space-y-4">
+                  {group.scenarios.map(({ scenario: sc, scenarioIndex: si, cases }) => (
+                    <div key={si} className="space-y-1.5">
+                      {/* Scenario Header */}
+                      <div className="flex items-center gap-2 py-1.5">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[sc.priority] || PRIORITY_COLORS.P2}`}>
+                          {sc.priority}
+                        </span>
+                        <span className="text-sm font-medium text-slate-200">{sc.scenario}</span>
+                        {sc.riskArea && (
+                          <span className="text-xs text-slate-500 ml-auto hidden sm:inline">Risk: {sc.riskArea}</span>
+                        )}
+                      </div>
+
+                      {/* Test Cases under this scenario */}
+                      <div className="ml-2 border-l-2 border-slate-700/50 pl-3 space-y-1.5">
+                        {cases.length > 0 ? cases.map((tc: any, tci: number) => {
+                          const caseKey = `${si}-${tci}`;
+                          const isExpanded = expandedCases.has(caseKey);
+                          return (
+                            <div key={caseKey} className="rounded-lg overflow-hidden border border-slate-700/40 bg-slate-900/20">
+                              <button
+                                onClick={() => toggleCase(caseKey)}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-slate-700/20 transition-all text-left"
+                              >
+                                {isExpanded
+                                  ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                                  : <ChevronRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                                }
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border flex-shrink-0 ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>
+                                  {tc.priority}
+                                </span>
+                                <span className="text-sm text-slate-200 flex-1 line-clamp-1">{tc.title}</span>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[tc.severity] || ''}`}>
+                                    {tc.severity}
+                                  </span>
+                                  {tc.automationReady && <span title="Automation Ready"><Zap className="w-3 h-3 text-emerald-400" /></span>}
+                                </div>
+                              </button>
+                              {isExpanded && (
+                                <div className="border-t border-slate-700/30 p-3 bg-slate-900/40 space-y-2.5">
+                                  {tc.preconditions && (
+                                    <div>
+                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Preconditions</div>
+                                      <div className="text-sm text-slate-300">{tc.preconditions}</div>
+                                    </div>
+                                  )}
+                                  {tc.steps?.length > 0 && (
+                                    <div>
+                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Steps</div>
+                                      <ol className="list-decimal list-inside space-y-0.5">
+                                        {tc.steps.map((s: string, i: number) => (
+                                          <li key={i} className="text-sm text-slate-300">{s}</li>
+                                        ))}
+                                      </ol>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-[11px] font-medium text-slate-500 mb-0.5">Expected Result</div>
+                                    <div className="text-sm text-emerald-300">{tc.expectedResult}</div>
+                                  </div>
+                                  {tc.testData && (
+                                    <div>
+                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Test Data</div>
+                                      <div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.testData}</div>
+                                    </div>
+                                  )}
+                                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-700/30">
+                                    {tc.tags?.map((tag: string, ti: number) => (
+                                      <span key={ti} className="bg-slate-700/50 text-slate-400 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-0.5">
+                                        <Tag className="w-2.5 h-2.5" />{tag}
+                                      </span>
+                                    ))}
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${tc.automationReady ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600/30 text-slate-500'}`}>
+                                      {tc.automationReady ? '✓ Auto-Ready' : '✗ Manual'}
+                                    </span>
+                                    {tc.automationComplexity && (
+                                      <span className="bg-blue-500/15 text-blue-300 px-1.5 py-0.5 rounded text-[10px]">
+                                        {tc.automationComplexity} complexity
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }) : (
+                          <div className="text-xs text-slate-500 italic py-1">No test cases linked to this scenario</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Detailed Test Cases */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
-        <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          Test Cases ({testCases.length})
-          <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded ml-auto">
-            {stats.automationReadyCount} automation-ready
-          </span>
-        </h3>
-        <div className="space-y-2">
-          {testCases.map((tc: any, ci: number) => {
-            const isExpanded = expandedCases.has(ci);
-            return (
-              <div key={ci} className="border border-slate-700/50 rounded-lg overflow-hidden">
-                <button
-                  onClick={() => toggleCase(ci)}
-                  className="w-full flex items-center gap-3 p-3 hover:bg-slate-700/30 transition-all text-left"
-                >
-                  {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>
-                    {tc.priority}
-                  </span>
-                  <span className="text-sm text-white flex-1 line-clamp-1">{tc.title}</span>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-1.5 py-0.5 rounded text-xs ${SEVERITY_COLORS[tc.severity] || ''}`}>
-                      {tc.severity}
-                    </span>
-                    {tc.automationReady && (
-                      <span title="Automation Ready"><Zap className="w-3.5 h-3.5 text-emerald-400" /></span>
-                    )}
-                  </div>
-                </button>
-                {isExpanded && (
-                  <div className="border-t border-slate-700/50 p-4 bg-slate-900/30 space-y-3">
-                    {tc.preconditions && (
-                      <div>
-                        <div className="text-xs font-medium text-slate-500 mb-1">Preconditions</div>
-                        <div className="text-sm text-slate-300">{tc.preconditions}</div>
-                      </div>
-                    )}
-                    {tc.steps?.length > 0 && (
-                      <div>
-                        <div className="text-xs font-medium text-slate-500 mb-1">Steps</div>
-                        <ol className="list-decimal list-inside space-y-1">
-                          {tc.steps.map((s: string, i: number) => (
-                            <li key={i} className="text-sm text-slate-300">{s}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                    <div>
-                      <div className="text-xs font-medium text-slate-500 mb-1">Expected Result</div>
-                      <div className="text-sm text-emerald-300">{tc.expectedResult}</div>
-                    </div>
-                    {tc.testData && (
-                      <div>
-                        <div className="text-xs font-medium text-slate-500 mb-1">Test Data</div>
-                        <div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.testData}</div>
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-700/30">
-                      {tc.tags?.map((tag: string, ti: number) => (
-                        <span key={ti} className="bg-slate-700/50 text-slate-400 px-2 py-0.5 rounded text-xs flex items-center gap-1">
-                          <Tag className="w-3 h-3" />{tag}
-                        </span>
-                      ))}
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        tc.automationReady ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600/30 text-slate-500'
-                      }`}>
-                        {tc.automationReady ? '✓ Automation Ready' : '✗ Manual Only'}
-                      </span>
-                      {tc.automationComplexity && (
-                        <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded text-xs">
-                          Complexity: {tc.automationComplexity}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Coverage Gaps */}
+      {/* Coverage Gaps — Collapsible, less prominent */}
       {gaps.length > 0 && (
-        <div className="bg-slate-800/50 rounded-xl border border-amber-500/30 p-5">
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
           <button
             onClick={() => setShowGaps(!showGaps)}
-            className="w-full flex items-center gap-2 text-left"
+            className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-700/30 transition-all text-left"
           >
+            {showGaps ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
             <AlertTriangle className="w-4 h-4 text-amber-400" />
-            <h3 className="text-base font-semibold text-white flex-1">
-              Coverage Gaps ({gaps.length})
-            </h3>
-            {showGaps ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+            <span className="text-sm font-semibold text-white flex-1">Coverage Gaps ({gaps.length})</span>
+            <span className="text-xs text-slate-500">Areas that may need additional testing</span>
           </button>
           {showGaps && (
-            <div className="mt-4 space-y-3">
+            <div className="border-t border-slate-700/30 px-4 pb-4 pt-2 space-y-2">
               {gaps.map((gap: any, gi: number) => (
                 <div key={gi} className="bg-slate-900/40 border border-slate-700/50 rounded-lg p-3">
                   <div className="flex items-start gap-2">
-                    <Shield className={`w-4 h-4 mt-0.5 ${RISK_COLORS[gap.severity] || 'text-amber-400'}`} />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-white">{gap.area}</div>
+                    <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${RISK_COLORS[gap.severity] || 'text-amber-400'}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white">{gap.area}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[gap.severity] || ''}`}>{gap.severity}</span>
+                      </div>
                       <div className="text-xs text-slate-400 mt-0.5">{gap.description}</div>
-                      <div className="text-xs text-emerald-400 mt-1.5 flex items-center gap-1">
-                        <Lightbulb className="w-3 h-3" />
-                        {gap.suggestion}
+                      <div className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
+                        <Lightbulb className="w-3 h-3" /> {gap.suggestion}
                       </div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-xs ${SEVERITY_COLORS[gap.severity] || ''}`}>
-                      {gap.severity}
-                    </span>
                   </div>
                 </div>
               ))}
@@ -683,6 +723,57 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           )}
         </div>
       )}
+
+      {/* Requirement Analysis — Collapsible, at bottom */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+        <button
+          onClick={() => setShowAnalysis(!showAnalysis)}
+          className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-700/30 transition-all text-left"
+        >
+          {showAnalysis ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+          <Lightbulb className="w-4 h-4 text-amber-400" />
+          <span className="text-sm font-semibold text-white flex-1">Requirement Analysis</span>
+          <span className="text-xs text-slate-500 capitalize">{analysis.featureType || ''} • {analysis.riskLevel || ''} risk</span>
+        </button>
+        {showAnalysis && (
+          <div className="border-t border-slate-700/30 px-4 pb-4 pt-3 space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-slate-900/50 rounded-lg p-2.5">
+                <div className="text-[11px] text-slate-500 mb-0.5">Feature Type</div>
+                <div className="text-sm font-medium text-white capitalize">{analysis.featureType || 'N/A'}</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-2.5">
+                <div className="text-[11px] text-slate-500 mb-0.5">Risk Level</div>
+                <div className={`text-sm font-medium capitalize ${RISK_COLORS[analysis.riskLevel] || 'text-white'}`}>{analysis.riskLevel || 'N/A'}</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-2.5">
+                <div className="text-[11px] text-slate-500 mb-0.5">Modules</div>
+                <div className="text-sm font-medium text-white">{(analysis.impactedModules || []).join(', ') || 'N/A'}</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-2.5">
+                <div className="text-[11px] text-slate-500 mb-0.5">User Roles</div>
+                <div className="text-sm font-medium text-white">{(analysis.userRolesAffected || []).join(', ') || 'N/A'}</div>
+              </div>
+            </div>
+            {analysis.summary && (
+              <p className="text-sm text-slate-300 bg-slate-900/30 rounded-lg p-3">{analysis.summary}</p>
+            )}
+            {analysis.workflowSteps?.length > 0 && (
+              <div>
+                <div className="text-[11px] text-slate-500 mb-1.5">Workflow</div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {analysis.workflowSteps.map((s: string, i: number) => (
+                    <span key={i} className="flex items-center gap-1">
+                      <span className="bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded text-xs">{s}</span>
+                      {i < analysis.workflowSteps.length - 1 && <ArrowRight className="w-3 h-3 text-slate-600" />}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
