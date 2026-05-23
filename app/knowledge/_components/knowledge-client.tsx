@@ -193,7 +193,21 @@ export function KnowledgeClient() {
         fetch('/api/knowledge/tags', { cache: 'no-store' }),
         fetch('/api/knowledge/categories', { cache: 'no-store' }),
       ]);
-      if (sRes.ok) setStats(await sRes.json());
+      if (sRes.ok) {
+        const raw = await sRes.json();
+        // Backend returns { total, byCategory, byStatus, byPriority, recentCount, tagCloud }
+        // Frontend expects { total, active, draft, deprecated, relationships, categories }
+        const byStatus = raw.byStatus || raw.by_status || {};
+        const byCategory = raw.byCategory || raw.by_category || {};
+        setStats({
+          total: raw.total ?? 0,
+          active: byStatus.active ?? 0,
+          draft: byStatus.draft ?? 0,
+          deprecated: byStatus.deprecated ?? 0,
+          relationships: raw.relationships ?? 0,
+          categories: Object.keys(byCategory).length,
+        });
+      }
       if (tRes.ok) setAllTags(await tRes.json());
       if (cRes.ok) setCategoryDist(await cRes.json());
     } catch { /* non-critical */ }
