@@ -799,6 +799,27 @@ function HistoryTab() {
                     <span>•</span>
                     <span>{new Date(req.created_at).toLocaleDateString()}</span>
                   </div>
+                  {/* Coverage type badges from analysis */}
+                  {(() => {
+                    const analysis = typeof req.analysis === 'string' ? (() => { try { return JSON.parse(req.analysis); } catch { return null; } })() : req.analysis;
+                    const types: string[] = analysis?.coverageTypes || analysis?.coverage_types || [];
+                    if (types.length === 0) return null;
+                    const labelMap: Record<string, { label: string; icon: string }> = {};
+                    COVERAGE_OPTIONS.forEach(o => { labelMap[o.value] = { label: o.label, icon: o.icon }; });
+                    return (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {types.map((ct: string) => {
+                          const info = labelMap[ct] || { label: ct.replace(/_/g, ' '), icon: '📋' };
+                          return (
+                            <span key={ct} className="inline-flex items-center gap-1 bg-violet-500/15 text-violet-300 px-2 py-0.5 rounded text-xs border border-violet-500/20">
+                              <span>{info.icon}</span>
+                              <span className="capitalize">{info.label}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -888,47 +909,83 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
         </div>
       </div>
 
-      {/* Test Cases */}
+      {/* Test Cases grouped by Scenario / Coverage Type */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
         <h4 className="text-sm font-semibold text-white mb-3">{testCases.length} Test Cases</h4>
-        <div className="space-y-2">
-          {testCases.map((tc: any, ci: number) => {
-            const isExpanded = expandedCases.has(ci);
-            const steps = typeof tc.steps === 'string' ? JSON.parse(tc.steps) : (tc.steps || []);
-            const tags = typeof tc.tags === 'string' ? JSON.parse(tc.tags) : (tc.tags || []);
-            return (
-              <div key={ci} className="border border-slate-700/50 rounded-lg overflow-hidden">
-                <button onClick={() => toggleCase(ci)} className="w-full flex items-center gap-3 p-3 hover:bg-slate-700/30 transition-all text-left">
-                  {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>{tc.priority}</span>
-                  <span className="text-sm text-white flex-1 line-clamp-1">{tc.title}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-xs ${SEVERITY_COLORS[tc.severity] || ''}`}>{tc.severity}</span>
-                  {tc.automation_ready && <Zap className="w-3.5 h-3.5 text-emerald-400" />}
-                </button>
-                {isExpanded && (
-                  <div className="border-t border-slate-700/50 p-4 bg-slate-900/30 space-y-3">
-                    {tc.preconditions && (
-                      <div><div className="text-xs font-medium text-slate-500 mb-1">Preconditions</div><div className="text-sm text-slate-300">{tc.preconditions}</div></div>
-                    )}
-                    {steps.length > 0 && (
-                      <div><div className="text-xs font-medium text-slate-500 mb-1">Steps</div><ol className="list-decimal list-inside space-y-1">{steps.map((s: string, i: number) => <li key={i} className="text-sm text-slate-300">{s}</li>)}</ol></div>
-                    )}
-                    <div><div className="text-xs font-medium text-slate-500 mb-1">Expected Result</div><div className="text-sm text-emerald-300">{tc.expected_result}</div></div>
-                    {tc.test_data && (
-                      <div><div className="text-xs font-medium text-slate-500 mb-1">Test Data</div><div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.test_data}</div></div>
-                    )}
-                    <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-700/30">
-                      {tags.map((tag: string, ti: number) => (
-                        <span key={ti} className="bg-slate-700/50 text-slate-400 px-2 py-0.5 rounded text-xs flex items-center gap-1"><Tag className="w-3 h-3" />{tag}</span>
-                      ))}
-                      <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">{tc.coverage_type}</span>
+        {(() => {
+          // Group test cases by scenario_id, falling back to coverage_type for grouping
+          const groups: Record<string, { coverageType: string; scenarioName: string; cases: any[] }> = {};
+          for (const tc of testCases) {
+            const key = tc.scenario_id ? String(tc.scenario_id) : (tc.coverage_type || 'ungrouped');
+            if (!groups[key]) {
+              const matchedScenario = scenarios.find((s: any) => s.id === tc.scenario_id);
+              groups[key] = {
+                coverageType: matchedScenario?.coverage_type || tc.coverage_type || 'unknown',
+                scenarioName: matchedScenario?.scenario || tc.scenario || '',
+                cases: [],
+              };
+            }
+            groups[key].cases.push(tc);
+          }
+          const labelMap: Record<string, { label: string; icon: string }> = {};
+          COVERAGE_OPTIONS.forEach(o => { labelMap[o.value] = { label: o.label, icon: o.icon }; });
+          const groupEntries = Object.entries(groups);
+
+          return (
+            <div className="space-y-4">
+              {groupEntries.map(([gKey, group]) => {
+                const info = labelMap[group.coverageType] || { label: group.coverageType.replace(/_/g, ' '), icon: '📋' };
+                return (
+                  <div key={gKey} className="space-y-2">
+                    <div className="flex items-center gap-2 pb-1 border-b border-slate-700/30">
+                      <span className="text-sm">{info.icon}</span>
+                      <span className="text-xs font-semibold text-violet-300 uppercase tracking-wide">{info.label}</span>
+                      <span className="text-xs text-slate-500">({group.cases.length} case{group.cases.length !== 1 ? 's' : ''})</span>
+                      {group.scenarioName && <span className="text-xs text-slate-500 ml-auto truncate max-w-[50%]">{group.scenarioName}</span>}
                     </div>
+                    {group.cases.map((tc: any) => {
+                      const ci = testCases.indexOf(tc);
+                      const isExpanded = expandedCases.has(ci);
+                      const steps = typeof tc.steps === 'string' ? (() => { try { return JSON.parse(tc.steps); } catch { return []; } })() : (tc.steps || []);
+                      const tags = typeof tc.tags === 'string' ? (() => { try { return JSON.parse(tc.tags); } catch { return []; } })() : (tc.tags || []);
+                      return (
+                        <div key={ci} className="border border-slate-700/50 rounded-lg overflow-hidden">
+                          <button onClick={() => toggleCase(ci)} className="w-full flex items-center gap-3 p-3 hover:bg-slate-700/30 transition-all text-left">
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>{tc.priority}</span>
+                            <span className="text-sm text-white flex-1 line-clamp-1">{tc.title}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${SEVERITY_COLORS[tc.severity] || ''}`}>{tc.severity}</span>
+                            {tc.automation_ready && <Zap className="w-3.5 h-3.5 text-emerald-400" />}
+                          </button>
+                          {isExpanded && (
+                            <div className="border-t border-slate-700/50 p-4 bg-slate-900/30 space-y-3">
+                              {tc.preconditions && (
+                                <div><div className="text-xs font-medium text-slate-500 mb-1">Preconditions</div><div className="text-sm text-slate-300">{tc.preconditions}</div></div>
+                              )}
+                              {steps.length > 0 && (
+                                <div><div className="text-xs font-medium text-slate-500 mb-1">Steps</div><ol className="list-decimal list-inside space-y-1">{steps.map((s: string, i: number) => <li key={i} className="text-sm text-slate-300">{s}</li>)}</ol></div>
+                              )}
+                              <div><div className="text-xs font-medium text-slate-500 mb-1">Expected Result</div><div className="text-sm text-emerald-300">{tc.expected_result}</div></div>
+                              {tc.test_data && (
+                                <div><div className="text-xs font-medium text-slate-500 mb-1">Test Data</div><div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.test_data}</div></div>
+                              )}
+                              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-700/30">
+                                {tags.map((tag: string, ti: number) => (
+                                  <span key={ti} className="bg-slate-700/50 text-slate-400 px-2 py-0.5 rounded text-xs flex items-center gap-1"><Tag className="w-3 h-3" />{tag}</span>
+                                ))}
+                                <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">{tc.coverage_type}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
