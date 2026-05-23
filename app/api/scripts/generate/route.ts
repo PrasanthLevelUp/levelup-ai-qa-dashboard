@@ -6,7 +6,7 @@ import { backendGet, backendPost, BACKEND_URL, API_KEY } from '@/lib/backend-api
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId } = body;
+    const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId, knowledgeItemIds } = body;
 
     if (!url || !scenario) {
       return NextResponse.json(
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
         followLinks: false,
         maxPages: 3,
         ...(repoId ? { repoId } : {}),
+        ...(Array.isArray(knowledgeItemIds) && knowledgeItemIds.length > 0 ? { knowledgeItemIds } : {}),
       }),
     });
 
