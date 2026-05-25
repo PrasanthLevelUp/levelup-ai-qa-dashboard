@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban } from 'lucide-react';
+import { ProjectSelector } from './project-selector';
 
 interface NavSection {
   title?: string;
@@ -15,6 +16,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Platform',
     items: [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
+      { href: '/projects', label: 'Projects', icon: FolderKanban },
       { href: '/jobs', label: 'Healing Jobs', icon: Play },
       { href: '/scripts', label: 'Script Gen', icon: FileCode },
       { href: '/test-coverage', label: 'Test Case Lab', icon: TestTubeDiagonal },
@@ -141,6 +143,9 @@ export function Sidebar() {
             </div>
           </div>
         </div>
+
+        {/* Project Selector */}
+        <ProjectSelector />
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4 scrollbar-thin">
