@@ -224,6 +224,7 @@ export function RepoIntelligenceClient() {
         body: JSON.stringify({
           repoId: selectedRepo,
           repoPath: repo?.url || selectedRepo,
+          branch: repo?.branch || 'main',
         }),
       });
       const data = await res.json();
