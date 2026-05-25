@@ -188,13 +188,12 @@ export function RepoIntelligenceClient() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-select first scanned repo
+  // Auto-select first scanned repo (only if it has been scanned)
   useEffect(() => {
     if (!selectedRepo && contexts.length > 0) {
       setSelectedRepo(contexts[0].repoId);
-    } else if (!selectedRepo && repos.length > 0) {
-      setSelectedRepo(repos[0].id);
     }
+    // Don't auto-select unscanned repos — they'll just 404
   }, [contexts, repos, selectedRepo]);
 
   // Load profile when repo selected
@@ -225,6 +224,7 @@ export function RepoIntelligenceClient() {
         body: JSON.stringify({
           repoId: selectedRepo,
           repoPath: repo?.url || selectedRepo,
+          branch: repo?.branch || 'main',
         }),
       });
       const data = await res.json();
@@ -269,11 +269,14 @@ export function RepoIntelligenceClient() {
             className="h-10 px-3 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500"
           >
             <option value="">Select repository…</option>
-            {repos.map(r => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.branch})
-              </option>
-            ))}
+            {repos.map(r => {
+              const isScanned = contexts.some(c => c.repoId === r.id);
+              return (
+                <option key={r.id} value={r.id}>
+                  {r.name} ({r.branch}){isScanned ? ' ✓' : ''}
+                </option>
+              );
+            })}
           </select>
           <button
             onClick={handleScan}
@@ -285,6 +288,19 @@ export function RepoIntelligenceClient() {
           </button>
         </div>
       </div>
+
+      {/* Not-scanned hint */}
+      {selectedRepo && !scannedCtx && !scanning && !scanResult && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-sm flex items-start gap-3 text-amber-300">
+          <Sparkles className="w-5 h-5 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">Repository not scanned yet</p>
+            <p className="text-xs mt-1 opacity-80">
+              Click &quot;Scan Repository&quot; to analyze the codebase. The intelligence engine will learn your framework, patterns, helpers, and workflows — which improves script generation quality.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Scan result toast */}
       {scanResult && (
