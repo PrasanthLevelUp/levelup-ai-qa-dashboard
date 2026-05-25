@@ -1,0 +1,91 @@
+'use client';
+
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+
+export interface Project {
+  id: number;
+  name: string;
+  description: string | null;
+  repo_count: string | number;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface ProjectContextType {
+  projects: Project[];
+  activeProject: Project | null;
+  setActiveProject: (project: Project) => void;
+  loading: boolean;
+  refreshProjects: () => Promise<void>;
+}
+
+const ProjectContext = createContext<ProjectContextType>({
+  projects: [],
+  activeProject: null,
+  setActiveProject: () => {},
+  loading: true,
+  refreshProjects: async () => {},
+});
+
+export function useProject() {
+  return useContext(ProjectContext);
+}
+
+const STORAGE_KEY = 'levelup_active_project_id';
+
+export function ProjectProvider({ children }: { children: React.ReactNode }) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProject, setActiveProjectState] = useState<Project | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects');
+      if (!res.ok) return;
+      const data = await res.json();
+      const list: Project[] = data.projects || [];
+      setProjects(list);
+
+      // Restore previously selected project from localStorage
+      const savedId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+      const savedProject = savedId ? list.find(p => p.id === parseInt(savedId, 10)) : null;
+
+      if (savedProject) {
+        setActiveProjectState(savedProject);
+      } else if (list.length > 0 && !activeProject) {
+        // Auto-select first project
+        setActiveProjectState(list[0]);
+        if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, String(list[0].id));
+      }
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  const setActiveProject = useCallback((project: Project) => {
+    setActiveProjectState(project);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, String(project.id));
+    }
+  }, []);
+
+  return (
+    <ProjectContext.Provider
+      value={{
+        projects,
+        activeProject,
+        setActiveProject,
+        loading,
+        refreshProjects: fetchProjects,
+      }}
+    >
+      {children}
+    </ProjectContext.Provider>
+  );
+}
