@@ -110,6 +110,30 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
         </div>
       </div>
 
+      {/* Step indicator */}
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <span className="flex items-center gap-1.5 text-violet-400 font-medium">
+          <span className="w-5 h-5 rounded-full bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-[10px]">1</span>
+          Basic Info
+        </span>
+        <span className="text-slate-700">→</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">2</span>
+          Technical
+        </span>
+        <span className="text-slate-700">→</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">3</span>
+          App Flow
+        </span>
+        <span className="text-slate-700">→</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">4</span>
+          Credentials
+        </span>
+        <span className="ml-auto text-[10px] text-slate-600">Only Step 1 is required — rest is optional</span>
+      </div>
+
       {/* Required Fields */}
       <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -120,7 +144,9 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Project Name</label>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Project Name <span className="text-red-400">*</span>
+            </label>
             <input
               type="text"
               value={name}
@@ -131,7 +157,9 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Application URL</label>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Application URL <span className="text-red-400">*</span>
+            </label>
             <input
               type="url"
               value={appUrl}
@@ -144,7 +172,10 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
         </div>
 
         <div>
-          <label className="block text-xs text-slate-400 mb-1.5">Application Description</label>
+          <label className="block text-xs text-slate-400 mb-1.5">
+            Application Description
+            <span className="text-[10px] text-slate-600 ml-1.5">(strongly recommended — improves script quality)</span>
+          </label>
           <textarea
             value={appDescription}
             onChange={(e) => setAppDescription(e.target.value)}
@@ -157,11 +188,17 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
 
       {/* Technical Details */}
       <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Code2 size={14} className="text-blue-400" />
-          Technical Details
-          <span className="text-[10px] text-slate-500 ml-1">OPTIONAL</span>
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Code2 size={14} className="text-blue-400" />
+            Technical Details
+            <span className="text-[10px] text-slate-500 ml-1">OPTIONAL</span>
+          </h3>
+          <span className="text-[10px] text-slate-600 flex items-center gap-1">
+            <Info size={9} />
+            Skip if unsure — AI uses sensible defaults
+          </span>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -213,11 +250,17 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
 
       {/* Application Flow */}
       <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Map size={14} className="text-emerald-400" />
-          Application Flow
-          <span className="text-[10px] text-slate-500 ml-1">OPTIONAL</span>
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Map size={14} className="text-emerald-400" />
+            Application Flow
+            <span className="text-[10px] text-slate-500 ml-1">OPTIONAL</span>
+          </h3>
+          <span className="text-[10px] text-slate-600 flex items-center gap-1">
+            <Info size={9} />
+            Describe user journeys for better multi-step tests
+          </span>
+        </div>
 
         <div>
           <label className="block text-xs text-slate-400 mb-1.5">Navigation Flow / Key Pages</label>
@@ -247,11 +290,17 @@ export function ProjectSetup({ existing, onSaved, onCancel }: ProjectSetupProps)
 
       {/* Test Credentials */}
       <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Lock size={14} className="text-amber-400" />
-          Test Credentials
-          <span className="text-[10px] text-slate-500 ml-1">OPTIONAL</span>
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Lock size={14} className="text-amber-400" />
+            Test Credentials
+            <span className="text-[10px] text-slate-500 ml-1">OPTIONAL</span>
+          </h3>
+          <span className="text-[10px] text-slate-600 flex items-center gap-1">
+            <Shield size={9} />
+            Only needed for login/auth tests
+          </span>
+        </div>
         <p className="text-xs text-slate-500">
           Used for generating login-flow tests. Stored securely — never sent to third parties.
         </p>
