@@ -8,10 +8,19 @@ import { SuccessTrendChart } from '@/components/charts/success-trend-chart';
 import { StrategyPieChart } from '@/components/charts/strategy-pie-chart';
 import { CostSavingsPanel } from '@/components/cost-savings-panel';
 import { RecentHealingsTable } from '@/components/recent-healings-table';
+import { useProject } from '@/lib/project-context';
 
 type Period = '7d' | '30d' | '90d';
 
+/* Skeleton shimmer block */
+function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse bg-[#1e293b] rounded-lg ${className}`} />;
+}
+
 export function DashboardClient() {
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id ?? null;
+
   const [period, setPeriod] = useState<Period>('7d');
   const [overview, setOverview] = useState<any>(null);
   const [trend, setTrend] = useState<any[]>([]);
@@ -24,12 +33,13 @@ export function DashboardClient() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const pid = projectId ? `&projectId=${projectId}` : '';
       const [ov, tr, st, cs, hx] = await Promise.all([
-        fetch(`/api/stats/overview?period=${period}`).then((r: any) => r?.json?.()),
-        fetch(`/api/stats/trend?period=${period}`).then((r: any) => r?.json?.()),
-        fetch(`/api/stats/strategies?period=${period}`).then((r: any) => r?.json?.()),
-        fetch(`/api/stats/cost-savings?period=${period}`).then((r: any) => r?.json?.()),
-        fetch('/api/healings/recent?limit=15').then((r: any) => r?.json?.()),
+        fetch(`/api/stats/overview?period=${period}${pid}`).then((r: any) => r?.json?.()),
+        fetch(`/api/stats/trend?period=${period}${pid}`).then((r: any) => r?.json?.()),
+        fetch(`/api/stats/strategies?period=${period}${pid}`).then((r: any) => r?.json?.()),
+        fetch(`/api/stats/cost-savings?period=${period}${pid}`).then((r: any) => r?.json?.()),
+        fetch(`/api/healings/recent?limit=15${pid}`).then((r: any) => r?.json?.()),
       ]);
       setOverview(ov ?? null);
       setTrend(tr ?? []);
@@ -42,7 +52,7 @@ export function DashboardClient() {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, projectId]);
 
   useEffect(() => {
     fetchData();
@@ -178,7 +188,7 @@ export function DashboardClient() {
           <p className="text-xs text-slate-500 mb-4">Success rate over time — proves the system is getting smarter</p>
           <div className="h-[280px]">
             {loading ? (
-              <div className="flex items-center justify-center h-full text-slate-500 text-sm">Loading chart...</div>
+              <Skeleton className="h-full w-full" />
             ) : (
               <SuccessTrendChart data={trend} />
             )}
@@ -193,7 +203,7 @@ export function DashboardClient() {
           <p className="text-xs text-slate-500 mb-4">How healings are resolved</p>
           <div className="h-[280px]">
             {loading ? (
-              <div className="flex items-center justify-center h-full text-slate-500 text-sm">Loading chart...</div>
+              <Skeleton className="h-full w-full" />
             ) : (
               <StrategyPieChart data={strategies} />
             )}
@@ -216,7 +226,9 @@ export function DashboardClient() {
             </div>
           </div>
           {loading ? (
-            <div className="flex items-center justify-center py-12 text-slate-500 text-sm">Loading...</div>
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
           ) : (
             <RecentHealingsTable healings={healings} />
           )}
