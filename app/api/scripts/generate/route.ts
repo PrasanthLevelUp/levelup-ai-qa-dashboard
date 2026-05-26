@@ -6,7 +6,7 @@ import { backendGet, backendPost, BACKEND_URL, API_KEY } from '@/lib/backend-api
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId, knowledgeItemIds } = body;
+    const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId, knowledgeItemIds, authConfig, additionalUrls } = body;
 
     const missingFields: string[] = [];
     if (!url) missingFields.push('url');
@@ -71,6 +71,13 @@ export async function POST(req: NextRequest) {
         maxPages: 3,
         ...(repoId ? { repoId } : {}),
         ...(Array.isArray(knowledgeItemIds) && knowledgeItemIds.length > 0 ? { knowledgeItemIds } : {}),
+        // Pass auth config through — backend validates & sanitizes
+        ...(authConfig && typeof authConfig === 'object' && authConfig.username && authConfig.password
+          ? { authConfig }
+          : {}),
+        ...(Array.isArray(additionalUrls) && additionalUrls.length > 0
+          ? { additionalUrls }
+          : {}),
       }),
     });
 
