@@ -244,6 +244,16 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
 
   const handleGenerate = async () => {
     if (!scenario.trim()) return;
+
+    const resolvedUrl = targetUrl || projectContext.appUrl;
+    if (!resolvedUrl) {
+      setResult({
+        success: false,
+        error: 'Target URL is required. Please enter the application URL you want to test.',
+      });
+      return;
+    }
+
     setGenerating(true);
     setResult(null);
     setPushResult(null);
@@ -254,7 +264,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectContextId: projectContext.id,
-          url: targetUrl || projectContext.appUrl,
+          url: resolvedUrl,
           scenario: scenario.trim(),
           testTypes,
           includeNegativeTests: includeNegative,
@@ -347,6 +357,29 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             />
           </div>
 
+          {/* Target URL - always visible since it's required */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Target URL <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="url"
+              value={targetUrl}
+              onChange={(e) => setTargetUrl(e.target.value)}
+              placeholder="https://your-app.com (e.g. https://opensource-demo.orangehrmlive.com)"
+              className={`w-full px-3 py-2 rounded-lg bg-[#0c1222] border text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 ${
+                !targetUrl && !projectContext.appUrl
+                  ? 'border-amber-500/40'
+                  : 'border-[#334155]'
+              }`}
+              disabled={generating}
+            />
+            <p className="text-[10px] text-slate-600 mt-1">
+              The application URL to generate tests against
+              {projectContext.appUrl ? ` (defaults to ${projectContext.appUrl})` : ''}
+            </p>
+          </div>
+
           {/* Advanced Options Toggle */}
           <button
             type="button"
@@ -359,19 +392,6 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
 
           {showAdvanced && (
             <div className="space-y-3 bg-[#0c1222] rounded-lg p-4 border border-[#1e293b]">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Target URL</label>
-                <input
-                  type="url"
-                  value={targetUrl}
-                  onChange={(e) => setTargetUrl(e.target.value)}
-                  placeholder={projectContext.appUrl}
-                  className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                  disabled={generating}
-                />
-                <p className="text-[10px] text-slate-600 mt-1">Override the project URL for this generation</p>
-              </div>
-
               <div>
                 <label className="block text-xs text-slate-400 mb-2">Test Types</label>
                 <div className="flex flex-wrap gap-2">
@@ -594,7 +614,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={generating || !scenario.trim()}
+            disabled={generating || !scenario.trim() || (!(targetUrl || projectContext.appUrl))}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-all shadow-lg shadow-violet-500/20"
           >
             {generating ? (
