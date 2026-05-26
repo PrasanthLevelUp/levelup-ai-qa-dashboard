@@ -8,9 +8,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId, knowledgeItemIds } = body;
 
-    if (!url || !scenario) {
+    const missingFields: string[] = [];
+    if (!url) missingFields.push('url');
+    if (!scenario) missingFields.push('scenario');
+    if (missingFields.length > 0) {
       return NextResponse.json(
-        { success: false, error: 'url and scenario are required' },
+        { success: false, error: `Missing required field(s): ${missingFields.join(', ')}. Please provide a target URL and test scenario.` },
         { status: 400 },
       );
     }
