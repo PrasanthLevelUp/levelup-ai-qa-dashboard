@@ -43,6 +43,26 @@ export async function backendPost(path: string, body: any): Promise<any> {
   return res.json();
 }
 
+export async function backendPut(path: string, body: any): Promise<any> {
+  const url = `${BACKEND_URL}${path}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Backend ${res.status}: ${text}`);
+  }
+
+  return res.json();
+}
+
 export async function backendDelete(path: string): Promise<any> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
