@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog } from 'lucide-react';
 import { ProjectSelector } from './project-selector';
 
 interface NavSection {
@@ -63,6 +63,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Admin',
     items: [
+      { href: '/admin/users', label: 'User Management', icon: UserCog },
       { href: '/admin/roles', label: 'Roles & Access', icon: Users },
       { href: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText },
       { href: '/api-docs', label: 'API Docs', icon: FileText },
