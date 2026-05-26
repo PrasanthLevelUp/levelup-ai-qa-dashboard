@@ -31,6 +31,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/flaky', label: 'Flaky Tests', icon: Bug },
       { href: '/dom-memory', label: 'DOM Memory', icon: Database },
+      { href: '/profiles', label: 'App Profiles', icon: Fingerprint },
       { href: '/learning', label: 'Learning Engine', icon: Brain },
       { href: '/similarity', label: 'Similarity Engine', icon: Fingerprint },
       { href: '/rca-intelligence', label: 'RCA Intelligence', icon: Microscope },
