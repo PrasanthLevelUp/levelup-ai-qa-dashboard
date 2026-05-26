@@ -20,6 +20,10 @@ import {
   Brain,
   BookOpen,
   X,
+  Shield,
+  Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
@@ -138,6 +142,13 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<number[]>([]);
   const [showKnowledgeSelector, setShowKnowledgeSelector] = useState(false);
   const [knowledgeSearch, setKnowledgeSearch] = useState('');
+
+  // Authentication state (for crawling behind login walls)
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [authLoginUrl, setAuthLoginUrl] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
 
   // Auto-fill from CSV/Excel upload
   useEffect(() => {
@@ -270,6 +281,13 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           includeNegativeTests: includeNegative,
           ...(selectedRepoId ? { repoId: selectedRepoId } : {}),
           ...(selectedKnowledgeIds.length > 0 ? { knowledgeItemIds: selectedKnowledgeIds } : {}),
+          ...(authEnabled && authUsername && authPassword ? {
+            authConfig: {
+              loginUrl: authLoginUrl || undefined,
+              username: authUsername,
+              password: authPassword,
+            },
+          } : {}),
         }),
       });
 
@@ -426,6 +444,87 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
               </label>
             </div>
           )}
+
+          {/* Authentication for Login-Protected Pages */}
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={authEnabled}
+                onChange={(e) => setAuthEnabled(e.target.checked)}
+                disabled={generating}
+                className="w-3.5 h-3.5 rounded border-[#334155] bg-[#1a1f2e] text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
+              />
+              <Shield size={14} className="text-amber-400" />
+              <span className="text-xs font-medium text-slate-300">Authenticate before crawling</span>
+              <span className="text-[10px] text-slate-500 ml-1">(login-protected pages)</span>
+            </label>
+
+            {authEnabled && (
+              <div className="bg-[#0c1222] rounded-lg p-4 border border-amber-500/20 space-y-3">
+                <div className="flex items-start gap-2 text-[10px] text-amber-400/80 bg-amber-500/5 rounded-md p-2 border border-amber-500/10">
+                  <Lock size={12} className="mt-0.5 shrink-0" />
+                  <span>Credentials are sent securely to the backend and never logged or stored. Only used for a single browser session during crawling.</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Login Page URL <span className="text-slate-600">(optional — auto-detects if blank)</span></label>
+                  <input
+                    type="url"
+                    value={authLoginUrl}
+                    onChange={(e) => setAuthLoginUrl(e.target.value)}
+                    placeholder="https://app.example.com/login"
+                    disabled={generating}
+                    className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Username / Email</label>
+                    <input
+                      type="text"
+                      value={authUsername}
+                      onChange={(e) => setAuthUsername(e.target.value)}
+                      placeholder="admin@company.com"
+                      disabled={generating}
+                      autoComplete="off"
+                      className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Password</label>
+                    <div className="relative">
+                      <input
+                        type={showAuthPassword ? 'text' : 'password'}
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        placeholder="••••••••"
+                        disabled={generating}
+                        autoComplete="off"
+                        className="w-full px-3 py-2 pr-9 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAuthPassword(!showAuthPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                        tabIndex={-1}
+                      >
+                        {showAuthPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {authEnabled && (!authUsername || !authPassword) && (
+                  <p className="text-[10px] text-amber-500/70 flex items-center gap-1">
+                    <AlertTriangle size={10} />
+                    Both username and password are required for authentication
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Repository Intelligence */}
           {repos.length > 0 && (
