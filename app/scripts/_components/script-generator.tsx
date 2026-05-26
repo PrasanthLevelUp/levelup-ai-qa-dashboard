@@ -24,6 +24,9 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Fingerprint,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
@@ -51,6 +54,13 @@ interface GenerationResult {
     };
     generationTimeMs: number;
     errors: string[];
+    intelligence?: {
+      profileId: number;
+      crawlStrategy: 'FAST_PATH' | 'SLOW_PATH';
+      crawlTimeMs?: number;
+      profileAge?: string;
+      patternsDetected?: number;
+    };
   };
   error?: string;
 }
@@ -162,6 +172,16 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [authPassword, setAuthPassword] = useState('');
   const [showAuthPassword, setShowAuthPassword] = useState(false);
 
+  // Application Intelligence state
+  const [forceFreshCrawl, setForceFreshCrawl] = useState(false);
+  const [profileStatus, setProfileStatus] = useState<{
+    exists: boolean;
+    status?: string;
+    lastCrawledAt?: string;
+    pageCount?: number;
+  } | null>(null);
+  const [profileChecking, setProfileChecking] = useState(false);
+
   // Auto-fill from CSV/Excel upload
   useEffect(() => {
     if (prefillScenarios && prefillScenarios.length > 0) {
@@ -228,6 +248,34 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
       }
     })();
   }, []);
+
+  // Check application profile status when URL changes (debounced)
+  useEffect(() => {
+    const resolvedUrl = targetUrl || projectContext.appUrl;
+    if (!resolvedUrl) {
+      setProfileStatus(null);
+      return;
+    }
+    setProfileChecking(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/intelligence/profiles/status?url=${encodeURIComponent(resolvedUrl)}`);
+        if (!res.ok) { setProfileStatus(null); setProfileChecking(false); return; }
+        const data = await res.json();
+        setProfileStatus(data.exists ? {
+          exists: true,
+          status: data.profile?.status,
+          lastCrawledAt: data.profile?.last_crawled_at,
+          pageCount: data.profile?.page_count,
+        } : { exists: false });
+      } catch {
+        setProfileStatus(null);
+      } finally {
+        setProfileChecking(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [targetUrl, projectContext.appUrl]);
 
   // Fetch GitHub repos when PR modal opens
   const fetchGhRepos = useCallback(async () => {
@@ -379,6 +427,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           scenario: scenario.trim(),
           testTypes,
           includeNegativeTests: includeNegative,
+          ...(forceFreshCrawl ? { forceFreshCrawl: true } : {}),
           ...(selectedRepoId ? { repoId: selectedRepoId } : {}),
           ...(selectedKnowledgeIds.length > 0 ? { knowledgeItemIds: selectedKnowledgeIds } : {}),
           ...(authEnabled && authUsername && authPassword ? {
@@ -523,6 +572,38 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
               The application URL to generate tests against
               {projectContext.appUrl ? ` (defaults to ${projectContext.appUrl})` : ''}
             </p>
+
+            {/* Application Intelligence Profile Badge */}
+            {(profileStatus || profileChecking) && (
+              <div className="mt-1.5 flex items-center gap-2">
+                {profileChecking ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-500/10 border border-slate-500/20 text-[10px] text-slate-400">
+                    <Loader2 size={10} className="animate-spin" /> Checking profile…
+                  </span>
+                ) : profileStatus?.exists && profileStatus.status === 'ready' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">
+                    <Database size={10} />
+                    Profile cached — {profileStatus.pageCount || 0} pages
+                    {profileStatus.lastCrawledAt && (
+                      <span className="text-emerald-500/60 ml-1">
+                        · crawled {new Date(profileStatus.lastCrawledAt).toLocaleDateString()}
+                      </span>
+                    )}
+                    <span title="Fast path: ~1s generation"><Zap size={9} className="ml-0.5 inline" /></span>
+                  </span>
+                ) : profileStatus?.exists && profileStatus.status === 'expired' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">
+                    <Database size={10} />
+                    Profile expired — will re-crawl
+                  </span>
+                ) : !profileStatus?.exists ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-500/10 border border-slate-500/20 text-[10px] text-slate-500">
+                    <Fingerprint size={10} />
+                    New app — will create profile on first generation
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {/* Advanced Options Toggle */}
@@ -568,6 +649,19 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   className="w-3.5 h-3.5 rounded border-[#334155] bg-[#1a1f2e] text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
                 />
                 <span className="text-xs text-slate-400">Include negative test cases</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={forceFreshCrawl}
+                  onChange={(e) => setForceFreshCrawl(e.target.checked)}
+                  disabled={generating}
+                  className="w-3.5 h-3.5 rounded border-[#334155] bg-[#1a1f2e] text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
+                />
+                <RefreshCw size={12} className="text-amber-400" />
+                <span className="text-xs text-slate-400">Force fresh crawl</span>
+                <span className="text-[10px] text-slate-600">(bypass cached profile)</span>
               </label>
             </div>
           )}
@@ -1200,6 +1294,37 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   color="text-amber-400"
                 />
               </div>
+
+              {/* Intelligence Info */}
+              {result.data.intelligence && (
+                <div className="bg-[#0c1222] rounded-lg p-3 flex items-center gap-3">
+                  <Fingerprint size={14} className="text-violet-400 shrink-0" />
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                    <span className={`font-medium ${
+                      result.data.intelligence.crawlStrategy === 'FAST_PATH'
+                        ? 'text-emerald-400'
+                        : 'text-blue-400'
+                    }`}>
+                      {result.data.intelligence.crawlStrategy === 'FAST_PATH'
+                        ? '⚡ Fast Path (cached)'
+                        : '🔍 Full Crawl'}
+                    </span>
+                    {result.data.intelligence.crawlTimeMs != null && (
+                      <span className="text-slate-500">
+                        Crawl: {(result.data.intelligence.crawlTimeMs / 1000).toFixed(1)}s
+                      </span>
+                    )}
+                    {result.data.intelligence.patternsDetected != null && result.data.intelligence.patternsDetected > 0 && (
+                      <span className="text-slate-500">
+                        {result.data.intelligence.patternsDetected} pattern{result.data.intelligence.patternsDetected !== 1 ? 's' : ''} detected
+                      </span>
+                    )}
+                    <span className="text-slate-600">
+                      Profile #{result.data.intelligence.profileId} cached for 30 days
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Validation Report */}
               {result.data.validationReport && (
