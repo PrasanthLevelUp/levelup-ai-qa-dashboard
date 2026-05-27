@@ -2,17 +2,44 @@
 
 import { useState } from 'react';
 import { useProject } from '@/lib/project-context';
-import { FolderKanban, ChevronDown, Plus, Check } from 'lucide-react';
+import { FolderKanban, ChevronDown, Plus, Check, AlertTriangle, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 
 export function ProjectSelector() {
-  const { projects, activeProject, setActiveProject, loading } = useProject();
+  const { projects, activeProject, setActiveProject, loading, error, refreshProjects } = useProject();
   const [open, setOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   if (loading) {
     return (
       <div className="px-4 py-3 border-b border-[#1e293b]">
         <div className="h-9 rounded-lg bg-[#1e293b] animate-pulse" />
+      </div>
+    );
+  }
+
+  // Error state: show error message with retry button instead of "Create First Project"
+  if (error) {
+    return (
+      <div className="px-4 py-3 border-b border-[#1e293b]">
+        <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+          <div className="flex items-center gap-2 mb-1.5">
+            <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
+            <span className="text-[11px] text-red-400 leading-tight">{error}</span>
+          </div>
+          <button
+            onClick={async () => {
+              setRetrying(true);
+              await refreshProjects();
+              setRetrying(false);
+            }}
+            disabled={retrying}
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium text-slate-300 bg-[#1e293b] hover:bg-[#283548] border border-[#334155] transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={11} className={retrying ? 'animate-spin' : ''} />
+            {retrying ? 'Retrying...' : 'Retry'}
+          </button>
+        </div>
       </div>
     );
   }

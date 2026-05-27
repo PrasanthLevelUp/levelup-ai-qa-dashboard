@@ -16,6 +16,7 @@ interface ProjectContextType {
   activeProject: Project | null;
   setActiveProject: (project: Project) => void;
   loading: boolean;
+  error: string | null;
   refreshProjects: () => Promise<void>;
 }
 
@@ -24,6 +25,7 @@ const ProjectContext = createContext<ProjectContextType>({
   activeProject: null,
   setActiveProject: () => {},
   loading: true,
+  error: null,
   refreshProjects: async () => {},
 });
 
@@ -60,14 +62,26 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProjectState] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     try {
+      setError(null);
+      setLoading(true);
       const res = await fetch('/api/projects');
-      if (!res.ok) return;
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        const statusMsg = res.status === 401 ? 'Session expired — please log in again'
+          : res.status === 403 ? 'Access denied'
+          : `Failed to load projects (${res.status})`;
+        console.error('Projects fetch failed:', res.status, errText);
+        setError(statusMsg);
+        return;
+      }
       const data = await res.json();
       const list: Project[] = data.projects || [];
       setProjects(list);
+      setError(null);
 
       // Restore previously selected project from localStorage
       const savedId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
@@ -75,13 +89,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
       if (savedProject) {
         setActiveProjectState(savedProject);
-      } else if (list.length > 0 && !activeProject) {
+      } else if (list.length > 0) {
         // Auto-select first project
         setActiveProjectState(list[0]);
         if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, String(list[0].id));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch projects:', err);
+      setError('Network error — could not reach server');
     } finally {
       setLoading(false);
     }
@@ -105,6 +120,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         activeProject,
         setActiveProject,
         loading,
+        error,
         refreshProjects: fetchProjects,
       }}
     >
