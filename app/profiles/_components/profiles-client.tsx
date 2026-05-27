@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { useProject } from '@/lib/project-context';
 import {
   Globe,
   RefreshCw,
@@ -122,8 +122,7 @@ function statusBadge(status: string, expiresAt: string) {
 /* -------------------------------------------------------------------------- */
 
 export function ProfilesClient() {
-  const { activeProject } = useProject();
-  const projectHeaders = useProjectHeaders();
+  const { activeProject, loading: projectLoading } = useProject();
   const [profiles, setProfiles] = useState<ApplicationProfile[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -132,13 +131,23 @@ export function ProfilesClient() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
+  // Build project headers from activeProject directly inside callbacks
+  // to avoid stale closure issues with useProjectHeaders()
+  const getHeaders = useCallback((): Record<string, string> => {
+    if (!activeProject) return {};
+    return { 'x-project-id': String(activeProject.id) };
+  }, [activeProject]);
+
   const fetchProfiles = useCallback(async () => {
+    // Don't fetch until project context is resolved — prevents
+    // the initial fetch from returning unscoped (all) data
+    if (projectLoading) return;
+
     setLoading(true);
     try {
       const qs = filterStatus ? `?status=${filterStatus}` : '';
-      const res = await fetch(`/api/intelligence/profiles${qs}`, {
-        headers: { ...projectHeaders },
-      });
+      const headers = getHeaders();
+      const res = await fetch(`/api/intelligence/profiles${qs}`, { headers });
       const data = await res.json();
       if (data.success) {
         setProfiles(data.data || []);
@@ -148,18 +157,26 @@ export function ProfilesClient() {
       // silent
     }
     setLoading(false);
-  }, [filterStatus, activeProject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterStatus, activeProject?.id, projectLoading, getHeaders]);
 
+  // Re-fetch when project changes or project finishes loading
   useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
+
+  // Clear profiles immediately on project switch for snappy UX
+  useEffect(() => {
+    setProfiles([]);
+    setTotal(0);
+    setExpandedId(null);
+  }, [activeProject?.id]);
 
   const handleInvalidate = async (profile: ApplicationProfile) => {
     setActionLoading(prev => ({ ...prev, [profile.id]: true }));
     try {
       await fetch('/api/intelligence/profiles/invalidate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...projectHeaders },
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify({ url: profile.base_url }),
       });
       await fetchProfiles();
@@ -175,7 +192,7 @@ export function ProfilesClient() {
     try {
       await fetch(`/api/intelligence/profiles/${profile.id}`, {
         method: 'DELETE',
-        headers: { ...projectHeaders },
+        headers: { ...getHeaders() },
       });
       await fetchProfiles();
     } catch {
@@ -298,19 +315,42 @@ export function ProfilesClient() {
       </div>
 
       {/* Profile List */}
-      {loading ? (
+      {loading || projectLoading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 size={24} className="animate-spin text-violet-400" />
-          <span className="ml-3 text-slate-400">Loading profiles...</span>
+          <span className="ml-3 text-slate-400">
+            {projectLoading ? 'Loading project context...' : 'Loading profiles...'}
+          </span>
         </div>
       ) : filteredProfiles.length === 0 ? (
         <div className="text-center py-16">
           <Database size={48} className="mx-auto text-slate-600 mb-4" />
-          <h3 className="text-lg font-semibold text-slate-300 mb-2">No Application Profiles Yet</h3>
-          <p className="text-sm text-slate-500 max-w-md mx-auto">
-            Application profiles are automatically created when you generate test scripts.
-            Each URL is crawled once and cached for 30 days — making repeat generations 30× faster.
-          </p>
+          {activeProject ? (
+            <>
+              <h3 className="text-lg font-semibold text-slate-300 mb-2">
+                No application profiles found for &ldquo;{activeProject.name}&rdquo;
+              </h3>
+              <p className="text-sm text-slate-500 max-w-md mx-auto mb-6">
+                Create your first test script to start building intelligence for this project.
+                Each URL is crawled once and cached for 30 days — making repeat generations 30× faster.
+              </p>
+              <a
+                href="/scripts"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+              >
+                <Zap size={14} />
+                Go to Script Generator
+              </a>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lg font-semibold text-slate-300 mb-2">No Application Profiles Yet</h3>
+              <p className="text-sm text-slate-500 max-w-md mx-auto">
+                Application profiles are automatically created when you generate test scripts.
+                Each URL is crawled once and cached for 30 days — making repeat generations 30× faster.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
