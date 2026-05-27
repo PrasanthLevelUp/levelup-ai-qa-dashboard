@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 
 export interface Project {
   id: number;
@@ -38,8 +38,11 @@ export function useProject() {
  */
 export function useProjectHeaders(): Record<string, string> {
   const { activeProject } = useProject();
-  if (!activeProject) return {};
-  return { 'x-project-id': String(activeProject.id) };
+  const projectId = activeProject?.id;
+  return useMemo((): Record<string, string> => {
+    if (!projectId) return {};
+    return { 'x-project-id': String(projectId) };
+  }, [projectId]);
 }
 
 /**
