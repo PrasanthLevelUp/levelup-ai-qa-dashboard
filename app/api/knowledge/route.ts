@@ -1,14 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 /** GET /api/knowledge — List with filters */
 export async function GET(req: NextRequest) {
   try {
     const qs = req.nextUrl.search; // preserve query params
     const res = await fetch(backendUrl(`/api/knowledge${qs}`), {
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     const data = await res.json();
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const res = await fetch(backendUrl('/api/knowledge'), {
       method: 'POST',
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       body: JSON.stringify(body),
       cache: 'no-store',
     });

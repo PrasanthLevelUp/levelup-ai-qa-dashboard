@@ -1,14 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 /** DELETE /api/knowledge/relationships/:relId */
-export async function DELETE(_req: NextRequest, { params }: { params: { relId: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { relId: string } }) {
   try {
     const res = await fetch(backendUrl(`/api/knowledge/relationships/${params.relId}`), {
       method: 'DELETE',
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     const data = await res.json();

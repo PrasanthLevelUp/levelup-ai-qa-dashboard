@@ -8,6 +8,7 @@ import {
   Hash, Globe, Cpu, Bug, Shield, Workflow, Database, Boxes,
   TestTubeDiagonal, FileText, ChevronLeft, Save, XCircle,
 } from 'lucide-react';
+import { useProject } from '@/lib/project-context';
 
 /* ------------------------------------------------------------------ */
 /*  Types & Constants                                                  */
@@ -153,8 +154,19 @@ export function KnowledgeClient() {
   // Search input ref
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Project context for multi-project isolation
+  const { activeProject, loading: projectLoading } = useProject();
+
+  // Build project headers from activeProject directly inside callbacks
+  // to avoid stale closure issues with useProjectHeaders()
+  const getHeaders = useCallback((): Record<string, string> => {
+    if (!activeProject) return {};
+    return { 'x-project-id': String(activeProject.id) };
+  }, [activeProject]);
+
   /* ---- Fetch Items ---- */
   const fetchItems = useCallback(async () => {
+    if (projectLoading) return;
     setLoading(true);
     setError(null);
     try {
@@ -173,7 +185,8 @@ export function KnowledgeClient() {
         ? `/api/knowledge/search?q=${encodeURIComponent(searchQuery.trim())}&${params.toString()}`
         : `/api/knowledge?${params.toString()}`;
 
-      const res = await fetch(endpoint, { cache: 'no-store' });
+      const headers = getHeaders();
+      const res = await fetch(endpoint, { cache: 'no-store', headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch');
       setItems(data.items || []);
@@ -183,15 +196,17 @@ export function KnowledgeClient() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, filterCategory, filterStatus, filterPriority, filterTag, page, sortBy, sortDir]);
+  }, [searchQuery, filterCategory, filterStatus, filterPriority, filterTag, page, sortBy, sortDir, activeProject?.id, projectLoading, getHeaders]);
 
   /* ---- Fetch Stats & Meta ---- */
   const fetchMeta = useCallback(async () => {
+    if (projectLoading) return;
     try {
+      const headers = getHeaders();
       const [sRes, tRes, cRes] = await Promise.all([
-        fetch('/api/knowledge/stats', { cache: 'no-store' }),
-        fetch('/api/knowledge/tags', { cache: 'no-store' }),
-        fetch('/api/knowledge/categories', { cache: 'no-store' }),
+        fetch('/api/knowledge/stats', { cache: 'no-store', headers }),
+        fetch('/api/knowledge/tags', { cache: 'no-store', headers }),
+        fetch('/api/knowledge/categories', { cache: 'no-store', headers }),
       ]);
       if (sRes.ok) {
         const raw = await sRes.json();
@@ -211,13 +226,14 @@ export function KnowledgeClient() {
       if (tRes.ok) setAllTags(await tRes.json());
       if (cRes.ok) setCategoryDist(await cRes.json());
     } catch { /* non-critical */ }
-  }, []);
+  }, [activeProject?.id, projectLoading, getHeaders]);
 
   /* ---- Fetch Single + Relationships ---- */
   const fetchItem = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/knowledge/${id}`, { cache: 'no-store' });
+      const headers = getHeaders();
+      const res = await fetch(`/api/knowledge/${id}`, { cache: 'no-store', headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Not found');
       setSelectedItem(data.item);
@@ -227,11 +243,23 @@ export function KnowledgeClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [getHeaders]);
 
   /* ---- Load on mount & filter change ---- */
   useEffect(() => { fetchItems(); }, [fetchItems]);
   useEffect(() => { fetchMeta(); }, [fetchMeta]);
+
+  /* ---- Clear data on project switch ---- */
+  useEffect(() => {
+    setItems([]);
+    setTotal(0);
+    setStats(null);
+    setAllTags([]);
+    setCategoryDist([]);
+    setSelectedItem(null);
+    setRelationships([]);
+    setView('list');
+  }, [activeProject?.id]);
 
   /* ---- Keyboard shortcuts ---- */
   useEffect(() => {
@@ -258,7 +286,7 @@ export function KnowledgeClient() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this knowledge item?')) return;
     try {
-      const res = await fetch(`/api/knowledge/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/knowledge/${id}`, { method: 'DELETE', headers: getHeaders() });
       if (!res.ok) throw new Error('Delete failed');
       if (view === 'detail') { setView('list'); setSelectedItem(null); }
       fetchItems();
@@ -452,9 +480,9 @@ export function KnowledgeClient() {
       )}
 
       {/* Content Area */}
-      {view === 'list' && <ItemList items={items} loading={loading} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} page={page} totalPages={totalPages} total={total} onPageChange={setPage} />}
-      {view === 'detail' && selectedItem && <ItemDetail item={selectedItem} relationships={relationships} onEdit={() => handleEdit(selectedItem)} onDelete={() => handleDelete(selectedItem.id)} onView={handleView} onRefresh={() => fetchItem(selectedItem.id)} allItems={items} />}
-      {(view === 'create' || view === 'edit') && <ItemForm item={view === 'edit' ? selectedItem : null} onSaved={handleSaved} onCancel={() => { setView(selectedItem ? 'detail' : 'list'); }} allItems={items} />}
+      {view === 'list' && <ItemList items={items} loading={loading || projectLoading} onView={handleView} onEdit={handleEdit} onDelete={handleDelete} page={page} totalPages={totalPages} total={total} onPageChange={setPage} activeProject={activeProject} />}
+      {view === 'detail' && selectedItem && <ItemDetail item={selectedItem} relationships={relationships} onEdit={() => handleEdit(selectedItem)} onDelete={() => handleDelete(selectedItem.id)} onView={handleView} onRefresh={() => fetchItem(selectedItem.id)} allItems={items} getHeaders={getHeaders} />}
+      {(view === 'create' || view === 'edit') && <ItemForm item={view === 'edit' ? selectedItem : null} onSaved={handleSaved} onCancel={() => { setView(selectedItem ? 'detail' : 'list'); }} allItems={items} getHeaders={getHeaders} />}
 
       {/* Category Distribution */}
       {view === 'list' && categoryDist.length > 0 && (
@@ -508,11 +536,12 @@ function StatCard({ label, value, icon: Icon, color = 'text-white' }: { label: s
 
 function ItemList({
   items, loading, onView, onEdit, onDelete,
-  page, totalPages, total, onPageChange,
+  page, totalPages, total, onPageChange, activeProject,
 }: {
   items: KnowledgeItem[]; loading: boolean;
   onView: (i: KnowledgeItem) => void; onEdit: (i: KnowledgeItem) => void; onDelete: (id: string) => void;
   page: number; totalPages: number; total: number; onPageChange: (p: number) => void;
+  activeProject?: { id: number; name: string } | null;
 }) {
   if (loading && items.length === 0) {
     return (
@@ -526,7 +555,11 @@ function ItemList({
     return (
       <div className="text-center py-20">
         <BookOpen className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-        <p className="text-slate-400 mb-1">No knowledge items found</p>
+        <p className="text-slate-400 mb-1">
+          {activeProject
+            ? <>No knowledge items found for &ldquo;{activeProject.name}&rdquo;</>
+            : 'No knowledge items found'}
+        </p>
         <p className="text-xs text-slate-600">Press <kbd className="px-1.5 py-0.5 bg-slate-700/50 rounded text-slate-400">N</kbd> to create your first item</p>
       </div>
     );
@@ -624,12 +657,13 @@ function ItemList({
 /* ------------------------------------------------------------------ */
 
 function ItemDetail({
-  item, relationships, onEdit, onDelete, onView, onRefresh, allItems,
+  item, relationships, onEdit, onDelete, onView, onRefresh, allItems, getHeaders,
 }: {
   item: KnowledgeItem; relationships: KnowledgeRelationship[];
   onEdit: () => void; onDelete: () => void;
   onView: (i: KnowledgeItem) => void; onRefresh: () => void;
   allItems: KnowledgeItem[];
+  getHeaders: () => Record<string, string>;
 }) {
   const cat = getCategoryMeta(item.category);
   const StatusIcon = STATUS_ICONS[item.status] || Clock;
@@ -644,7 +678,7 @@ function ItemDetail({
     try {
       const res = await fetch(`/api/knowledge/${item.id}/relationships`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify({ target_id: relTarget, relationship_type: relType }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
@@ -661,7 +695,7 @@ function ItemDetail({
   const removeRelationship = async (relId: string) => {
     if (!confirm('Remove this relationship?')) return;
     try {
-      await fetch(`/api/knowledge/relationships/${relId}`, { method: 'DELETE' });
+      await fetch(`/api/knowledge/relationships/${relId}`, { method: 'DELETE', headers: getHeaders() });
       onRefresh();
     } catch { /* ignore */ }
   };
@@ -812,9 +846,10 @@ function ItemDetail({
 /* ------------------------------------------------------------------ */
 
 function ItemForm({
-  item, onSaved, onCancel, allItems,
+  item, onSaved, onCancel, allItems, getHeaders,
 }: {
   item: KnowledgeItem | null; onSaved: () => void; onCancel: () => void; allItems: KnowledgeItem[];
+  getHeaders: () => Record<string, string>;
 }) {
   const isEdit = !!item;
   const [title, setTitle] = useState(item?.title || '');
@@ -861,7 +896,7 @@ function ItemForm({
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify(payload),
       });
       const data = await res.json();

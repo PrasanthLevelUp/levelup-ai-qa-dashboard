@@ -1,13 +1,13 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 /** GET /api/knowledge/:id — Single item with relationships */
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const res = await fetch(backendUrl(`/api/knowledge/${params.id}`), {
-      headers: proxyHeaders(), cache: 'no-store',
+      headers: proxyHeaders(extractProjectHeaders(req)), cache: 'no-store',
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
@@ -23,7 +23,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const body = await req.json();
     const res = await fetch(backendUrl(`/api/knowledge/${params.id}`), {
       method: 'PUT',
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       body: JSON.stringify(body),
       cache: 'no-store',
     });
@@ -36,11 +36,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 /** DELETE /api/knowledge/:id */
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const res = await fetch(backendUrl(`/api/knowledge/${params.id}`), {
       method: 'DELETE',
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     const data = await res.json();
