@@ -13,7 +13,7 @@ export function backendUrl(path: string): string {
 }
 
 /** Build headers that carry auth API key + user session cookie for company scoping */
-export function proxyHeaders(): Record<string, string> {
+export function proxyHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
   const h: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -30,5 +30,16 @@ export function proxyHeaders(): Record<string, string> {
     // cookies() may fail in some contexts (e.g., during build) — skip
   }
 
+  // Merge extra headers (e.g., x-project-id for multi-project isolation)
+  if (extraHeaders) {
+    Object.assign(h, extraHeaders);
+  }
+
   return h;
+}
+
+/** Extract x-project-id from incoming request for forwarding to backend */
+export function extractProjectHeaders(req: { headers: { get(name: string): string | null } }): Record<string, string> {
+  const projectId = req.headers.get('x-project-id');
+  return projectId ? { 'x-project-id': projectId } : {};
 }

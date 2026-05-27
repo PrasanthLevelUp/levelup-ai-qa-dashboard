@@ -1,14 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 /** GET /api/knowledge/search?q=... — Full-text search */
 export async function GET(req: NextRequest) {
   try {
     const qs = req.nextUrl.search;
     const res = await fetch(backendUrl(`/api/knowledge/search${qs}`), {
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     const data = await res.json();
