@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useProjectHeaders } from '@/lib/project-context';
 import {
   Brain,
   RefreshCw,
@@ -155,6 +156,7 @@ function patternLabel(p: string) {
 /* ------------------------------------------------------------------ */
 
 export function RepoIntelligenceClient() {
+  const projectHeaders = useProjectHeaders();
   const [repos, setRepos] = useState<RepoListItem[]>([]);
   const [contexts, setContexts] = useState<IntelligenceContext[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>('');
@@ -174,7 +176,7 @@ export function RepoIntelligenceClient() {
     setLoading(true);
     try {
       const [reposRes, ctxRes] = await Promise.all([
-        fetch('/api/repos').then(r => r.json()),
+        fetch('/api/repos', { headers: { ...projectHeaders } }).then(r => r.json()),
         fetch('/api/repo-intelligence/list').then(r => r.json()),
       ]);
       if (reposRes.repositories) setRepos(reposRes.repositories);
@@ -184,7 +186,7 @@ export function RepoIntelligenceClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectHeaders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

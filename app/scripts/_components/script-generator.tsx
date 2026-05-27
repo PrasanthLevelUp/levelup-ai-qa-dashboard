@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useProjectHeaders } from '@/lib/project-context';
+import { useProject, useProjectHeaders } from '@/lib/project-context';
 import {
   Play,
   Loader2,
@@ -123,6 +123,7 @@ const TEST_TYPE_OPTIONS = [
 ];
 
 export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed }: ScriptGeneratorProps) {
+  const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
   const [scenario, setScenario] = useState('');
   const [targetUrl, setTargetUrl] = useState(projectContext.appUrl);
@@ -196,7 +197,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   // Fetch repos for the dropdown
   const fetchRepos = useCallback(async () => {
     try {
-      const res = await fetch('/api/repos');
+      const res = await fetch('/api/repos', { headers: { ...projectHeaders } });
       if (!res.ok) return;
       const data = await res.json();
       const repoList = data.repositories || [];
@@ -205,7 +206,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
         setPushRepoUrl(repoList[0].url);
       }
     } catch { /* backend may be unavailable */ }
-  }, [pushRepoUrl]);
+  }, [pushRepoUrl, projectHeaders]);
 
   useEffect(() => {
     fetchRepos();
