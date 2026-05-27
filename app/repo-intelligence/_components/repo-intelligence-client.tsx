@@ -25,6 +25,10 @@ import {
   Zap,
   Network,
   Activity,
+  AlertTriangle,
+  BarChart3,
+  BookOpen,
+  Scan,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -162,6 +166,7 @@ export function RepoIntelligenceClient() {
   const [contexts, setContexts] = useState<IntelligenceContext[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [profile, setProfile] = useState<RepoProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -202,27 +207,39 @@ export function RepoIntelligenceClient() {
   // Re-fetch when project changes
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-select first scanned repo (only if it has been scanned)
+  // Auto-select first repo — prefer scanned repos, fall back to first available
   useEffect(() => {
-    if (!selectedRepo && contexts.length > 0) {
+    if (selectedRepo) return;
+    if (contexts.length > 0) {
       setSelectedRepo(contexts[0].repoId);
+    } else if (repos.length > 0) {
+      setSelectedRepo(repos[0].id);
     }
-    // Don't auto-select unscanned repos — they'll just 404
   }, [contexts, repos, selectedRepo]);
 
-  // Load profile when repo selected
+  // Load profile when repo selected — always fetch, backend returns 200 with exists:false for unscanned
   useEffect(() => {
-    if (!selectedRepo) return;
-    const hasContext = contexts.find(c => c.repoId === selectedRepo);
-    if (!hasContext) { setProfile(null); return; }
+    if (!selectedRepo) { setProfile(null); return; }
+    let cancelled = false;
+    setProfileLoading(true);
     (async () => {
       try {
         const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(selectedRepo)}`);
         const data = await res.json();
-        if (data.success && data.profile) setProfile(data.profile);
-        else setProfile(null);
-      } catch { setProfile(null); }
+        if (cancelled) return;
+        // Handle both new format (exists:false) and legacy 404
+        if (data.success && data.profile) {
+          setProfile(data.profile);
+        } else {
+          setProfile(null);
+        }
+      } catch {
+        if (!cancelled) setProfile(null);
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
     })();
+    return () => { cancelled = true; };
   }, [selectedRepo, contexts]);
 
   // Scan handler
@@ -255,6 +272,8 @@ export function RepoIntelligenceClient() {
 
   const quality = profile ? computeQualityScore(profile) : null;
   const scannedCtx = contexts.find(c => c.repoId === selectedRepo);
+  const selectedRepoInfo = repos.find(r => r.id === selectedRepo);
+  const isUnscanned = !!selectedRepo && !scannedCtx && !profile;
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
@@ -279,7 +298,7 @@ export function RepoIntelligenceClient() {
         <div className="flex items-center gap-3">
           <select
             value={selectedRepo}
-            onChange={(e) => setSelectedRepo(e.target.value)}
+            onChange={(e) => { setSelectedRepo(e.target.value); setScanResult(null); }}
             className="h-10 px-3 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500"
           >
             <option value="">Select repository…</option>
@@ -303,28 +322,48 @@ export function RepoIntelligenceClient() {
         </div>
       </div>
 
-      {/* Not-scanned hint */}
-      {selectedRepo && !scannedCtx && !scanning && !scanResult && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-sm flex items-start gap-3 text-amber-300">
-          <Sparkles className="w-5 h-5 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-medium">Repository not scanned yet</p>
-            <p className="text-xs mt-1 opacity-80">
-              Click &quot;Scan Repository&quot; to analyze the codebase. The intelligence engine will learn your framework, patterns, helpers, and workflows — which improves script generation quality.
-            </p>
+      {/* ── Scanning in progress ─────────────────────────── */}
+      {scanning && (
+        <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="relative">
+              <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
+              <div className="absolute inset-0 w-8 h-8 rounded-full bg-violet-400/10 animate-ping" />
+            </div>
+            <div>
+              <p className="font-semibold text-violet-200">Analyzing repository…</p>
+              <p className="text-xs text-violet-400/80 mt-0.5">
+                Cloning {selectedRepoInfo?.name || 'repository'} and scanning codebase structure
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {[
+              { label: 'Cloning repository', icon: GitBranch },
+              { label: 'Detecting framework & patterns', icon: Cpu },
+              { label: 'Indexing helpers & page objects', icon: Sparkles },
+              { label: 'Extracting business workflows', icon: Workflow },
+              { label: 'Building intelligence profile', icon: Brain },
+            ].map((step, i) => (
+              <div key={i} className="flex items-center gap-3 text-sm">
+                <step.icon className="w-4 h-4 text-violet-500/60" />
+                <span className="text-slate-400">{step.label}</span>
+                <Loader2 className="w-3 h-3 animate-spin text-violet-500/40 ml-auto" />
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Scan result toast */}
-      {scanResult && (
+      {/* ── Scan result toast ────────────────────────────── */}
+      {scanResult && !scanning && (
         <div className={`rounded-lg border p-4 text-sm flex items-start gap-3 ${
           scanResult.success
             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
             : 'bg-red-500/10 border-red-500/30 text-red-300'
         }`}>
-          {scanResult.success ? <CheckCircle2 className="w-5 h-5 mt-0.5 shrink-0" /> : <Shield className="w-5 h-5 mt-0.5 shrink-0" />}
-          <div>
+          {scanResult.success ? <CheckCircle2 className="w-5 h-5 mt-0.5 shrink-0" /> : <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0" />}
+          <div className="flex-1">
             {scanResult.success ? (
               <>
                 <p className="font-medium">Scan complete</p>
@@ -333,29 +372,123 @@ export function RepoIntelligenceClient() {
                 </p>
               </>
             ) : (
-              <p>{scanResult.error || 'Scan failed'}</p>
+              <>
+                <p className="font-medium">Scan failed</p>
+                <p className="text-xs mt-1 opacity-80">{scanResult.error || 'An unexpected error occurred'}</p>
+                <button
+                  onClick={handleScan}
+                  className="mt-2 text-xs font-medium text-red-300 hover:text-red-200 underline underline-offset-2"
+                >
+                  Retry scan
+                </button>
+              </>
             )}
           </div>
         </div>
       )}
 
+      {/* ── Loading state ────────────────────────────────── */}
       {loading && (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
         </div>
       )}
 
-      {!loading && !profile && (
+      {/* ── No repo selected ─────────────────────────────── */}
+      {!loading && !selectedRepo && repos.length === 0 && (
         <div className="text-center py-20">
           <Brain className="w-16 h-16 mx-auto mb-4 text-slate-600" />
-          <h3 className="text-lg font-semibold text-slate-300 mb-2">No Intelligence Data Yet</h3>
+          <h3 className="text-lg font-semibold text-slate-300 mb-2">No Repositories Found</h3>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
-            Select a repository and click &ldquo;Scan Repository&rdquo; to let the AI analyze your codebase.
-            The engine will learn your framework, patterns, helpers, and workflows.
+            Add a repository to your project first, then come back here to scan it and build intelligence.
           </p>
         </div>
       )}
 
+      {!loading && !selectedRepo && repos.length > 0 && (
+        <div className="text-center py-20">
+          <Brain className="w-16 h-16 mx-auto mb-4 text-slate-600" />
+          <h3 className="text-lg font-semibold text-slate-300 mb-2">Select a Repository</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            Choose a repository from the dropdown above to view or build its intelligence profile.
+          </p>
+        </div>
+      )}
+
+      {/* ── Unscanned repo — rich first-scan experience ── */}
+      {!loading && isUnscanned && !scanning && !profileLoading && (
+        <div className="space-y-6">
+          {/* Hero card */}
+          <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/5 via-slate-800/50 to-purple-500/5 p-8 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 mb-4">
+              <BarChart3 className="w-8 h-8 text-violet-400" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-100 mb-2">No Intelligence Data Yet</h3>
+            <p className="text-sm text-slate-400 max-w-lg mx-auto mb-6">
+              This repository hasn&apos;t been analyzed yet. Start your first scan to let the AI
+              learn your framework, patterns, helpers, and workflows — which dramatically
+              improves script generation quality.
+            </p>
+            <button
+              onClick={handleScan}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-500/25 transition-all hover:shadow-violet-500/40 hover:scale-[1.02]"
+            >
+              <Scan className="w-5 h-5" />
+              Scan Repository
+            </button>
+          </div>
+
+          {/* What the scan will discover */}
+          <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-6">
+            <h4 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-violet-400" />
+              What the scan will discover
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                { icon: Cpu, title: 'Framework & Patterns', desc: 'Detects your test framework, assertion library, locator strategy, and coding conventions' },
+                { icon: Sparkles, title: 'Reusable Assets', desc: 'Indexes helper functions, page objects, fixtures, and custom commands for AI reuse' },
+                { icon: Workflow, title: 'Business Workflows', desc: 'Extracts multi-step business flows and test suites to understand your application' },
+                { icon: Network, title: 'Knowledge Graph', desc: 'Maps connections between tests, helpers, pages, and flows for context-aware generation' },
+                { icon: Activity, title: 'Quality Score', desc: 'Calculates how well AI understands your codebase and its readiness for generation' },
+                { icon: Eye, title: 'Context Preview', desc: 'Shows exactly what context AI will inject when generating scripts for this repo' },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-slate-900/40">
+                  <item.icon className="w-4 h-4 text-violet-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-200">{item.title}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Repository info */}
+          {selectedRepoInfo && (
+            <div className="rounded-lg bg-slate-800/30 border border-slate-700/30 px-4 py-3 flex items-center gap-3 text-sm">
+              <GitBranch className="w-4 h-4 text-slate-500" />
+              <span className="text-slate-400">
+                Ready to scan <span className="text-slate-200 font-medium">{selectedRepoInfo.name}</span>
+                {' '}on branch <span className="text-slate-200 font-mono">{selectedRepoInfo.branch}</span>
+              </span>
+              <span className="text-xs text-slate-600 ml-auto truncate max-w-[300px]">{selectedRepoInfo.url}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Profile loading indicator ────────────────────── */}
+      {!loading && selectedRepo && profileLoading && !scanning && (
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center">
+            <Loader2 className="w-6 h-6 animate-spin text-violet-400 mx-auto mb-3" />
+            <p className="text-sm text-slate-400">Loading intelligence profile…</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Profile data ─────────────────────────────────── */}
       {!loading && profile && quality && (
         <>
           {/* ── SECTION 1: Context Quality Score ───────────── */}
