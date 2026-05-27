@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FileText, Sparkles, BarChart3, ChevronDown, ChevronRight,
   CheckCircle2, AlertTriangle, Shield, Zap, Clock, Tag, Trash2,
   Plus, Loader2, RefreshCw, ClipboardList, Lightbulb, Target,
   ArrowRight, CheckSquare, XCircle, Eye, ChevronUp, TestTubeDiagonal,
-  GitBranch, Github, ExternalLink, Code2, Rocket,
+  GitBranch, Github, ExternalLink, Code2, Rocket, BookOpen,
+  Brain, Cpu, Info, HelpCircle, LayoutTemplate, Copy,
+  Download, Filter, Search, Check, X,
 } from 'lucide-react';
 import { useProject } from '@/lib/project-context';
+import { KnowledgeSelector } from '@/components/knowledge-selector';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -71,6 +74,118 @@ const RISK_COLORS: Record<string, string> = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Templates                                                          */
+/* ------------------------------------------------------------------ */
+
+interface Template {
+  id: string;
+  name: string;
+  icon: string;
+  title: string;
+  description: string;
+  module: string;
+  businessFlow: string;
+  acceptanceCriteria: string;
+  coverageTypes: CoverageType[];
+}
+
+const TEMPLATES: Template[] = [
+  {
+    id: 'login',
+    name: 'Login Flow',
+    icon: '🔐',
+    title: 'User Login with Email and Password',
+    description: 'Users should be able to log in to the application using their registered email address and password. The system should validate credentials, handle invalid inputs, manage session tokens, and redirect to the dashboard upon success.',
+    module: 'Authentication',
+    businessFlow: 'User opens login page → enters email → enters password → clicks Sign In → system validates → session created → redirect to dashboard',
+    acceptanceCriteria: '- Valid credentials should log the user in successfully\n- Invalid credentials should show a clear error message\n- Account should lock after 5 failed attempts\n- "Remember me" option should persist session for 30 days\n- Session should expire after 30 minutes of inactivity',
+    coverageTypes: ['positive', 'negative', 'security', 'edge_cases'],
+  },
+  {
+    id: 'crud',
+    name: 'CRUD Operations',
+    icon: '📝',
+    title: 'Create, Read, Update, Delete Resource',
+    description: 'Users should be able to create new items, view a list and detail view of items, edit existing items, and delete items with confirmation. All operations should validate inputs and handle errors gracefully.',
+    module: 'Resource Management',
+    businessFlow: 'User clicks "Add New" → fills form → saves → item appears in list → clicks item → views details → clicks edit → modifies → saves → clicks delete → confirms → item removed',
+    acceptanceCriteria: '- Create should validate all required fields before saving\n- List should paginate with 20 items per page\n- Edit should pre-fill all existing values\n- Delete should require confirmation dialog\n- Success/error toast notifications for all actions',
+    coverageTypes: ['positive', 'negative', 'edge_cases', 'data_validation'],
+  },
+  {
+    id: 'checkout',
+    name: 'Checkout Flow',
+    icon: '🛒',
+    title: 'E-commerce Checkout Process',
+    description: 'Users should be able to review their cart, enter shipping details, select payment method, apply discount codes, and complete the purchase. The system should validate addresses, process payments, and send confirmation.',
+    module: 'Checkout',
+    businessFlow: 'User views cart → proceeds to checkout → enters shipping address → selects shipping method → enters payment info → reviews order → places order → receives confirmation',
+    acceptanceCriteria: '- Cart total should update in real-time\n- Discount codes should be validated instantly\n- Address validation should catch invalid formats\n- Payment processing should handle timeouts\n- Order confirmation email within 2 minutes',
+    coverageTypes: ['positive', 'negative', 'edge_cases', 'integration', 'security'],
+  },
+  {
+    id: 'search',
+    name: 'Search & Filter',
+    icon: '🔍',
+    title: 'Search Functionality with Filters',
+    description: 'Users should be able to search for items using keywords, apply multiple filters (category, date range, status), sort results, and navigate through paginated results. The search should be fast and return relevant results.',
+    module: 'Search',
+    businessFlow: 'User enters search query → results load → applies category filter → applies date filter → sorts by relevance → navigates pages → clicks result → views detail',
+    acceptanceCriteria: '- Search should return results within 500ms\n- Empty search should show all items\n- Filters should be combinable\n- Results count should be displayed\n- Search query should be highlighted in results',
+    coverageTypes: ['positive', 'negative', 'edge_cases', 'performance', 'ui'],
+  },
+  {
+    id: 'registration',
+    name: 'User Registration',
+    icon: '👤',
+    title: 'New User Registration Flow',
+    description: 'New users should be able to create an account by providing their name, email, password, and agreeing to terms. The system should validate inputs, check for duplicate emails, send verification, and activate the account.',
+    module: 'Authentication',
+    businessFlow: 'User clicks "Sign Up" → enters name → enters email → creates password → confirms password → accepts terms → clicks Register → receives verification email → clicks link → account activated',
+    acceptanceCriteria: '- Password must be at least 8 characters with uppercase, lowercase, and number\n- Email must be unique — show error for duplicates\n- Verification email sent within 30 seconds\n- Verification link expires in 24 hours\n- Terms and conditions must be accepted',
+    coverageTypes: ['positive', 'negative', 'security', 'edge_cases', 'data_validation'],
+  },
+  {
+    id: 'file-upload',
+    name: 'File Upload',
+    icon: '📎',
+    title: 'File Upload with Validation',
+    description: 'Users should be able to upload files with drag-and-drop or file picker. The system should validate file types, enforce size limits, show upload progress, and handle multiple files.',
+    module: 'File Management',
+    businessFlow: 'User drags file to upload zone (or clicks to browse) → file validates → progress bar shows → upload completes → file appears in list → user can preview/download',
+    acceptanceCriteria: '- Supported formats: JPG, PNG, PDF, DOCX (max 10MB)\n- Show clear error for unsupported file types\n- Progress bar during upload\n- Multiple file upload (up to 5 at once)\n- Cancel upload mid-way should clean up',
+    coverageTypes: ['positive', 'negative', 'edge_cases', 'ui'],
+  },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Tooltip / Help Component                                           */
+/* ------------------------------------------------------------------ */
+
+function FieldHelp({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onClick={() => setShow(!show)}
+        className="p-0.5 text-slate-500 hover:text-violet-400 transition-colors"
+      >
+        <HelpCircle className="w-3.5 h-3.5" />
+      </button>
+      {show && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56 bg-slate-800 border border-slate-600 rounded-lg p-2.5 shadow-xl">
+          <p className="text-xs text-slate-300 leading-relaxed">{text}</p>
+          <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 border-r border-b border-slate-600 rotate-45 -mt-1" />
+        </div>
+      )}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -124,11 +239,11 @@ export function TestCoverageClient() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Generate Tab                                                       */
+/*  Generate Tab — Complete Overhaul                                    */
 /* ------------------------------------------------------------------ */
 
 function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const { activeProject } = useProject();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,19 +257,81 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [module, setModule] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<CoverageType[]>(['positive', 'negative', 'edge_cases']);
 
+  // Intelligence sources
+  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<number[]>([]);
+  const [useRepoIntelligence, setUseRepoIntelligence] = useState(false);
+  const [selectedRepoId, setSelectedRepoId] = useState('');
+  const [includeCoverageGaps, setIncludeCoverageGaps] = useState(true);
+  const [repos, setRepos] = useState<any[]>([]);
+  const [repoContexts, setRepoContexts] = useState<any[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+
+  // UI state
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCoverageTypes, setShowCoverageTypes] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Validation hints
+  const titleValid = title.trim().length >= 5;
+  const descriptionValid = description.trim().length >= 20;
+  const canGenerate = titleValid && descriptionValid && selectedTypes.length > 0;
+
+  // Fetch repos for repo intelligence
+  useEffect(() => {
+    if (!activeProject?.id) return;
+    (async () => {
+      setLoadingRepos(true);
+      try {
+        const [repoRes, contextRes] = await Promise.all([
+          fetch(`/api/projects/${activeProject.id}/repositories`),
+          fetch('/api/repo-intelligence/list'),
+        ]);
+        if (repoRes.ok) {
+          const data = await repoRes.json();
+          setRepos(Array.isArray(data) ? data : data.repositories || []);
+        }
+        if (contextRes.ok) {
+          const data = await contextRes.json();
+          setRepoContexts(Array.isArray(data) ? data : data.contexts || []);
+        }
+      } catch { /* ignore */ }
+      setLoadingRepos(false);
+    })();
+  }, [activeProject?.id]);
+
+  // Repos with intelligence data
+  const scannedRepoIds = useMemo(
+    () => new Set(repoContexts.map((c: any) => c.repoId || c.repo_id)),
+    [repoContexts]
+  );
+
   const toggleType = (t: CoverageType) => {
     setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   };
 
+  const applyTemplate = (templateId: string) => {
+    const tmpl = TEMPLATES.find(t => t.id === templateId);
+    if (!tmpl) return;
+    setTitle(tmpl.title);
+    setDescription(tmpl.description);
+    setModule(tmpl.module);
+    setBusinessFlow(tmpl.businessFlow);
+    setAcceptanceCriteria(tmpl.acceptanceCriteria);
+    setSelectedTypes(tmpl.coverageTypes);
+    setSelectedTemplate(templateId);
+  };
+
   const handleGenerate = async () => {
-    if (!title.trim() || !description.trim()) return;
+    if (!canGenerate) return;
     setLoading(true);
     setError(null);
-    setStep(3);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+
       const res = await fetch('/api/test-coverage/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),
@@ -163,6 +340,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           acceptanceCriteria: acceptanceCriteria.trim() || undefined,
           module: module.trim() || undefined,
           coverageTypes: selectedTypes,
+          knowledgeItemIds: selectedKnowledgeIds.length > 0 ? selectedKnowledgeIds : undefined,
+          useRepoIntelligence: useRepoIntelligence && selectedRepoId ? true : undefined,
+          repoId: useRepoIntelligence && selectedRepoId ? parseInt(selectedRepoId, 10) : undefined,
+          includeCoverageGaps,
         }),
       });
       const data = await res.json();
@@ -184,7 +365,6 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   };
 
   const handleReset = () => {
-    setStep(1);
     setResult(null);
     setError(null);
     setTitle('');
@@ -194,86 +374,192 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setAcceptanceCriteria('');
     setModule('');
     setSelectedTypes(['positive', 'negative', 'edge_cases']);
+    setSelectedKnowledgeIds([]);
+    setUseRepoIntelligence(false);
+    setSelectedRepoId('');
+    setSelectedTemplate(null);
   };
 
+  // Show results if we have them
+  if (result) {
+    return <ResultsDisplay result={result} onReset={handleReset} onViewHistory={onViewHistory} />;
+  }
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
+        <div className="relative mx-auto w-16 h-16 mb-4">
+          <div className="absolute inset-0 rounded-full border-2 border-violet-500/20" />
+          <div className="absolute inset-0 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+          <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-violet-400" />
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">Generating Test Cases</h3>
+        <p className="text-sm text-slate-400 max-w-md mx-auto">
+          AI is analyzing your requirement, creating manual test scenarios, and identifying coverage gaps...
+        </p>
+        <div className="flex items-center justify-center gap-6 mt-6 text-xs text-slate-500">
+          <span className="flex items-center gap-1.5"><Brain className="w-3.5 h-3.5 text-violet-400" /> Analyzing requirement</span>
+          <span className="flex items-center gap-1.5"><Target className="w-3.5 h-3.5 text-blue-400" /> Creating scenarios</span>
+          <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-emerald-400" /> Finding gaps</span>
+        </div>
+        {selectedKnowledgeIds.length > 0 && (
+          <p className="text-xs text-violet-400 mt-3 flex items-center justify-center gap-1">
+            <BookOpen className="w-3 h-3" /> Using {selectedKnowledgeIds.length} knowledge item{selectedKnowledgeIds.length !== 1 ? 's' : ''} for context
+          </p>
+        )}
+        <p className="text-xs text-slate-600 mt-4">This may take 15-30 seconds...</p>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error && !result) {
+    return (
+      <div className="bg-slate-800/50 rounded-xl border border-red-500/30 p-8 text-center">
+        <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+        <h3 className="text-lg font-semibold text-white mb-2">Generation Failed</h3>
+        <p className="text-sm text-slate-400 mb-2">Could not generate test cases. Please try again.</p>
+        <p className="text-xs text-red-400/80 bg-red-500/10 rounded-lg px-3 py-2 mb-4 max-w-lg mx-auto">{error}</p>
+        <div className="flex gap-3 justify-center">
+          <button onClick={() => setError(null)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">
+            Edit & Retry
+          </button>
+          <button onClick={handleReset} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm">
+            Start Over
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      {/* Step Indicator */}
-      <div className="flex items-center gap-2 mb-6">
-        {[1, 2, 3].map(s => (
-          <div key={s} className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
-              s < step ? 'bg-emerald-500 text-white'
-              : s === step ? 'bg-violet-600 text-white ring-2 ring-violet-400/50'
-              : 'bg-slate-700 text-slate-500'
-            }`}>
-              {s < step ? <CheckCircle2 className="w-4 h-4" /> : s}
-            </div>
-            <span className={`text-sm hidden sm:inline ${s === step ? 'text-white font-medium' : 'text-slate-500'}`}>
-              {s === 1 ? 'Describe Requirement' : s === 2 ? 'Select Coverage' : 'Results'}
-            </span>
-            {s < 3 && <ArrowRight className="w-4 h-4 text-slate-600" />}
-          </div>
-        ))}
+    <div className="space-y-5">
+      {/* ── Section 1: Quick Start from Template ── */}
+      <div className="bg-gradient-to-r from-violet-600/10 to-purple-600/10 rounded-xl border border-violet-500/20 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <LayoutTemplate className="w-4 h-4 text-violet-400" />
+          <span className="text-sm font-semibold text-white">Quick Start</span>
+          <span className="text-xs text-slate-400">— Pick a template or start from scratch</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {TEMPLATES.map(tmpl => (
+            <button
+              key={tmpl.id}
+              onClick={() => applyTemplate(tmpl.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                selectedTemplate === tmpl.id
+                  ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
+                  : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
+              }`}
+            >
+              <span>{tmpl.icon}</span>
+              {tmpl.name}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Step 1: Requirement Input */}
-      {step === 1 && (
+      {/* ── Section 2: Test Scenario Details ── */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
+        <h3 className="text-base font-semibold text-white mb-1 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-violet-400" />
+          Describe Your Test Scenario
+        </h3>
+        <p className="text-xs text-slate-400 mb-5">Tell us what you want to test — in plain English, Jira story format, or technical spec. The more detail you provide, the better the test cases.</p>
+
         <div className="space-y-4">
-          <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-violet-400" />
-              Describe Your Requirement
-            </h3>
-            <p className="text-sm text-slate-400 mb-6">Enter a Jira story, feature description, or plain English requirement. AI will generate comprehensive manual test cases with step-by-step instructions, expected results, and coverage analysis.</p>
+          {/* Title */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-slate-300">What are you testing? *</label>
+              <FieldHelp text="Enter a short title describing the feature or scenario. Example: 'Users should login using email OTP'" />
+              {title.trim().length > 0 && (
+                titleValid
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  : <span className="text-[10px] text-amber-400">Too short (min 5 chars)</span>
+              )}
+            </div>
+            <input
+              type="text"
+              value={title}
+              onChange={e => { setTitle(e.target.value); setSelectedTemplate(null); }}
+              placeholder="e.g. Users should login using email OTP"
+              className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50"
+            />
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">Title *</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. Users should login using email OTP"
-                  className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50"
-                />
+          {/* Description */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-slate-300">Detailed Description *</label>
+              <FieldHelp text="Describe the requirement fully — business rules, expected behavior, edge cases. The AI uses this to generate comprehensive test cases." />
+              {description.trim().length > 0 && (
+                descriptionValid
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  : <span className="text-[10px] text-amber-400">Add more detail ({description.trim().length}/20 chars min)</span>
+              )}
+            </div>
+            <textarea
+              value={description}
+              onChange={e => { setDescription(e.target.value); setSelectedTemplate(null); }}
+              rows={4}
+              placeholder="Describe the requirement in detail. Include business rules, expected behavior, edge cases you're concerned about..."
+              className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
+            />
+          </div>
+
+          {/* Ticket / Module — side by side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <label className="text-sm font-medium text-slate-300">Ticket / Story ID</label>
+                <span className="text-xs text-slate-500">(Optional)</span>
+                <FieldHelp text="Link this to a Jira or project management ticket for traceability." />
               </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">Description *</label>
-                <textarea
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  rows={4}
-                  placeholder="Describe the requirement in detail. Include business rules, expected behavior, edge cases you're concerned about..."
-                  className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
-                />
+              <input
+                type="text"
+                value={jiraId}
+                onChange={e => setJiraId(e.target.value)}
+                placeholder="e.g. PROJ-1234"
+                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <label className="text-sm font-medium text-slate-300">Module / Area</label>
+                <span className="text-xs text-slate-500">(Optional)</span>
+                <FieldHelp text="The part of your application this test covers. E.g. Authentication, Payments, Dashboard." />
               </div>
+              <input
+                type="text"
+                value={module}
+                onChange={e => setModule(e.target.value)}
+                placeholder="e.g. Authentication, Payments"
+                className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50"
+              />
+            </div>
+          </div>
+        </div>
 
+        {/* Advanced fields — collapsible */}
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
+          >
+            {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            Advanced Details
+            <span className="text-xs text-slate-600">(Business flow, acceptance criteria)</span>
+          </button>
+          {showAdvanced && (
+            <div className="mt-3 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">Jira ID</label>
-                <input
-                  type="text"
-                  value={jiraId}
-                  onChange={e => setJiraId(e.target.value)}
-                  placeholder="e.g. PROJ-1234"
-                  className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">Module</label>
-                <input
-                  type="text"
-                  value={module}
-                  onChange={e => setModule(e.target.value)}
-                  placeholder="e.g. Authentication, Payments"
-                  className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">Business Flow</label>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <label className="text-sm font-medium text-slate-300">Business Flow</label>
+                  <FieldHelp text="Describe the step-by-step user journey. Use arrows (→) to separate steps." />
+                </div>
                 <textarea
                   value={businessFlow}
                   onChange={e => setBusinessFlow(e.target.value)}
@@ -282,126 +568,225 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
                   className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
                 />
               </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">Acceptance Criteria</label>
+              <div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <label className="text-sm font-medium text-slate-300">Acceptance Criteria</label>
+                  <FieldHelp text="List specific conditions that must be true for the feature to be considered complete. One per line, starting with a dash." />
+                </div>
                 <textarea
                   value={acceptanceCriteria}
                   onChange={e => setAcceptanceCriteria(e.target.value)}
                   rows={3}
-                  placeholder="e.g.\n- OTP should expire in 5 minutes\n- Account locks after 5 failed attempts\n- Admin can reset locked accounts"
+                  placeholder="e.g.&#10;- OTP should expire in 5 minutes&#10;- Account locks after 5 failed attempts&#10;- Admin can reset locked accounts"
                   className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
                 />
               </div>
             </div>
-
-            <div className="flex justify-end mt-6">
-              <button
-                onClick={() => setStep(2)}
-                disabled={!title.trim() || !description.trim()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium transition-all"
-              >
-                Next: Select Coverage
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: Coverage Type Selection */}
-      {step === 2 && (
-        <div className="space-y-4">
-          <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6">
-            <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
-              <Target className="w-5 h-5 text-violet-400" />
-              Select Coverage Types
-            </h3>
-            <p className="text-sm text-slate-400 mb-6">
-              Choose which types of manual test cases to generate. This reduces noise and ensures relevant coverage.
-            </p>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {COVERAGE_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => toggleType(opt.value)}
-                  className={`relative flex flex-col items-start p-3 rounded-xl border transition-all text-left ${
-                    selectedTypes.includes(opt.value)
-                      ? 'bg-violet-600/20 border-violet-500/50 ring-1 ring-violet-500/30'
-                      : 'bg-slate-900/30 border-slate-700/50 hover:border-slate-600/50'
-                  }`}
-                >
-                  {selectedTypes.includes(opt.value) && (
-                    <div className="absolute top-2 right-2">
-                      <CheckSquare className="w-4 h-4 text-violet-400" />
-                    </div>
-                  )}
-                  <span className="text-lg mb-1">{opt.icon}</span>
-                  <span className={`text-sm font-medium ${selectedTypes.includes(opt.value) ? 'text-white' : 'text-slate-300'}`}>
-                    {opt.label}
-                  </span>
-                  <span className="text-xs text-slate-500 mt-0.5">{opt.description}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700/50">
-              <div className="text-sm text-slate-400">
-                {selectedTypes.length} type{selectedTypes.length !== 1 ? 's' : ''} selected
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setStep(1)}
-                  className="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm font-medium transition-all"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleGenerate}
-                  disabled={selectedTypes.length === 0}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium transition-all shadow-lg shadow-violet-600/20"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Generate Test Cases
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Results */}
-      {step === 3 && (
-        <div className="space-y-6">
-          {loading ? (
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-12 text-center">
-              <Loader2 className="w-12 h-12 text-violet-400 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">Generating Test Cases</h3>
-              <p className="text-sm text-slate-400">AI is analyzing your requirement, creating manual test scenarios, and identifying coverage gaps...</p>
-              <div className="flex items-center justify-center gap-4 mt-6 text-xs text-slate-500">
-                <span>This may take 15-30 seconds...</span>
-              </div>
-            </div>
-          ) : result ? (
-            <ResultsDisplay result={result} onReset={handleReset} onViewHistory={onViewHistory} />
-          ) : (
-            <div className="bg-slate-800/50 rounded-xl border border-red-500/30 p-8 text-center">
-              <XCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-              <h3 className="text-lg font-semibold text-white mb-2">Generation Failed</h3>
-              <p className="text-sm text-slate-400 mb-2">Could not generate test cases. Please try again.</p>
-              {error && (
-                <p className="text-xs text-red-400/80 bg-red-500/10 rounded-lg px-3 py-2 mb-4 max-w-lg mx-auto">
-                  {error}
-                </p>
-              )}
-              <button onClick={handleReset} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">
-                Start Over
-              </button>
-            </div>
           )}
         </div>
-      )}
+      </div>
+
+      {/* ── Section 3: Intelligence Sources ── */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
+        <h3 className="text-base font-semibold text-white mb-1 flex items-center gap-2">
+          <Brain className="w-4 h-4 text-violet-400" />
+          Intelligence Sources
+          <span className="text-xs text-slate-500 font-normal">(Optional — improves accuracy)</span>
+        </h3>
+        <p className="text-xs text-slate-400 mb-4">Connect knowledge and repository data to generate more relevant and accurate test cases.</p>
+
+        <div className="space-y-3">
+          {/* App Knowledge Selector */}
+          <KnowledgeSelector
+            selectedIds={selectedKnowledgeIds}
+            onChange={setSelectedKnowledgeIds}
+            contextTitle={title}
+            contextDescription={description}
+          />
+
+          {/* Repository Intelligence */}
+          <div className={`rounded-xl border transition-all ${
+            useRepoIntelligence ? 'bg-slate-800/80 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'
+          }`}>
+            <div className="flex items-center gap-3 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setUseRepoIntelligence(!useRepoIntelligence)}
+                className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
+                  useRepoIntelligence ? 'bg-emerald-500 border-emerald-400' : 'border-slate-600 bg-slate-800 hover:border-slate-500'
+                }`}
+              >
+                {useRepoIntelligence && <Check className="w-3.5 h-3.5 text-white" />}
+              </button>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                <Cpu className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm font-medium text-slate-200">Repository Intelligence</span>
+                <p className="text-xs text-slate-500">Use code patterns and architecture from analyzed repos</p>
+              </div>
+            </div>
+
+            {useRepoIntelligence && (
+              <div className="px-4 pb-3 pt-1">
+                {loadingRepos ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Loading repositories...
+                  </div>
+                ) : repos.length === 0 ? (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                    <p className="text-xs text-amber-300">No repositories found. Add a repository in the Projects page first.</p>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedRepoId}
+                    onChange={e => setSelectedRepoId(e.target.value)}
+                    className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                  >
+                    <option value="">Select a repository...</option>
+                    {repos.map((r: any) => {
+                      const hasIntel = scannedRepoIds.has(r.id);
+                      return (
+                        <option key={r.id} value={String(r.id)}>
+                          {r.name} {r.branch ? `(${r.branch})` : ''} {hasIntel ? '✓ Scanned' : '— Not scanned'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+                {selectedRepoId && !scannedRepoIds.has(parseInt(selectedRepoId, 10)) && (
+                  <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    This repo hasn&apos;t been scanned yet. <a href="/repo-intelligence" className="underline">Scan it first →</a>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Coverage Gap Analysis */}
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
+            includeCoverageGaps ? 'bg-slate-800/80 border-amber-500/20' : 'bg-slate-800/50 border-slate-700/50'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setIncludeCoverageGaps(!includeCoverageGaps)}
+              className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
+                includeCoverageGaps ? 'bg-amber-500 border-amber-400' : 'border-slate-600 bg-slate-800 hover:border-slate-500'
+              }`}
+            >
+              {includeCoverageGaps && <Check className="w-3.5 h-3.5 text-white" />}
+            </button>
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+              <Shield className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-200">Include Coverage Gap Analysis</span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">Recommended</span>
+              </div>
+              <p className="text-xs text-slate-500">Automatically identifies missing test scenarios you might have overlooked</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section 4: Coverage Types ── */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
+        <button
+          type="button"
+          onClick={() => setShowCoverageTypes(!showCoverageTypes)}
+          className="w-full flex items-center gap-2 text-left"
+        >
+          <Target className="w-4 h-4 text-violet-400" />
+          <span className="text-base font-semibold text-white flex-1">Coverage Types</span>
+          <span className="text-xs text-slate-400 mr-2">
+            {selectedTypes.length} selected
+          </span>
+          {showCoverageTypes ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+
+        {/* Always show selected types as pills */}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {selectedTypes.map(t => {
+            const opt = COVERAGE_OPTIONS.find(o => o.value === t);
+            return (
+              <span key={t} className="inline-flex items-center gap-1 bg-violet-500/15 text-violet-300 px-2 py-0.5 rounded-full text-xs border border-violet-500/20">
+                <span>{opt?.icon}</span>
+                {opt?.label}
+                <button type="button" onClick={() => toggleType(t)} className="ml-0.5 hover:text-red-400">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+
+        {showCoverageTypes && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-4">
+            {COVERAGE_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleType(opt.value)}
+                className={`relative flex flex-col items-start p-2.5 rounded-lg border transition-all text-left ${
+                  selectedTypes.includes(opt.value)
+                    ? 'bg-violet-600/20 border-violet-500/50 ring-1 ring-violet-500/30'
+                    : 'bg-slate-900/30 border-slate-700/50 hover:border-slate-600/50'
+                }`}
+              >
+                {selectedTypes.includes(opt.value) && (
+                  <div className="absolute top-1.5 right-1.5">
+                    <CheckSquare className="w-3.5 h-3.5 text-violet-400" />
+                  </div>
+                )}
+                <span className="text-sm mb-0.5">{opt.icon}</span>
+                <span className={`text-xs font-medium ${selectedTypes.includes(opt.value) ? 'text-white' : 'text-slate-300'}`}>
+                  {opt.label}
+                </span>
+                <span className="text-[10px] text-slate-500">{opt.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Generate Button ── */}
+      <div className="flex items-center justify-between gap-4 bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+        <div className="text-xs text-slate-400 space-y-0.5">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span>{selectedTypes.length} coverage type{selectedTypes.length !== 1 ? 's' : ''}</span>
+            {selectedKnowledgeIds.length > 0 && (
+              <span className="flex items-center gap-1 text-violet-400">
+                <BookOpen className="w-3 h-3" /> {selectedKnowledgeIds.length} knowledge item{selectedKnowledgeIds.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {useRepoIntelligence && selectedRepoId && (
+              <span className="flex items-center gap-1 text-emerald-400">
+                <Cpu className="w-3 h-3" /> Repo intelligence
+              </span>
+            )}
+            {includeCoverageGaps && (
+              <span className="flex items-center gap-1 text-amber-400">
+                <Shield className="w-3 h-3" /> Gap analysis
+              </span>
+            )}
+          </div>
+          {!canGenerate && (
+            <p className="text-amber-400">
+              {!titleValid ? 'Add a title (min 5 chars)' : !descriptionValid ? 'Add a description (min 20 chars)' : 'Select at least one coverage type'}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={handleGenerate}
+          disabled={!canGenerate}
+          className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium transition-all shadow-lg shadow-violet-600/20 whitespace-nowrap"
+        >
+          <Sparkles className="w-4 h-4" />
+          Generate Test Cases
+        </button>
+      </div>
     </div>
   );
 }
@@ -415,6 +800,7 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const [expandedCases, setExpandedCases] = useState<Set<string>>(new Set());
   const [showGaps, setShowGaps] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [resultsFilter, setResultsFilter] = useState<'all' | 'core' | 'gaps'>('all');
 
   const analysis = result.requirementAnalysis || {};
   const scenarios = result.scenarios || [];
@@ -423,12 +809,13 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const stats = result.stats || {};
   const isSaved = result.requirementId != null;
   const warning = result._warning;
+  const knowledgeUsed = result.knowledgeUsed || [];
 
   // Build coverage type lookup
   const labelMap: Record<string, { label: string; icon: string }> = {};
   COVERAGE_OPTIONS.forEach(o => { labelMap[o.value] = { label: o.label, icon: o.icon }; });
 
-  // Group scenarios by coverage type, then map test cases to scenarios
+  // Group scenarios by coverage type
   const coverageGroups: Array<{
     coverageType: string;
     label: string;
@@ -446,26 +833,13 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
       typeMap[ct] = { scenarios: [] };
       typeOrder.push(ct);
     }
-    // Find test cases for this scenario using scenarioIndex or tag matching
-    const relatedCases = testCases.filter((tc: any, tci: number) => {
+    const relatedCases = testCases.filter((tc: any) => {
       if (tc.scenarioIndex != null) return tc.scenarioIndex === si;
-      // Fallback: tag-based matching
       return tc.tags?.some((t: string) =>
         sc.coverageType?.includes(t) || sc.scenario?.toLowerCase().includes(t.toLowerCase())
       );
     });
     typeMap[ct].scenarios.push({ scenario: sc, scenarioIndex: si, cases: relatedCases });
-  });
-
-  // Find orphan test cases (not matched to any scenario)
-  const matchedCaseIndices = new Set<number>();
-  Object.values(typeMap).forEach(group => {
-    group.scenarios.forEach(s => {
-      s.cases.forEach((tc: any) => {
-        const idx = testCases.indexOf(tc);
-        if (idx >= 0) matchedCaseIndices.add(idx);
-      });
-    });
   });
 
   typeOrder.forEach(ct => {
@@ -481,7 +855,6 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
     });
   });
 
-  // Expand all coverage types by default
   useEffect(() => {
     setExpandedTypes(new Set(typeOrder));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -521,6 +894,12 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                 <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
                   {warning}
+                </p>
+              )}
+              {knowledgeUsed.length > 0 && (
+                <p className="text-xs text-violet-400 mt-0.5 flex items-center gap-1">
+                  <BookOpen className="w-3 h-3" />
+                  Used {knowledgeUsed.length} knowledge item{knowledgeUsed.length !== 1 ? 's' : ''}: {knowledgeUsed.map((k: any) => k.title).join(', ')}
                 </p>
               )}
             </div>
@@ -564,169 +943,192 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
         </div>
       </div>
 
-      {/* Test Coverage — Grouped by Coverage Type */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold text-white flex items-center gap-2">
-          <ClipboardList className="w-4 h-4 text-blue-400" />
-          Test Coverage
-        </h3>
-
-        {coverageGroups.map((group) => {
-          const isTypeExpanded = expandedTypes.has(group.coverageType);
-          return (
-            <div key={group.coverageType} className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-              {/* Coverage Type Header */}
-              <button
-                onClick={() => toggleType(group.coverageType)}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-700/30 transition-all text-left"
-              >
-                {isTypeExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                <span className="text-base">{group.icon}</span>
-                <span className="text-sm font-semibold text-white uppercase tracking-wide">{group.label}</span>
-                <span className="text-xs text-slate-500">
-                  {group.scenarios.length} scenario{group.scenarios.length !== 1 ? 's' : ''}, {group.totalCases} case{group.totalCases !== 1 ? 's' : ''}
-                </span>
-              </button>
-
-              {/* Scenarios + Test Cases */}
-              {isTypeExpanded && (
-                <div className="border-t border-slate-700/30 px-4 pb-4 pt-2 space-y-4">
-                  {group.scenarios.map(({ scenario: sc, scenarioIndex: si, cases }) => (
-                    <div key={si} className="space-y-1.5">
-                      {/* Scenario Header */}
-                      <div className="flex items-center gap-2 py-1.5">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[sc.priority] || PRIORITY_COLORS.P2}`}>
-                          {sc.priority}
-                        </span>
-                        <span className="text-sm font-medium text-slate-200">{sc.scenario}</span>
-                        {sc.riskArea && (
-                          <span className="text-xs text-slate-500 ml-auto hidden sm:inline">Risk: {sc.riskArea}</span>
-                        )}
-                      </div>
-
-                      {/* Test Cases under this scenario */}
-                      <div className="ml-2 border-l-2 border-slate-700/50 pl-3 space-y-1.5">
-                        {cases.length > 0 ? cases.map((tc: any, tci: number) => {
-                          const caseKey = `${si}-${tci}`;
-                          const isExpanded = expandedCases.has(caseKey);
-                          return (
-                            <div key={caseKey} className="rounded-lg overflow-hidden border border-slate-700/40 bg-slate-900/20">
-                              <button
-                                onClick={() => toggleCase(caseKey)}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-slate-700/20 transition-all text-left"
-                              >
-                                {isExpanded
-                                  ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                                  : <ChevronRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                                }
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border flex-shrink-0 ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>
-                                  {tc.priority}
-                                </span>
-                                <span className="text-sm text-slate-200 flex-1 line-clamp-1">{tc.title}</span>
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[tc.severity] || ''}`}>
-                                    {tc.severity}
-                                  </span>
-                                  {tc.automationReady && <span title="Automation Ready"><Zap className="w-3 h-3 text-emerald-400" /></span>}
-                                </div>
-                              </button>
-                              {isExpanded && (
-                                <div className="border-t border-slate-700/30 p-3 bg-slate-900/40 space-y-2.5">
-                                  {tc.preconditions && (
-                                    <div>
-                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Preconditions</div>
-                                      <div className="text-sm text-slate-300">{tc.preconditions}</div>
-                                    </div>
-                                  )}
-                                  {tc.steps?.length > 0 && (
-                                    <div>
-                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Steps</div>
-                                      <ol className="list-decimal list-inside space-y-0.5">
-                                        {tc.steps.map((s: string, i: number) => (
-                                          <li key={i} className="text-sm text-slate-300">{s}</li>
-                                        ))}
-                                      </ol>
-                                    </div>
-                                  )}
-                                  <div>
-                                    <div className="text-[11px] font-medium text-slate-500 mb-0.5">Expected Result</div>
-                                    <div className="text-sm text-emerald-300">{tc.expectedResult}</div>
-                                  </div>
-                                  {tc.testData && (
-                                    <div>
-                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Test Data</div>
-                                      <div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.testData}</div>
-                                    </div>
-                                  )}
-                                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-700/30">
-                                    {tc.tags?.map((tag: string, ti: number) => (
-                                      <span key={ti} className="bg-slate-700/50 text-slate-400 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-0.5">
-                                        <Tag className="w-2.5 h-2.5" />{tag}
-                                      </span>
-                                    ))}
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${tc.automationReady ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600/30 text-slate-500'}`}>
-                                      {tc.automationReady ? '✓ Auto-Ready' : '✗ Manual'}
-                                    </span>
-                                    {tc.automationComplexity && (
-                                      <span className="bg-blue-500/15 text-blue-300 px-1.5 py-0.5 rounded text-[10px]">
-                                        {tc.automationComplexity} complexity
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }) : (
-                          <div className="text-xs text-slate-500 italic py-1">No test cases linked to this scenario</div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Coverage Gaps — Collapsible, less prominent */}
+      {/* Results Tab Bar: Core | Coverage Gaps | All */}
       {gaps.length > 0 && (
-        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <button
-            onClick={() => setShowGaps(!showGaps)}
-            className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-700/30 transition-all text-left"
-          >
-            {showGaps ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
-            <span className="text-sm font-semibold text-white flex-1">Coverage Gaps ({gaps.length})</span>
-            <span className="text-xs text-slate-500">Areas that may need additional testing</span>
-          </button>
-          {showGaps && (
-            <div className="border-t border-slate-700/30 px-4 pb-4 pt-2 space-y-2">
-              {gaps.map((gap: any, gi: number) => (
-                <div key={gi} className="bg-slate-900/40 border border-slate-700/50 rounded-lg p-3">
-                  <div className="flex items-start gap-2">
-                    <Shield className={`w-4 h-4 mt-0.5 flex-shrink-0 ${RISK_COLORS[gap.severity] || 'text-amber-400'}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-white">{gap.area}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[gap.severity] || ''}`}>{gap.severity}</span>
-                      </div>
-                      <div className="text-xs text-slate-400 mt-0.5">{gap.description}</div>
-                      <div className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
-                        <Lightbulb className="w-3 h-3" /> {gap.suggestion}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1">
+          {([
+            { key: 'all' as const, label: `All (${scenarios.length + gaps.length})`, icon: ClipboardList },
+            { key: 'core' as const, label: `Core Scenarios (${scenarios.length})`, icon: Target },
+            { key: 'gaps' as const, label: `Coverage Gaps (${gaps.length})`, icon: Shield },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setResultsFilter(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                resultsFilter === tab.key
+                  ? tab.key === 'gaps' ? 'bg-amber-500/20 text-amber-300' : 'bg-violet-500/20 text-violet-300'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <tab.icon className="w-3.5 h-3.5" />
+              {tab.label}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Requirement Analysis — Collapsible, at bottom */}
+      {/* Core Scenarios */}
+      {(resultsFilter === 'all' || resultsFilter === 'core') && (
+        <div className="space-y-3">
+          <h3 className="text-base font-semibold text-white flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-blue-400" />
+            Test Coverage
+          </h3>
+
+          {coverageGroups.map((group) => {
+            const isTypeExpanded = expandedTypes.has(group.coverageType);
+            return (
+              <div key={group.coverageType} className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+                <button
+                  onClick={() => toggleType(group.coverageType)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-700/30 transition-all text-left"
+                >
+                  {isTypeExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                  <span className="text-base">{group.icon}</span>
+                  <span className="text-sm font-semibold text-white uppercase tracking-wide">{group.label}</span>
+                  <span className="text-xs text-slate-500">
+                    {group.scenarios.length} scenario{group.scenarios.length !== 1 ? 's' : ''}, {group.totalCases} case{group.totalCases !== 1 ? 's' : ''}
+                  </span>
+                </button>
+
+                {isTypeExpanded && (
+                  <div className="border-t border-slate-700/30 px-4 pb-4 pt-2 space-y-4">
+                    {group.scenarios.map(({ scenario: sc, scenarioIndex: si, cases }) => (
+                      <div key={si} className="space-y-1.5">
+                        <div className="flex items-center gap-2 py-1.5">
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[sc.priority] || PRIORITY_COLORS.P2}`}>
+                            {sc.priority}
+                          </span>
+                          <span className="text-sm font-medium text-slate-200">{sc.scenario}</span>
+                          {sc.riskArea && (
+                            <span className="text-xs text-slate-500 ml-auto hidden sm:inline">Risk: {sc.riskArea}</span>
+                          )}
+                        </div>
+
+                        <div className="ml-2 border-l-2 border-slate-700/50 pl-3 space-y-1.5">
+                          {cases.length > 0 ? cases.map((tc: any, tci: number) => {
+                            const caseKey = `${si}-${tci}`;
+                            const isExpanded = expandedCases.has(caseKey);
+                            return (
+                              <div key={caseKey} className="rounded-lg overflow-hidden border border-slate-700/40 bg-slate-900/20">
+                                <button
+                                  onClick={() => toggleCase(caseKey)}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-slate-700/20 transition-all text-left"
+                                >
+                                  {isExpanded
+                                    ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                                    : <ChevronRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                                  }
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border flex-shrink-0 ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>
+                                    {tc.priority}
+                                  </span>
+                                  <span className="text-sm text-slate-200 flex-1 line-clamp-1">{tc.title}</span>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[tc.severity] || ''}`}>
+                                      {tc.severity}
+                                    </span>
+                                    {tc.automationReady && <span title="Automation Ready"><Zap className="w-3 h-3 text-emerald-400" /></span>}
+                                  </div>
+                                </button>
+                                {isExpanded && (
+                                  <div className="border-t border-slate-700/30 p-3 bg-slate-900/40 space-y-2.5">
+                                    {tc.preconditions && (
+                                      <div>
+                                        <div className="text-[11px] font-medium text-slate-500 mb-0.5">Preconditions</div>
+                                        <div className="text-sm text-slate-300">{tc.preconditions}</div>
+                                      </div>
+                                    )}
+                                    {tc.steps?.length > 0 && (
+                                      <div>
+                                        <div className="text-[11px] font-medium text-slate-500 mb-0.5">Steps</div>
+                                        <ol className="list-decimal list-inside space-y-0.5">
+                                          {tc.steps.map((s: string, i: number) => (
+                                            <li key={i} className="text-sm text-slate-300">{s}</li>
+                                          ))}
+                                        </ol>
+                                      </div>
+                                    )}
+                                    <div>
+                                      <div className="text-[11px] font-medium text-slate-500 mb-0.5">Expected Result</div>
+                                      <div className="text-sm text-emerald-300">{tc.expectedResult}</div>
+                                    </div>
+                                    {tc.testData && (
+                                      <div>
+                                        <div className="text-[11px] font-medium text-slate-500 mb-0.5">Test Data</div>
+                                        <div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.testData}</div>
+                                      </div>
+                                    )}
+                                    <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-700/30">
+                                      {tc.tags?.map((tag: string, ti: number) => (
+                                        <span key={ti} className="bg-slate-700/50 text-slate-400 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-0.5">
+                                          <Tag className="w-2.5 h-2.5" />{tag}
+                                        </span>
+                                      ))}
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${tc.automationReady ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600/30 text-slate-500'}`}>
+                                        {tc.automationReady ? '✓ Auto-Ready' : '✗ Manual'}
+                                      </span>
+                                      {tc.automationComplexity && (
+                                        <span className="bg-blue-500/15 text-blue-300 px-1.5 py-0.5 rounded text-[10px]">
+                                          {tc.automationComplexity} complexity
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }) : (
+                            <div className="text-xs text-slate-500 italic py-1">No test cases linked to this scenario</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Coverage Gaps */}
+      {(resultsFilter === 'all' || resultsFilter === 'gaps') && gaps.length > 0 && (
+        <div className="space-y-3">
+          {resultsFilter === 'all' && (
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              <Shield className="w-4 h-4 text-amber-400" />
+              Coverage Gaps
+              <span className="text-xs text-slate-400 font-normal">Areas that may need additional testing</span>
+            </h3>
+          )}
+          <div className="space-y-2">
+            {gaps.map((gap: any, gi: number) => (
+              <div key={gi} className="bg-slate-800/50 border border-amber-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    gap.severity === 'critical' || gap.severity === 'high' ? 'bg-red-500/20' : 'bg-amber-500/20'
+                  }`}>
+                    <Shield className={`w-4 h-4 ${RISK_COLORS[gap.severity] || 'text-amber-400'}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-white">{gap.area}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[gap.severity] || ''}`}>{gap.severity}</span>
+                    </div>
+                    <div className="text-xs text-slate-400">{gap.description}</div>
+                    <div className="text-xs text-emerald-400 mt-2 flex items-center gap-1 bg-emerald-500/10 rounded-lg px-2.5 py-1.5">
+                      <Lightbulb className="w-3 h-3 flex-shrink-0" />
+                      <span>{gap.suggestion}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Requirement Analysis — Collapsible */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
         <button
           onClick={() => setShowAnalysis(!showAnalysis)}
@@ -892,11 +1294,12 @@ function HistoryTab() {
                     <span>•</span>
                     <span>{new Date(req.created_at).toLocaleDateString()}</span>
                   </div>
-                  {/* Coverage type badges from analysis */}
+                  {/* Coverage type badges */}
                   {(() => {
                     const analysis = typeof req.analysis === 'string' ? (() => { try { return JSON.parse(req.analysis); } catch { return null; } })() : req.analysis;
                     const types: string[] = analysis?.coverageTypes || analysis?.coverage_types || [];
-                    if (types.length === 0) return null;
+                    const knowledgeCount = analysis?.knowledgeItemIds?.length || 0;
+                    if (types.length === 0 && knowledgeCount === 0) return null;
                     const labelMap: Record<string, { label: string; icon: string }> = {};
                     COVERAGE_OPTIONS.forEach(o => { labelMap[o.value] = { label: o.label, icon: o.icon }; });
                     return (
@@ -910,6 +1313,12 @@ function HistoryTab() {
                             </span>
                           );
                         })}
+                        {knowledgeCount > 0 && (
+                          <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded text-xs border border-emerald-500/20">
+                            <BookOpen className="w-3 h-3" />
+                            {knowledgeCount} knowledge
+                          </span>
+                        )}
                       </div>
                     );
                   })()}
@@ -981,7 +1390,6 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
         </button>
       </div>
 
-      {/* Generate Scripts Modal */}
       {showScriptModal && (
         <GenerateScriptsModal
           requirementId={req.id}
@@ -989,6 +1397,16 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           testCaseCount={testCases.length}
           onClose={() => setShowScriptModal(false)}
         />
+      )}
+
+      {/* Knowledge used badge */}
+      {analysis.knowledgeItemTitles?.length > 0 && (
+        <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-3 flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-violet-400 flex-shrink-0" />
+          <span className="text-xs text-violet-300">
+            Generated with {analysis.knowledgeItemTitles.length} knowledge item{analysis.knowledgeItemTitles.length !== 1 ? 's' : ''}: {analysis.knowledgeItemTitles.join(', ')}
+          </span>
+        </div>
       )}
 
       {/* Analysis summary */}
@@ -1020,11 +1438,10 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
         </div>
       </div>
 
-      {/* Test Cases grouped by Scenario / Coverage Type */}
+      {/* Test Cases grouped by Coverage Type */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
         <h4 className="text-sm font-semibold text-white mb-3">{testCases.length} Test Cases</h4>
         {(() => {
-          // Group test cases by scenario_id, falling back to coverage_type for grouping
           const groups: Record<string, { coverageType: string; scenarioName: string; cases: any[] }> = {};
           for (const tc of testCases) {
             const key = tc.scenario_id ? String(tc.scenario_id) : (tc.coverage_type || 'ungrouped');
@@ -1131,14 +1548,10 @@ function GenerateScriptsModal({
   const [result, setResult] = useState<any>(null);
   const [progressMsg, setProgressMsg] = useState('');
 
-  // Fetch repositories for the selected project
   useEffect(() => {
     (async () => {
       try {
-        if (!activeProject?.id) {
-          setLoadingRepos(false);
-          return;
-        }
+        if (!activeProject?.id) { setLoadingRepos(false); return; }
         const res = await fetch(`/api/projects/${activeProject.id}/repositories`);
         if (res.ok) {
           const data = await res.json();
@@ -1152,41 +1565,26 @@ function GenerateScriptsModal({
   }, [activeProject?.id]);
 
   const handleGenerate = async () => {
-    if (!selectedRepoId) {
-      setError('Please select a repository');
-      return;
-    }
-
+    if (!selectedRepoId) { setError('Please select a repository'); return; }
     setStep('generating');
     setError('');
     setProgressMsg('Generating Playwright scripts from test cases...');
-
     try {
-      // Small delay to show the first progress message
       await new Promise(r => setTimeout(r, 500));
       setProgressMsg('Creating scripts with AI...');
-
-      const res = await fetch(
-        `/api/test-coverage/requirements/${requirementId}/generate-scripts`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            repositoryId: parseInt(selectedRepoId, 10),
-            projectId: activeProject?.id,
-            framework,
-            baseUrl,
-            outputDir,
-          }),
-        },
-      );
-
+      const res = await fetch(`/api/test-coverage/requirements/${requirementId}/generate-scripts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repositoryId: parseInt(selectedRepoId, 10),
+          projectId: activeProject?.id,
+          framework,
+          baseUrl,
+          outputDir,
+        }),
+      });
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || data.details || 'Failed to generate scripts');
-      }
-
+      if (!res.ok) throw new Error(data.error || data.details || 'Failed to generate scripts');
       setResult(data.data || data);
       setStep('success');
     } catch (err: any) {
@@ -1198,83 +1596,48 @@ function GenerateScriptsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-slate-900 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
         <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-700/50 bg-slate-800/50">
-          <div className="p-2 bg-emerald-500/20 rounded-lg">
-            <Rocket className="w-5 h-5 text-emerald-400" />
-          </div>
+          <div className="p-2 bg-emerald-500/20 rounded-lg"><Rocket className="w-5 h-5 text-emerald-400" /></div>
           <div className="flex-1">
             <h3 className="text-base font-semibold text-white">Generate Scripts & Create PR</h3>
             <p className="text-xs text-slate-400">{testCaseCount} test cases → Playwright scripts → GitHub PR</p>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-700/50 rounded-lg">
-            <XCircle className="w-5 h-5 text-slate-400" />
-          </button>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-700/50 rounded-lg"><XCircle className="w-5 h-5 text-slate-400" /></button>
         </div>
 
-        {/* Body */}
         <div className="px-6 py-5">
-
-          {/* ── Step: Configure ── */}
           {step === 'configure' && (
             <div className="space-y-4">
               <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/30">
                 <p className="text-sm text-white font-medium">{requirementTitle}</p>
                 <p className="text-xs text-slate-400 mt-1">{testCaseCount} test cases will be converted to Playwright scripts</p>
               </div>
-
-              {/* Repository Selector */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Target Repository *</label>
                 {loadingRepos ? (
                   <div className="flex items-center gap-2 text-slate-500 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading repos...</div>
                 ) : repos.length === 0 ? (
                   <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-                    <p className="text-xs text-amber-300">No repositories found. Add a repository to your project first.</p>
+                    <p className="text-xs text-amber-300">No repositories found.</p>
                     <a href="/projects" className="text-xs text-amber-400 underline mt-1 inline-block">Go to Projects →</a>
                   </div>
                 ) : (
-                  <select
-                    value={selectedRepoId}
-                    onChange={e => setSelectedRepoId(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 outline-none"
-                  >
+                  <select value={selectedRepoId} onChange={e => setSelectedRepoId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500/50 outline-none">
                     <option value="">Select a repository...</option>
                     {repos.map((r: any) => (
-                      <option key={r.id} value={String(r.id)}>
-                        {r.name} {r.branch ? `(${r.branch})` : ''} — {r.url?.replace('https://github.com/', '')}
-                      </option>
+                      <option key={r.id} value={String(r.id)}>{r.name} {r.branch ? `(${r.branch})` : ''} — {r.url?.replace('https://github.com/', '')}</option>
                     ))}
                   </select>
                 )}
               </div>
-
-              {/* Base URL */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Application Base URL</label>
-                <input
-                  type="text"
-                  value={baseUrl}
-                  onChange={e => setBaseUrl(e.target.value)}
-                  placeholder="http://localhost:3000"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 outline-none"
-                />
+                <input type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="http://localhost:3000" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 outline-none" />
               </div>
-
-              {/* Output Directory */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Output Directory</label>
-                <input
-                  type="text"
-                  value={outputDir}
-                  onChange={e => setOutputDir(e.target.value)}
-                  placeholder="tests/generated"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 outline-none"
-                />
+                <input type="text" value={outputDir} onChange={e => setOutputDir(e.target.value)} placeholder="tests/generated" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 outline-none" />
               </div>
-
-              {/* Pipeline Preview */}
               <div className="flex items-center gap-2 justify-center py-2 text-xs text-slate-500">
                 <span className="bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">Test Cases</span>
                 <ArrowRight className="w-3 h-3" />
@@ -1282,31 +1645,20 @@ function GenerateScriptsModal({
                 <ArrowRight className="w-3 h-3" />
                 <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">GitHub PR</span>
               </div>
-
               {error && <p className="text-xs text-red-400">{error}</p>}
             </div>
           )}
-
-          {/* ── Step: Generating ── */}
           {step === 'generating' && (
             <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-                </div>
+              <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
               </div>
               <div className="text-center">
                 <p className="text-sm font-medium text-white">{progressMsg}</p>
                 <p className="text-xs text-slate-400 mt-1">This may take 30-60 seconds...</p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Fetching {testCaseCount} test cases</span>
-              </div>
             </div>
           )}
-
-          {/* ── Step: Success ── */}
           {step === 'success' && result && (
             <div className="space-y-4">
               <div className="flex flex-col items-center py-4">
@@ -1314,19 +1666,10 @@ function GenerateScriptsModal({
                   <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                 </div>
                 <h4 className="text-base font-semibold text-white">PR Created Successfully!</h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  {result.totalTests} test cases → {result.totalFiles} scripts → 1 Pull Request
-                </p>
+                <p className="text-xs text-slate-400 mt-1">{result.totalTests} test cases → {result.totalFiles} scripts → 1 Pull Request</p>
               </div>
-
-              {/* PR Link */}
               {result.github?.prUrl && (
-                <a
-                  href={result.github.prUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 hover:border-emerald-500/50 rounded-xl p-4 transition-all group"
-                >
+                <a href={result.github.prUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 hover:border-emerald-500/50 rounded-xl p-4 transition-all group">
                   <div className="p-2 bg-slate-700/50 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
                     <Github className="w-5 h-5 text-white group-hover:text-emerald-300" />
                   </div>
@@ -1337,8 +1680,6 @@ function GenerateScriptsModal({
                   <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-emerald-400" />
                 </a>
               )}
-
-              {/* Generated Files */}
               <div className="bg-slate-800/50 rounded-lg border border-slate-700/30 p-3">
                 <h5 className="text-xs font-medium text-slate-400 mb-2">Generated Files</h5>
                 <div className="space-y-1.5">
@@ -1353,8 +1694,6 @@ function GenerateScriptsModal({
               </div>
             </div>
           )}
-
-          {/* ── Step: Error ── */}
           {step === 'error' && (
             <div className="flex flex-col items-center py-6 space-y-4">
               <div className="w-14 h-14 rounded-full bg-red-500/20 flex items-center justify-center">
@@ -1366,41 +1705,23 @@ function GenerateScriptsModal({
               </div>
             </div>
           )}
-
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-700/50 bg-slate-800/30 flex items-center justify-end gap-3">
           {step === 'configure' && (
             <>
-              <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">
-                Cancel
-              </button>
-              <button
-                onClick={handleGenerate}
-                disabled={!selectedRepoId || repos.length === 0}
-                className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all"
-              >
-                <Rocket className="w-4 h-4" />
-                Generate & Create PR
+              <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
+              <button onClick={handleGenerate} disabled={!selectedRepoId || repos.length === 0} className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all">
+                <Rocket className="w-4 h-4" /> Generate & Create PR
               </button>
             </>
           )}
-          {step === 'generating' && (
-            <p className="text-xs text-slate-500">Please wait...</p>
-          )}
+          {step === 'generating' && <p className="text-xs text-slate-500">Please wait...</p>}
           {(step === 'success' || step === 'error') && (
-            <button onClick={onClose} className="px-5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-all">
-              Close
-            </button>
+            <button onClick={onClose} className="px-5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-all">Close</button>
           )}
           {step === 'error' && (
-            <button
-              onClick={() => { setStep('configure'); setError(''); }}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-all"
-            >
-              Try Again
-            </button>
+            <button onClick={() => { setStep('configure'); setError(''); }} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-all">Try Again</button>
           )}
         </div>
       </div>
@@ -1440,7 +1761,6 @@ function StatsTab() {
 
   return (
     <div className="space-y-6">
-      {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Requirements', value: stats.totalRequirements, icon: FileText, color: 'text-violet-400 bg-violet-500/20' },
@@ -1458,7 +1778,6 @@ function StatsTab() {
         ))}
       </div>
 
-      {/* Coverage Type Breakdown */}
       {Object.keys(coverageTypes).length > 0 && (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Coverage Type Distribution</h3>
@@ -1483,7 +1802,6 @@ function StatsTab() {
         </div>
       )}
 
-      {/* Priority Breakdown */}
       {Object.keys(priorities).length > 0 && (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
           <h3 className="text-sm font-semibold text-white mb-4">Priority Distribution</h3>
