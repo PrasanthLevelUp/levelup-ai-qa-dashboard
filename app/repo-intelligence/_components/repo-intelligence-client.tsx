@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useProjectHeaders } from '@/lib/project-context';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useProject } from '@/lib/project-context';
 import {
   Brain,
   RefreshCw,
@@ -156,7 +156,8 @@ function patternLabel(p: string) {
 /* ------------------------------------------------------------------ */
 
 export function RepoIntelligenceClient() {
-  const projectHeaders = useProjectHeaders();
+  const { activeProject } = useProject();
+  const projectId = activeProject?.id;
   const [repos, setRepos] = useState<RepoListItem[]>([]);
   const [contexts, setContexts] = useState<IntelligenceContext[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>('');
@@ -167,16 +168,25 @@ export function RepoIntelligenceClient() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profile: true, knowledge: true, helpers: true, workflows: true, quality: true,
   });
+  const fetchingRef = useRef(false);
 
   const toggleSection = (key: string) =>
     setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
 
+  // Build headers from current projectId (stable — no new object each render)
+  const getProjectHeaders = useCallback((): Record<string, string> => {
+    if (!projectId) return {};
+    return { 'x-project-id': String(projectId) };
+  }, [projectId]);
+
   // Fetch repos + existing intelligence
   const fetchData = useCallback(async () => {
+    if (fetchingRef.current) return; // prevent duplicate fetches
+    fetchingRef.current = true;
     setLoading(true);
     try {
       const [reposRes, ctxRes] = await Promise.all([
-        fetch('/api/repos', { headers: { ...projectHeaders } }).then(r => r.json()),
+        fetch('/api/repos', { headers: getProjectHeaders() }).then(r => r.json()),
         fetch('/api/repo-intelligence/list').then(r => r.json()),
       ]);
       if (reposRes.repositories) setRepos(reposRes.repositories);
@@ -185,9 +195,11 @@ export function RepoIntelligenceClient() {
       console.error('Failed to load data:', err);
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  }, [projectHeaders]);
+  }, [getProjectHeaders]);
 
+  // Re-fetch when project changes
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // Auto-select first scanned repo (only if it has been scanned)

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
 import {
   Play,
@@ -195,9 +195,15 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   }, [prefillScenarios, onPrefillConsumed]);
 
   // Fetch repos for the dropdown
+  const fetchingReposRef = useRef(false);
   const fetchRepos = useCallback(async () => {
+    if (fetchingReposRef.current) return; // prevent duplicate fetches
+    fetchingReposRef.current = true;
     try {
-      const res = await fetch('/api/repos', { headers: { ...projectHeaders } });
+      const headers: Record<string, string> = activeProject?.id
+        ? { 'x-project-id': String(activeProject.id) }
+        : {};
+      const res = await fetch('/api/repos', { headers });
       if (!res.ok) return;
       const data = await res.json();
       const repoList = data.repositories || [];
@@ -206,7 +212,8 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
         setPushRepoUrl(repoList[0].url);
       }
     } catch { /* backend may be unavailable */ }
-  }, [pushRepoUrl, projectHeaders]);
+    finally { fetchingReposRef.current = false; }
+  }, [pushRepoUrl, activeProject?.id]);
 
   useEffect(() => {
     fetchRepos();
