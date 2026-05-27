@@ -5,13 +5,21 @@
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:8080';
 const API_KEY = process.env.BACKEND_API_KEY || '';
 
-export async function backendGet(path: string): Promise<any> {
+/**
+ * Build standard headers, merging any extra headers (e.g. x-project-id).
+ */
+function buildHeaders(extraHeaders?: Record<string, string>): Record<string, string> {
+  return {
+    Authorization: `Bearer ${API_KEY}`,
+    'Content-Type': 'application/json',
+    ...(extraHeaders || {}),
+  };
+}
+
+export async function backendGet(path: string, extraHeaders?: Record<string, string>): Promise<any> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildHeaders(extraHeaders),
     cache: 'no-store',
   });
 
@@ -23,14 +31,11 @@ export async function backendGet(path: string): Promise<any> {
   return res.json();
 }
 
-export async function backendPost(path: string, body: any): Promise<any> {
+export async function backendPost(path: string, body: any, extraHeaders?: Record<string, string>): Promise<any> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildHeaders(extraHeaders),
     body: JSON.stringify(body),
     cache: 'no-store',
   });
@@ -43,14 +48,11 @@ export async function backendPost(path: string, body: any): Promise<any> {
   return res.json();
 }
 
-export async function backendPut(path: string, body: any): Promise<any> {
+export async function backendPut(path: string, body: any, extraHeaders?: Record<string, string>): Promise<any> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
     method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildHeaders(extraHeaders),
     body: JSON.stringify(body),
     cache: 'no-store',
   });
@@ -63,14 +65,11 @@ export async function backendPut(path: string, body: any): Promise<any> {
   return res.json();
 }
 
-export async function backendDelete(path: string): Promise<any> {
+export async function backendDelete(path: string, extraHeaders?: Record<string, string>): Promise<any> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
     method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildHeaders(extraHeaders),
     cache: 'no-store',
   });
 

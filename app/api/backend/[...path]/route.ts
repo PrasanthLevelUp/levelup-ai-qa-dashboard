@@ -32,6 +32,12 @@ async function proxyRequest(req: NextRequest, { params }: { params: { path: stri
     headers['Cookie'] = `levelup_session=${sessionCookie}`;
   }
 
+  // Forward project context header for multi-project isolation
+  const projectId = req.headers.get('x-project-id');
+  if (projectId) {
+    headers['x-project-id'] = projectId;
+  }
+
   let body: string | undefined;
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     try {

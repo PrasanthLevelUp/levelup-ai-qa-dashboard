@@ -31,6 +31,26 @@ export function useProject() {
   return useContext(ProjectContext);
 }
 
+/**
+ * Returns headers object with x-project-id set from the active project.
+ * Use in client-side fetch calls to scope requests to the active project.
+ * Returns empty object if no active project (backward compatible).
+ */
+export function useProjectHeaders(): Record<string, string> {
+  const { activeProject } = useProject();
+  if (!activeProject) return {};
+  return { 'x-project-id': String(activeProject.id) };
+}
+
+/**
+ * Standalone helper to get project-id from localStorage (for non-hook contexts).
+ * Prefer useProjectHeaders() in React components.
+ */
+export function getStoredProjectId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(STORAGE_KEY);
+}
+
 const STORAGE_KEY = 'levelup_active_project_id';
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
