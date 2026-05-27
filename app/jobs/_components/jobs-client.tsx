@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useProjectHeaders } from '@/lib/project-context';
+import { useProject, useProjectHeaders } from '@/lib/project-context';
 import {
   Play, RefreshCw, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle,
   GitBranch, ChevronDown, ChevronUp, Zap, FileCode, StopCircle, Plus,
@@ -274,6 +274,7 @@ function AddRepoDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () 
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════ */
 export function JobsClient() {
+  const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -287,6 +288,7 @@ export function JobsClient() {
   const [cancellingJob, setCancellingJob] = useState<string | null>(null);
   const [liveProgress, setLiveProgress] = useState<Record<string, string>>({});
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetchingReposRef = useRef(false);
 
   const fetchJobs = useCallback(async () => {
     try {
@@ -299,8 +301,13 @@ export function JobsClient() {
   }, []);
 
   const fetchRepos = useCallback(async () => {
+    if (fetchingReposRef.current) return; // prevent duplicate fetches
+    fetchingReposRef.current = true;
     try {
-      const res = await fetch('/api/repos', { headers: { ...projectHeaders } });
+      const headers: Record<string, string> = activeProject?.id
+        ? { 'x-project-id': String(activeProject.id) }
+        : {};
+      const res = await fetch('/api/repos', { headers });
       if (!res.ok) return;
       const data = await res.json();
       const list: Repo[] = data.repositories || [];
@@ -310,7 +317,8 @@ export function JobsClient() {
         setSelectedBranch(list[0].branch || 'main');
       }
     } catch { /* backend unavailable */ }
-  }, [selectedRepo, projectHeaders]);
+    finally { fetchingReposRef.current = false; }
+  }, [selectedRepo, activeProject?.id]);
 
   /* Poll live progress for running jobs */
   const pollRunningJobs = useCallback(async () => {
