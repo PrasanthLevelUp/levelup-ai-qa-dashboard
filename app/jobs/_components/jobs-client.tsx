@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useProjectHeaders } from '@/lib/project-context';
 import {
   Play, RefreshCw, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle,
   GitBranch, ChevronDown, ChevronUp, Zap, FileCode, StopCircle, Plus,
@@ -204,6 +205,7 @@ function ExpandedJobDetails({ job }: { job: Job }) {
 
 /* ─── Add Repo Dialog ─── */
 function AddRepoDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const projectHeaders = useProjectHeaders();
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('main');
@@ -217,7 +219,7 @@ function AddRepoDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     try {
       const res = await fetch('/api/repos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...projectHeaders },
         body: JSON.stringify({ url, name: repoName, branch, enabled: true }),
       });
       if (!res.ok) {
@@ -272,6 +274,7 @@ function AddRepoDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () 
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════ */
 export function JobsClient() {
+  const projectHeaders = useProjectHeaders();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggerLoading, setTriggerLoading] = useState(false);
@@ -297,7 +300,7 @@ export function JobsClient() {
 
   const fetchRepos = useCallback(async () => {
     try {
-      const res = await fetch('/api/repos');
+      const res = await fetch('/api/repos', { headers: { ...projectHeaders } });
       if (!res.ok) return;
       const data = await res.json();
       const list: Repo[] = data.repositories || [];
@@ -307,7 +310,7 @@ export function JobsClient() {
         setSelectedBranch(list[0].branch || 'main');
       }
     } catch { /* backend unavailable */ }
-  }, [selectedRepo]);
+  }, [selectedRepo, projectHeaders]);
 
   /* Poll live progress for running jobs */
   const pollRunningJobs = useCallback(async () => {
@@ -384,7 +387,7 @@ export function JobsClient() {
 
   const deleteRepo = async (repoId: string) => {
     try {
-      await fetch(`/api/repos?id=${repoId}`, { method: 'DELETE' });
+      await fetch(`/api/repos?id=${repoId}`, { method: 'DELETE', headers: { ...projectHeaders } });
       fetchRepos();
     } catch { /* ignore */ }
   };
