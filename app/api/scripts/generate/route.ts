@@ -55,11 +55,14 @@ export async function POST(req: NextRequest) {
     console.log('[ScriptGen] Generating for:', url, 'with context:', !!projectContextId);
 
     // Call backend script generation engine
+    // Forward project context header for multi-project isolation
+    const projectIdHeader = req.headers.get('x-project-id');
     const response = await fetch(`${BACKEND_URL}/api/scripts/generate`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
+        ...(projectIdHeader ? { 'x-project-id': projectIdHeader } : {}),
       },
       body: JSON.stringify({
         url,

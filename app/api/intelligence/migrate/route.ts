@@ -2,15 +2,9 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { backendPost } from '@/lib/backend-api';
 
-function extractProjectHeaders(req: Request): Record<string, string> {
-  const projectId = req.headers.get('x-project-id');
-  return projectId ? { 'x-project-id': projectId } : {};
-}
-
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const data = await backendPost('/api/intelligence/profiles/invalidate', body, extractProjectHeaders(req));
+    const data = await backendPost('/api/intelligence/migrate', {});
     return NextResponse.json(data);
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

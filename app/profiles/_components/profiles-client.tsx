@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useProject, useProjectHeaders } from '@/lib/project-context';
 import {
   Globe,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   ChevronUp,
   Brain,
   FileCode,
+  FolderOpen,
   X,
 } from 'lucide-react';
 
@@ -120,6 +122,8 @@ function statusBadge(status: string, expiresAt: string) {
 /* -------------------------------------------------------------------------- */
 
 export function ProfilesClient() {
+  const { activeProject } = useProject();
+  const projectHeaders = useProjectHeaders();
   const [profiles, setProfiles] = useState<ApplicationProfile[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -132,7 +136,9 @@ export function ProfilesClient() {
     setLoading(true);
     try {
       const qs = filterStatus ? `?status=${filterStatus}` : '';
-      const res = await fetch(`/api/intelligence/profiles${qs}`);
+      const res = await fetch(`/api/intelligence/profiles${qs}`, {
+        headers: { ...projectHeaders },
+      });
       const data = await res.json();
       if (data.success) {
         setProfiles(data.data || []);
@@ -142,7 +148,7 @@ export function ProfilesClient() {
       // silent
     }
     setLoading(false);
-  }, [filterStatus]);
+  }, [filterStatus, activeProject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchProfiles();
@@ -153,7 +159,7 @@ export function ProfilesClient() {
     try {
       await fetch('/api/intelligence/profiles/invalidate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...projectHeaders },
         body: JSON.stringify({ url: profile.base_url }),
       });
       await fetchProfiles();
@@ -167,7 +173,10 @@ export function ProfilesClient() {
     if (!confirm(`Delete profile for ${profile.base_url}? This cannot be undone.`)) return;
     setActionLoading(prev => ({ ...prev, [profile.id]: true }));
     try {
-      await fetch(`/api/intelligence/profiles/${profile.id}`, { method: 'DELETE' });
+      await fetch(`/api/intelligence/profiles/${profile.id}`, {
+        method: 'DELETE',
+        headers: { ...projectHeaders },
+      });
       await fetchProfiles();
     } catch {
       // silent
@@ -196,6 +205,14 @@ export function ProfilesClient() {
           <p className="text-sm text-slate-400 mt-1">
             Cached application intelligence — crawl data reused for 30× faster script generation
           </p>
+          {activeProject && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <FolderOpen size={12} className="text-violet-400" />
+              <span className="text-xs text-violet-300/80">
+                Project: <span className="font-medium text-violet-300">{activeProject.name}</span>
+              </span>
+            </div>
+          )}
         </div>
         <button
           onClick={fetchProfiles}

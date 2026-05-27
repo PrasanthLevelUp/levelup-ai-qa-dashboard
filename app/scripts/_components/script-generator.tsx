@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useProjectHeaders } from '@/lib/project-context';
 import {
   Play,
   Loader2,
@@ -122,6 +123,7 @@ const TEST_TYPE_OPTIONS = [
 ];
 
 export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed }: ScriptGeneratorProps) {
+  const projectHeaders = useProjectHeaders();
   const [scenario, setScenario] = useState('');
   const [targetUrl, setTargetUrl] = useState(projectContext.appUrl);
   const [testTypes, setTestTypes] = useState<string[]>(['smoke', 'functional']);
@@ -259,7 +261,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     setProfileChecking(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/intelligence/profiles/status?url=${encodeURIComponent(resolvedUrl)}`);
+        const res = await fetch(`/api/intelligence/profiles/status?url=${encodeURIComponent(resolvedUrl)}`, {
+          headers: { ...projectHeaders },
+        });
         if (!res.ok) { setProfileStatus(null); setProfileChecking(false); return; }
         const data = await res.json();
         setProfileStatus(data.exists ? {
@@ -420,7 +424,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     try {
       const res = await fetch('/api/scripts/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...projectHeaders },
         body: JSON.stringify({
           projectContextId: projectContext.id,
           url: resolvedUrl,
