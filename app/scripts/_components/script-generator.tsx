@@ -219,11 +219,15 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     fetchRepos();
   }, [fetchRepos]);
 
-  // Fetch knowledge items for the selector
+  // Fetch knowledge items for the selector (filtered by active project)
   useEffect(() => {
+    setKnowledgeItems([]);
+    setSelectedKnowledgeIds([]);
     (async () => {
       try {
-        const res = await fetch('/api/knowledge?status=active&limit=100');
+        const headers: Record<string, string> = {};
+        if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+        const res = await fetch('/api/knowledge?status=active&limit=100', { headers });
         if (!res.ok) return;
         const data = await res.json();
         const items = (data.items || data || []).map((ki: any) => ({
@@ -237,7 +241,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
         setKnowledgeItems(items);
       } catch { /* knowledge API may be unavailable */ }
     })();
-  }, []);
+  }, [activeProject?.id]);
 
   // Check GitHub connection status on mount
   useEffect(() => {
@@ -482,7 +486,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     try {
       const res = await fetch(`/api/scripts/${result.data.id}/push`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...projectHeaders },
         body: JSON.stringify({
           repoUrl: pushRepoUrl,
           baseBranch: repos.find(r => r.url === pushRepoUrl)?.branch || 'main',
