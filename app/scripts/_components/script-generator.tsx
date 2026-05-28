@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { KnowledgeSelector } from '@/components/knowledge-selector';
 import {
   Play,
   Loader2,
@@ -81,39 +82,6 @@ interface PushResult {
   error?: string;
 }
 
-interface KnowledgeItemBrief {
-  id: number;
-  title: string;
-  category: string;
-  priority: string;
-  tags: string[];
-  related_modules: string[];
-}
-
-const CATEGORY_ICONS: Record<string, string> = {
-  workflow: '🔄',
-  business_rule: '📋',
-  bug_pattern: '🐛',
-  integration: '🔗',
-  automation: '🤖',
-  architecture: '🏗️',
-  dependency: '📦',
-  manual_test: '✋',
-  domain: '🏢',
-};
-
-const CATEGORY_COLORS: Record<string, string> = {
-  workflow: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
-  business_rule: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
-  bug_pattern: 'border-red-500/30 bg-red-500/10 text-red-400',
-  integration: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400',
-  automation: 'border-violet-500/30 bg-violet-500/10 text-violet-400',
-  architecture: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
-  dependency: 'border-orange-500/30 bg-orange-500/10 text-orange-400',
-  manual_test: 'border-slate-500/30 bg-slate-500/10 text-slate-400',
-  domain: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
-};
-
 const TEST_TYPE_OPTIONS = [
   { value: 'smoke', label: 'Smoke Tests', description: 'Quick validation of critical paths' },
   { value: 'functional', label: 'Functional Tests', description: 'Detailed feature testing' },
@@ -163,10 +131,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [prResult, setPrResult] = useState<{ success: boolean; prUrl?: string; prNumber?: number; error?: string } | null>(null);
 
   // App Knowledge state
-  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItemBrief[]>([]);
   const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<number[]>([]);
-  const [showKnowledgeSelector, setShowKnowledgeSelector] = useState(false);
-  const [knowledgeSearch, setKnowledgeSearch] = useState('');
 
   // Authentication state (for crawling behind login walls)
   const [authEnabled, setAuthEnabled] = useState(false);
@@ -219,28 +184,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     fetchRepos();
   }, [fetchRepos]);
 
-  // Fetch knowledge items for the selector (filtered by active project)
+  // Clear selected knowledge when project changes
   useEffect(() => {
-    setKnowledgeItems([]);
     setSelectedKnowledgeIds([]);
-    (async () => {
-      try {
-        const headers: Record<string, string> = {};
-        if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
-        const res = await fetch('/api/knowledge?status=active&limit=100', { headers });
-        if (!res.ok) return;
-        const data = await res.json();
-        const items = (data.items || data || []).map((ki: any) => ({
-          id: ki.id,
-          title: ki.title,
-          category: ki.category,
-          priority: ki.priority,
-          tags: ki.tags || [],
-          related_modules: ki.related_modules || [],
-        }));
-        setKnowledgeItems(items);
-      } catch { /* knowledge API may be unavailable */ }
-    })();
   }, [activeProject?.id]);
 
   // Check GitHub connection status on mount
@@ -361,22 +307,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     setCreatingPr(false);
   };
 
-  const toggleKnowledgeItem = (id: number) => {
-    setSelectedKnowledgeIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
 
-  const filteredKnowledgeItems = knowledgeItems.filter(ki => {
-    if (!knowledgeSearch.trim()) return true;
-    const q = knowledgeSearch.toLowerCase();
-    return (
-      ki.title.toLowerCase().includes(q) ||
-      ki.category.toLowerCase().includes(q) ||
-      ki.tags.some(t => t.toLowerCase().includes(q)) ||
-      ki.related_modules.some(m => m.toLowerCase().includes(q))
-    );
-  });
 
   // Load repo intelligence when repo selected
   useEffect(() => {
@@ -815,137 +746,30 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             </div>
           )}
 
-          {/* App Knowledge Selector */}
-          {knowledgeItems.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <BookOpen size={14} className="text-amber-400" />
-                <span className="text-xs font-medium text-slate-300">App Knowledge</span>
-                {selectedKnowledgeIds.length > 0 && (
-                  <span className="ml-auto text-[10px] text-amber-400">
-                    {selectedKnowledgeIds.length} item{selectedKnowledgeIds.length !== 1 ? 's' : ''} selected
-                  </span>
-                )}
-              </div>
-
-              {/* Selected knowledge chips */}
+          {/* App Knowledge Selector — always visible, handles its own loading/empty states */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen size={14} className="text-amber-400" />
+              <span className="text-xs font-medium text-slate-300">App Knowledge</span>
+              <span className="text-[10px] text-slate-500">(optional)</span>
               {selectedKnowledgeIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedKnowledgeIds.map(id => {
-                    const item = knowledgeItems.find(ki => ki.id === id);
-                    if (!item) return null;
-                    const colors = CATEGORY_COLORS[item.category] || 'border-slate-500/30 bg-slate-500/10 text-slate-400';
-                    return (
-                      <span
-                        key={id}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] ${colors}`}
-                      >
-                        <span>{CATEGORY_ICONS[item.category] || '📄'}</span>
-                        <span className="truncate max-w-[160px]">{item.title}</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleKnowledgeItem(id)}
-                          className="ml-0.5 hover:text-white transition-colors"
-                        >
-                          <X size={10} />
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Add knowledge button / selector dropdown */}
-              <button
-                type="button"
-                onClick={() => setShowKnowledgeSelector(!showKnowledgeSelector)}
-                disabled={generating}
-                className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-xs text-slate-400 hover:text-slate-300 hover:border-amber-500/30 transition-colors text-left flex items-center justify-between"
-              >
-                <span>
-                  {selectedKnowledgeIds.length > 0
-                    ? 'Add or remove knowledge items...'
-                    : 'Select knowledge items to enhance generation...'}
+                <span className="ml-auto text-[10px] text-amber-400">
+                  {selectedKnowledgeIds.length} item{selectedKnowledgeIds.length !== 1 ? 's' : ''} selected
                 </span>
-                {showKnowledgeSelector ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </button>
-
-              {showKnowledgeSelector && (
-                <div className="bg-[#0c1222] rounded-lg border border-[#1e293b] overflow-hidden">
-                  {/* Search within knowledge items */}
-                  <div className="p-2 border-b border-[#1e293b]">
-                    <input
-                      type="text"
-                      value={knowledgeSearch}
-                      onChange={(e) => setKnowledgeSearch(e.target.value)}
-                      placeholder="Search knowledge items..."
-                      className="w-full px-2.5 py-1.5 rounded bg-[#1a1f2e] border border-[#334155] text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
-                    />
-                  </div>
-
-                  {/* Knowledge items list */}
-                  <div className="max-h-48 overflow-y-auto">
-                    {filteredKnowledgeItems.length === 0 ? (
-                      <p className="text-xs text-slate-600 p-3 text-center">No matching knowledge items</p>
-                    ) : (
-                      filteredKnowledgeItems.map(ki => {
-                        const isSelected = selectedKnowledgeIds.includes(ki.id);
-                        const colors = CATEGORY_COLORS[ki.category] || 'border-slate-500/30 bg-slate-500/10 text-slate-400';
-                        return (
-                          <button
-                            key={ki.id}
-                            type="button"
-                            onClick={() => toggleKnowledgeItem(ki.id)}
-                            className={`w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-[#1a1f2e] transition-colors border-b border-[#1e293b] last:border-b-0 ${
-                              isSelected ? 'bg-amber-500/5' : ''
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              readOnly
-                              className="w-3 h-3 rounded border-[#334155] bg-[#1a1f2e] text-amber-500 focus:ring-0 flex-shrink-0"
-                            />
-                            <span className="text-sm">{CATEGORY_ICONS[ki.category] || '📄'}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-slate-300 truncate">{ki.title}</p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className={`inline-block px-1.5 py-0 rounded text-[9px] border ${colors}`}>
-                                  {ki.category.replace('_', ' ')}
-                                </span>
-                                {ki.priority === 'critical' && (
-                                  <span className="text-[9px] text-red-400 font-medium">CRITICAL</span>
-                                )}
-                                {ki.priority === 'high' && (
-                                  <span className="text-[9px] text-amber-400 font-medium">HIGH</span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Footer with count */}
-                  <div className="px-3 py-1.5 border-t border-[#1e293b] bg-[#0a0f1a] flex items-center justify-between">
-                    <span className="text-[10px] text-slate-600">
-                      {filteredKnowledgeItems.length} item{filteredKnowledgeItems.length !== 1 ? 's' : ''}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      AI will smart-select the most relevant items
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {selectedKnowledgeIds.length > 0 && (
-                <p className="text-[10px] text-slate-600">
-                  Business rules, workflows &amp; bug patterns will be incorporated into generated scripts
-                </p>
               )}
             </div>
-          )}
+            <KnowledgeSelector
+              selectedIds={selectedKnowledgeIds}
+              onChange={setSelectedKnowledgeIds}
+              contextTitle={scenario}
+              contextDescription={targetUrl || projectContext.appUrl}
+            />
+            {selectedKnowledgeIds.length > 0 && (
+              <p className="text-[10px] text-slate-600">
+                Business rules, workflows &amp; bug patterns will be incorporated into generated scripts
+              </p>
+            )}
+          </div>
 
           {/* Generate Button */}
           <button
