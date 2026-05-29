@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useProject } from '@/lib/project-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
+import { toast } from 'sonner';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1202,6 +1203,12 @@ function HistoryTab() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedReq, setSelectedReq] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  /* Export state */
+  const [exportDialogReqId, setExportDialogReqId] = useState<number | null>(null);
+  const [exportFormat, setExportFormat] = useState<'excel' | 'csv'>('excel');
+  const [includeGaps, setIncludeGaps] = useState(true);
+  const [exportingId, setExportingId] = useState<number | null>(null);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   const getProjectHeaders = useCallback((): Record<string, string> => {
     return activeProject?.id ? { 'x-project-id': String(activeProject.id) } : {};
@@ -1249,6 +1256,60 @@ function HistoryTab() {
     fetchRequirements();
   };
 
+  /* ---- Export handler ---- */
+  const handleExport = async () => {
+    if (!exportDialogReqId) return;
+    setExportingId(exportDialogReqId);
+    try {
+      const res = await fetch('/api/test-coverage/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getProjectHeaders() },
+        body: JSON.stringify({ requirementId: exportDialogReqId, format: exportFormat, includeGaps, includeMetadata: true }),
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const ext = exportFormat === 'excel' ? 'xlsx' : 'csv';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `test-cases-${exportDialogReqId}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Test cases exported successfully');
+      setExportDialogReqId(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Export failed');
+    } finally {
+      setExportingId(null);
+    }
+  };
+
+  /* ---- Template download handler ---- */
+  const handleDownloadTemplate = async (fmt: 'excel' | 'csv' = 'excel') => {
+    setDownloadingTemplate(true);
+    try {
+      const res = await fetch(`/api/test-coverage/template?format=${fmt}`, { headers: getProjectHeaders() });
+      if (!res.ok) throw new Error(`Template download failed (${res.status})`);
+      const blob = await res.blob();
+      const ext = fmt === 'excel' ? 'xlsx' : 'csv';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `test-case-template.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Template downloaded');
+    } catch (err: any) {
+      toast.error(err?.message || 'Template download failed');
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -1265,9 +1326,20 @@ function HistoryTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-lg font-semibold text-white">Generated Test Cases</h3>
-        <button onClick={fetchRequirements} className="p-2 hover:bg-slate-700/50 rounded-lg transition-all">
-          <RefreshCw className="w-4 h-4 text-slate-400" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleDownloadTemplate('excel')}
+            disabled={downloadingTemplate}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-700/60 hover:bg-slate-600/60 text-slate-300 rounded-lg border border-slate-600/50 transition-all disabled:opacity-50"
+            title="Download Template"
+          >
+            {downloadingTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LayoutTemplate className="w-3.5 h-3.5" />}
+            Template
+          </button>
+          <button onClick={fetchRequirements} className="p-2 hover:bg-slate-700/50 rounded-lg transition-all">
+            <RefreshCw className="w-4 h-4 text-slate-400" />
+          </button>
+        </div>
       </div>
 
       {fetchError && (
@@ -1340,13 +1412,20 @@ function HistoryTab() {
                     );
                   })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1.5">
                   <button
                     onClick={() => viewDetail(req.id)}
                     className="p-2 hover:bg-slate-700/50 rounded-lg transition-all"
                     title="View Details"
                   >
                     <Eye className="w-4 h-4 text-slate-400" />
+                  </button>
+                  <button
+                    onClick={() => { setExportDialogReqId(req.id); setExportFormat('excel'); setIncludeGaps(true); }}
+                    className="p-2 hover:bg-violet-500/20 rounded-lg transition-all"
+                    title="Export Test Cases"
+                  >
+                    <Download className="w-4 h-4 text-slate-400 hover:text-violet-400" />
                   </button>
                   <button
                     onClick={() => handleDelete(req.id)}
@@ -1361,14 +1440,85 @@ function HistoryTab() {
           ))}
         </div>
       )}
+
+      {/* ---- Export Dialog ---- */}
+      {exportDialogReqId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1f2e] border border-slate-700/60 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Download className="w-4 h-4 text-violet-400" />
+                Export Test Cases
+              </h3>
+              <button onClick={() => setExportDialogReqId(null)} className="p-1 hover:bg-slate-700/50 rounded-lg">
+                <X className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Format selection */}
+            <div>
+              <label className="text-xs font-medium text-slate-400 mb-2 block">Format</label>
+              <div className="flex gap-2">
+                {(['excel', 'csv'] as const).map(fmt => (
+                  <button
+                    key={fmt}
+                    onClick={() => setExportFormat(fmt)}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-all ${
+                      exportFormat === fmt
+                        ? 'bg-violet-600/30 border-violet-500/50 text-violet-300'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:border-slate-600/50'
+                    }`}
+                  >
+                    {fmt === 'excel' ? '📊 Excel (.xlsx)' : '📄 CSV (.csv)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Coverage gaps toggle */}
+            <div className="flex items-center justify-between bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
+              <div>
+                <p className="text-sm text-slate-200">Include Coverage Gaps</p>
+                <p className="text-xs text-slate-500">Add gap analysis scenarios to export</p>
+              </div>
+              <button
+                onClick={() => setIncludeGaps(!includeGaps)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${includeGaps ? 'bg-violet-600' : 'bg-slate-600'}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${includeGaps ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setExportDialogReqId(null)}
+                className="flex-1 py-2 text-sm font-medium text-slate-400 bg-slate-800/50 border border-slate-700/50 rounded-lg hover:bg-slate-700/50 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={exportingId !== null}
+                className="flex-1 py-2 text-sm font-medium text-white bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 rounded-lg transition-all shadow-lg shadow-violet-900/30 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {exportingId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Export
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ---- Requirement Detail View ---- */
 function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onBack: () => void; onDelete: (id: number) => void; loading: boolean }) {
+  const { activeProject } = useProject();
   const [expandedCases, setExpandedCases] = useState<Set<number>>(new Set());
   const [showScriptModal, setShowScriptModal] = useState(false);
+  const [detailExporting, setDetailExporting] = useState(false);
   const req = data.requirement || {};
   const scenarios = data.scenarios || [];
   const testCases = data.testCases || [];
@@ -1376,6 +1526,25 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
 
   const toggleCase = (i: number) => {
     setExpandedCases(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  };
+
+  const quickExport = async () => {
+    setDetailExporting(true);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+    try {
+      const res = await fetch('/api/test-coverage/export', {
+        method: 'POST', headers,
+        body: JSON.stringify({ requirementId: req.id, format: 'excel', includeGaps: true, includeMetadata: true }),
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `test-cases-${req.id}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      toast.success('Test cases exported');
+    } catch (err: any) { toast.error(err?.message || 'Export failed'); }
+    finally { setDetailExporting(false); }
   };
 
   if (loading) {
@@ -1392,6 +1561,15 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           <h3 className="text-lg font-semibold text-white">{req.title}</h3>
           <p className="text-xs text-slate-400">{req.jira_id && `${req.jira_id} • `}{req.module && `${req.module} • `}{new Date(req.created_at).toLocaleString()}</p>
         </div>
+        <button
+          onClick={quickExport}
+          disabled={detailExporting}
+          className="flex items-center gap-2 px-3 py-2 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 text-sm font-medium rounded-lg border border-violet-500/30 transition-all disabled:opacity-50"
+          title="Export to Excel"
+        >
+          {detailExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          Export
+        </button>
         <button
           onClick={() => setShowScriptModal(true)}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-emerald-900/30"
