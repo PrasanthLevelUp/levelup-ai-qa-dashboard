@@ -1,14 +1,12 @@
 export const dynamic = 'force-dynamic';
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
-const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
-const API_KEY = process.env.BACKEND_API_KEY || '';
-
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/repo-intelligence/list`, {
-      headers: { 'Authorization': `Bearer ${API_KEY}` },
+    const response = await fetch(backendUrl('/api/repo-intelligence/list'), {
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     const data = await response.json();
