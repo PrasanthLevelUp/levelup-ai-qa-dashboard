@@ -159,19 +159,16 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     }
   }, [prefillScenarios, onPrefillConsumed]);
 
-  // Fetch repos for the dropdown
+  // Fetch repos for the dropdown (project-scoped)
   const fetchingReposRef = useRef(false);
   const fetchRepos = useCallback(async () => {
-    if (fetchingReposRef.current) return; // prevent duplicate fetches
+    if (fetchingReposRef.current || !activeProject?.id) return;
     fetchingReposRef.current = true;
     try {
-      const headers: Record<string, string> = activeProject?.id
-        ? { 'x-project-id': String(activeProject.id) }
-        : {};
-      const res = await fetch('/api/repos', { headers });
+      const res = await fetch(`/api/projects/${activeProject.id}/repositories`);
       if (!res.ok) return;
       const data = await res.json();
-      const repoList = data.repositories || [];
+      const repoList = Array.isArray(data) ? data : (data.repositories || []);
       setRepos(repoList);
       if (repoList.length > 0 && !pushRepoUrl) {
         setPushRepoUrl(repoList[0].url);

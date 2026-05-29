@@ -184,17 +184,19 @@ export function RepoIntelligenceClient() {
     return { 'x-project-id': String(projectId) };
   }, [projectId]);
 
-  // Fetch repos + existing intelligence
+  // Fetch repos + existing intelligence (project-scoped)
   const fetchData = useCallback(async () => {
-    if (fetchingRef.current) return; // prevent duplicate fetches
+    if (fetchingRef.current || !projectId) return;
     fetchingRef.current = true;
     setLoading(true);
     try {
       const [reposRes, ctxRes] = await Promise.all([
-        fetch('/api/repos', { headers: getProjectHeaders() }).then(r => r.json()),
+        fetch(`/api/projects/${projectId}/repositories`).then(r => r.json()),
         fetch('/api/repo-intelligence/list', { headers: getProjectHeaders() }).then(r => r.json()),
       ]);
-      if (reposRes.repositories) setRepos(reposRes.repositories);
+      // /api/projects/:id/repositories returns array or { repositories: [] }
+      const repoList = Array.isArray(reposRes) ? reposRes : (reposRes.repositories || []);
+      setRepos(repoList);
       if (ctxRes.success && ctxRes.repositories) setContexts(ctxRes.repositories);
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -202,7 +204,7 @@ export function RepoIntelligenceClient() {
       setLoading(false);
       fetchingRef.current = false;
     }
-  }, [getProjectHeaders]);
+  }, [projectId, getProjectHeaders]);
 
   // Clear state when project changes
   useEffect(() => {
