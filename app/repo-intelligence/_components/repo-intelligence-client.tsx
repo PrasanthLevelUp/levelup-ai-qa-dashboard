@@ -216,19 +216,20 @@ export function RepoIntelligenceClient() {
   // Re-fetch when project changes
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-select first repo — prefer scanned repos, fall back to first available
-  useEffect(() => {
-    if (selectedRepo) return;
-    if (contexts.length > 0) {
-      setSelectedRepo(contexts[0].repoId);
-    } else if (repos.length > 0) {
-      setSelectedRepo(repos[0].id);
-    }
-  }, [contexts, repos, selectedRepo]);
+  // NOTE: No auto-select — user must explicitly choose a repo to prevent data leaks
+  // across projects. The page shows an empty state until a repo is selected.
 
   // Load profile when repo selected — always fetch, backend returns 200 with exists:false for unscanned
+  // Validate that the selected repo still belongs to the current project's repo list
   useEffect(() => {
-    if (!selectedRepo) { setProfile(null); return; }
+    if (!selectedRepo) { setProfile(null); setProfileLoading(false); return; }
+    // Guard: if repos loaded but selectedRepo isn't in the list, clear it (stale cross-project ref)
+    if (repos.length > 0 && !repos.some(r => r.id === selectedRepo)) {
+      setSelectedRepo('');
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
     let cancelled = false;
     setProfileLoading(true);
     (async () => {
@@ -249,7 +250,7 @@ export function RepoIntelligenceClient() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedRepo, contexts]);
+  }, [selectedRepo, contexts, repos, getProjectHeaders]);
 
   // Scan handler
   const handleScan = async () => {
