@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { ProjectSetup } from './project-setup';
 import { ScriptGenerator } from './script-generator';
 import { ScriptHistory } from './script-history';
+import { ScriptHistoryTab } from './script-history-tab';
 import { UploadTestCases } from './upload-test-cases';
 import {
   Settings,
@@ -16,6 +17,8 @@ import {
   ChevronUp,
   Sparkles,
   FileSpreadsheet,
+  History,
+  Code2,
 } from 'lucide-react';
 
 export interface ProjectContext {
@@ -59,6 +62,7 @@ export function ScriptsClient() {
   const [showSetup, setShowSetup] = useState(false);
   const [editingContext, setEditingContext] = useState<ProjectContext | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(false);
+  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
 
   const fetchContexts = useCallback(async () => {
     try {
@@ -184,7 +188,7 @@ export function ScriptsClient() {
     );
   }
 
-  // Main view — has context, show generator + history
+  // Main view — has context, show generator + history via tabs
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -211,102 +215,138 @@ export function ScriptsClient() {
         </div>
       </div>
 
-      {/* Active Project Context Card */}
-      {activeContext && (
-        <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl overflow-hidden">
-          <button
-            onClick={() => setShowContextPanel(!showContextPanel)}
-            className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#1e2538] transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center">
-                <Settings size={16} className="text-white" />
-              </div>
-              <div className="text-left">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white">{activeContext.name}</h3>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400">
-                    Active
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {activeContext.appUrl}
-                  {activeContext.framework && ` · ${activeContext.framework}`}
-                  {activeContext._count && ` · ${activeContext._count.scripts} scripts generated`}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
+      {/* Top-Level Tab Switcher */}
+      <div className="flex gap-1 bg-[#0c1222] p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab('generate')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            activeTab === 'generate'
+              ? 'bg-[#1a1f2e] text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Code2 size={13} />
+          Generate Scripts
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            activeTab === 'history'
+              ? 'bg-[#1a1f2e] text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <History size={13} />
+          History
+        </button>
+      </div>
+
+      {/* ---- Generate Tab ---- */}
+      {activeTab === 'generate' && (
+        <>
+          {/* Active Project Context Card */}
+          {activeContext && (
+            <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl overflow-hidden">
               <button
-                onClick={(e) => { e.stopPropagation(); handleEditContext(activeContext); }}
-                className="p-1.5 rounded-md hover:bg-[#334155] text-slate-400 hover:text-white transition-colors"
-                title="Edit project context"
+                onClick={() => setShowContextPanel(!showContextPanel)}
+                className="w-full px-5 py-4 flex items-center justify-between hover:bg-[#1e2538] transition-colors"
               >
-                <Pencil size={13} />
-              </button>
-              {showContextPanel ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
-            </div>
-          </button>
-
-          {showContextPanel && (
-            <div className="px-5 pb-4 border-t border-[#2a3040]">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-                {activeContext.appDescription && (
-                  <ContextField label="App Description" value={activeContext.appDescription} />
-                )}
-                {activeContext.framework && (
-                  <ContextField label="Framework" value={activeContext.framework} />
-                )}
-                {activeContext.authMethod && (
-                  <ContextField label="Auth Method" value={activeContext.authMethod} />
-                )}
-                {activeContext.selectorStrategy && (
-                  <ContextField label="Selector Strategy" value={activeContext.selectorStrategy} />
-                )}
-                {activeContext.navigationFlow && (
-                  <ContextField label="Navigation Flow" value={activeContext.navigationFlow} />
-                )}
-                {activeContext.customRules && (
-                  <ContextField label="Custom Rules" value={activeContext.customRules} />
-                )}
-              </div>
-
-              {/* Context switcher if multiple projects */}
-              {contexts.length > 1 && (
-                <div className="mt-3 pt-3 border-t border-[#2a3040]">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Switch Project</p>
-                  <div className="flex flex-wrap gap-2">
-                    {contexts.map((ctx) => (
-                      <button
-                        key={ctx.id}
-                        onClick={() => { setActiveContext(ctx); setShowContextPanel(false); }}
-                        className={`px-3 py-1.5 rounded-lg text-xs transition-colors border ${
-                          ctx.id === activeContext.id
-                            ? 'bg-violet-500/10 border-violet-500/30 text-violet-400'
-                            : 'bg-[#0c1222] border-[#334155] text-slate-400 hover:text-white hover:border-slate-500'
-                        }`}
-                      >
-                        {ctx.name}
-                      </button>
-                    ))}
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center">
+                    <Settings size={16} className="text-white" />
                   </div>
+                  <div className="text-left">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white">{activeContext.name}</h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400">
+                        Active
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {activeContext.appUrl}
+                      {activeContext.framework && ` · ${activeContext.framework}`}
+                      {activeContext._count && ` · ${activeContext._count.scripts} scripts generated`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleEditContext(activeContext); }}
+                    className="p-1.5 rounded-md hover:bg-[#334155] text-slate-400 hover:text-white transition-colors"
+                    title="Edit project context"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  {showContextPanel ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                </div>
+              </button>
+
+              {showContextPanel && (
+                <div className="px-5 pb-4 border-t border-[#2a3040]">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+                    {activeContext.appDescription && (
+                      <ContextField label="App Description" value={activeContext.appDescription} />
+                    )}
+                    {activeContext.framework && (
+                      <ContextField label="Framework" value={activeContext.framework} />
+                    )}
+                    {activeContext.authMethod && (
+                      <ContextField label="Auth Method" value={activeContext.authMethod} />
+                    )}
+                    {activeContext.selectorStrategy && (
+                      <ContextField label="Selector Strategy" value={activeContext.selectorStrategy} />
+                    )}
+                    {activeContext.navigationFlow && (
+                      <ContextField label="Navigation Flow" value={activeContext.navigationFlow} />
+                    )}
+                    {activeContext.customRules && (
+                      <ContextField label="Custom Rules" value={activeContext.customRules} />
+                    )}
+                  </div>
+
+                  {/* Context switcher if multiple projects */}
+                  {contexts.length > 1 && (
+                    <div className="mt-3 pt-3 border-t border-[#2a3040]">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Switch Project</p>
+                      <div className="flex flex-wrap gap-2">
+                        {contexts.map((ctx) => (
+                          <button
+                            key={ctx.id}
+                            onClick={() => { setActiveContext(ctx); setShowContextPanel(false); }}
+                            className={`px-3 py-1.5 rounded-lg text-xs transition-colors border ${
+                              ctx.id === activeContext.id
+                                ? 'bg-violet-500/10 border-violet-500/30 text-violet-400'
+                                : 'bg-[#0c1222] border-[#334155] text-slate-400 hover:text-white hover:border-slate-500'
+                            }`}
+                          >
+                            {ctx.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
-        </div>
+
+          {/* Input Mode Tabs + Generator */}
+          {activeContext && (
+            <InputModes
+              projectContext={activeContext}
+              onGenerated={handleScriptGenerated}
+            />
+          )}
+
+          {/* Quick Script History (inline) */}
+          <ScriptHistory scripts={scripts} />
+        </>
       )}
 
-      {/* Input Mode Tabs + Generator */}
-      {activeContext && (
-        <InputModes
-          projectContext={activeContext}
-          onGenerated={handleScriptGenerated}
-        />
+      {/* ---- History Tab ---- */}
+      {activeTab === 'history' && (
+        <ScriptHistoryTab />
       )}
-
-      {/* Script History */}
-      <ScriptHistory scripts={scripts} />
     </div>
   );
 }
