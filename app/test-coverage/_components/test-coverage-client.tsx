@@ -276,15 +276,24 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const descriptionValid = description.trim().length >= 20;
   const canGenerate = titleValid && descriptionValid && selectedTypes.length > 0;
 
-  // Fetch repos for repo intelligence
+  // Clear repo state when project changes
+  useEffect(() => {
+    setSelectedRepoId('');
+    setUseRepoIntelligence(false);
+    setRepos([]);
+    setRepoContexts([]);
+  }, [activeProject?.id]);
+
+  // Fetch repos for repo intelligence (filtered by active project)
   useEffect(() => {
     if (!activeProject?.id) return;
     (async () => {
       setLoadingRepos(true);
       try {
+        const projectHeaders: Record<string, string> = { 'x-project-id': String(activeProject.id) };
         const [repoRes, contextRes] = await Promise.all([
           fetch(`/api/projects/${activeProject.id}/repositories`),
-          fetch('/api/repo-intelligence/list'),
+          fetch('/api/repo-intelligence/list', { headers: projectHeaders }),
         ]);
         if (repoRes.ok) {
           const data = await repoRes.json();

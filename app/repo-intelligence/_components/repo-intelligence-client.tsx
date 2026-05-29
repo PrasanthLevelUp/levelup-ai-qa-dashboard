@@ -192,7 +192,7 @@ export function RepoIntelligenceClient() {
     try {
       const [reposRes, ctxRes] = await Promise.all([
         fetch('/api/repos', { headers: getProjectHeaders() }).then(r => r.json()),
-        fetch('/api/repo-intelligence/list').then(r => r.json()),
+        fetch('/api/repo-intelligence/list', { headers: getProjectHeaders() }).then(r => r.json()),
       ]);
       if (reposRes.repositories) setRepos(reposRes.repositories);
       if (ctxRes.success && ctxRes.repositories) setContexts(ctxRes.repositories);
@@ -203,6 +203,15 @@ export function RepoIntelligenceClient() {
       fetchingRef.current = false;
     }
   }, [getProjectHeaders]);
+
+  // Clear state when project changes
+  useEffect(() => {
+    setSelectedRepo('');
+    setProfile(null);
+    setScanResult(null);
+    setRepos([]);
+    setContexts([]);
+  }, [projectId]);
 
   // Re-fetch when project changes
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -224,7 +233,7 @@ export function RepoIntelligenceClient() {
     setProfileLoading(true);
     (async () => {
       try {
-        const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(selectedRepo)}`);
+        const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(selectedRepo)}`, { headers: getProjectHeaders() });
         const data = await res.json();
         if (cancelled) return;
         // Handle both new format (exists:false) and legacy 404
@@ -251,7 +260,7 @@ export function RepoIntelligenceClient() {
       const repo = repos.find(r => r.id === selectedRepo);
       const res = await fetch('/api/repo-intelligence/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getProjectHeaders() },
         body: JSON.stringify({
           repoId: selectedRepo,
           repoPath: repo?.url || selectedRepo,
@@ -993,20 +1002,23 @@ function WorkflowVisualization({
 /* ── Context Preview ─────────────────────────────────────────── */
 
 function ContextPreview({ profile, repoId }: { profile: RepoProfile; repoId: string }) {
+  const { activeProject } = useProject();
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const loadSummary = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(repoId)}/summary`);
+      const headers: Record<string, string> = {};
+      if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+      const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(repoId)}/summary`, { headers });
       const data = await res.json();
       if (data.success) setSummaryText(data.summary);
     } catch { /* ignore */ }
     setLoading(false);
   };
 
-  useEffect(() => { loadSummary(); }, [repoId]);
+  useEffect(() => { loadSummary(); }, [repoId, activeProject?.id]);
 
   // Build context checklist
   const checks = [

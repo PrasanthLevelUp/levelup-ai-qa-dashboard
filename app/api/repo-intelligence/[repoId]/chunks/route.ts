@@ -1,9 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
-const API_KEY = process.env.BACKEND_API_KEY || '';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 export async function GET(req: NextRequest, { params }: { params: { repoId: string } }) {
   try {
@@ -11,9 +9,9 @@ export async function GET(req: NextRequest, { params }: { params: { repoId: stri
     const { searchParams } = new URL(req.url);
     const qs = searchParams.toString();
     const response = await fetch(
-      `${BACKEND_URL}/api/repo-intelligence/${encodeURIComponent(repoId)}/chunks${qs ? `?${qs}` : ''}`,
+      backendUrl(`/api/repo-intelligence/${encodeURIComponent(repoId)}/chunks${qs ? `?${qs}` : ''}`),
       {
-        headers: { 'Authorization': `Bearer ${API_KEY}` },
+        headers: proxyHeaders(extractProjectHeaders(req)),
         cache: 'no-store',
       }
     );

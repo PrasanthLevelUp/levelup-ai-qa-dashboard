@@ -318,7 +318,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     }
     (async () => {
       try {
-        const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(selectedRepoId)}`);
+        const repoHeaders: Record<string, string> = {};
+        if (activeProject?.id) repoHeaders['x-project-id'] = String(activeProject.id);
+        const res = await fetch(`/api/repo-intelligence/${encodeURIComponent(selectedRepoId)}`, { headers: repoHeaders });
         const data = await res.json();
         if (data.success && data.profile) {
           const p = data.profile;
