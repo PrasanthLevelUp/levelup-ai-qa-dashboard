@@ -196,7 +196,8 @@ export function RepoIntelligenceClient() {
       ]);
       // /api/projects/:id/repositories returns array or { repositories: [] }
       const repoList = Array.isArray(reposRes) ? reposRes : (reposRes.repositories || []);
-      setRepos(repoList);
+      // Normalize id to string — API returns numeric id, but <select> values are strings
+      setRepos(repoList.map((r: any) => ({ ...r, id: String(r.id) })));
       if (ctxRes.success && ctxRes.repositories) setContexts(ctxRes.repositories);
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -252,17 +253,26 @@ export function RepoIntelligenceClient() {
   // Scan handler
   const handleScan = async () => {
     if (!selectedRepo) return;
+    const repo = repos.find(r => r.id === selectedRepo);
+    if (!repo) {
+      setScanResult({ success: false, error: 'Selected repository not found. Please re-select and try again.' });
+      return;
+    }
+    if (!repo.url) {
+      setScanResult({ success: false, error: 'Repository URL not available. Please check repository configuration.' });
+      return;
+    }
     setScanning(true);
     setScanResult(null);
     try {
-      const repo = repos.find(r => r.id === selectedRepo);
       const res = await fetch('/api/repo-intelligence/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getProjectHeaders() },
         body: JSON.stringify({
           repoId: selectedRepo,
-          repoPath: repo?.url || selectedRepo,
-          branch: repo?.branch || 'main',
+          repoPath: repo.url,
+          repoName: repo.name,
+          branch: repo.branch || 'main',
         }),
       });
       const data = await res.json();
