@@ -1196,17 +1196,22 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
 /* ------------------------------------------------------------------ */
 
 function HistoryTab() {
+  const { activeProject } = useProject();
   const [requirements, setRequirements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedReq, setSelectedReq] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const getProjectHeaders = useCallback((): Record<string, string> => {
+    return activeProject?.id ? { 'x-project-id': String(activeProject.id) } : {};
+  }, [activeProject?.id]);
+
   const fetchRequirements = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await fetch('/api/test-coverage/requirements');
+      const res = await fetch('/api/test-coverage/requirements', { headers: getProjectHeaders() });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         setFetchError(errData?.details || errData?.error || `Backend returned ${res.status}`);
@@ -1220,14 +1225,17 @@ function HistoryTab() {
       setRequirements([]);
     }
     setLoading(false);
-  }, []);
+  }, [getProjectHeaders]);
 
   useEffect(() => { fetchRequirements(); }, [fetchRequirements]);
+
+  // Reset selection when project changes
+  useEffect(() => { setSelectedReq(null); }, [activeProject?.id]);
 
   const viewDetail = async (id: number) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/test-coverage/requirements/${id}`);
+      const res = await fetch(`/api/test-coverage/requirements/${id}`, { headers: getProjectHeaders() });
       const data = await res.json();
       setSelectedReq(data);
     } catch { /* ignore */ }
@@ -1236,7 +1244,7 @@ function HistoryTab() {
 
   const handleDelete = async (id: number) => {
     if (!confirm('Delete this requirement and all generated test cases?')) return;
-    await fetch(`/api/test-coverage/requirements/${id}`, { method: 'DELETE' });
+    await fetch(`/api/test-coverage/requirements/${id}`, { method: 'DELETE', headers: getProjectHeaders() });
     setSelectedReq(null);
     fetchRequirements();
   };
@@ -1743,19 +1751,23 @@ function GenerateScriptsModal({
 /* ------------------------------------------------------------------ */
 
 function StatsTab() {
+  const { activeProject } = useProject();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
+    const headers: Record<string, string> = {};
+    if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
     (async () => {
       try {
-        const res = await fetch('/api/test-coverage/stats');
+        const res = await fetch('/api/test-coverage/stats', { headers });
         const data = await res.json();
         setStats(data);
       } catch { /* ignore */ }
       setLoading(false);
     })();
-  }, []);
+  }, [activeProject?.id]);
 
   if (loading) {
     return <div className="flex items-center justify-center py-16"><Loader2 className="w-8 h-8 text-violet-400 animate-spin" /></div>;

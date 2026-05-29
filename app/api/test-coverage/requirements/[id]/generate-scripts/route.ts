@@ -3,7 +3,7 @@
  * Proxy to backend: Test Case Lab → Script Gen → GitHub PR pipeline
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,7 @@ export async function POST(
       backendUrl(`/api/test-coverage/requirements/${id}/generate-scripts-and-commit`),
       {
         method: 'POST',
-        headers: proxyHeaders(),
+        headers: proxyHeaders(extractProjectHeaders(req)),
         body: JSON.stringify(body),
         cache: 'no-store',
       },
