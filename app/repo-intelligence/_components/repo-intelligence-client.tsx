@@ -225,13 +225,8 @@ export function RepoIntelligenceClient() {
   // Validate that the selected repo still belongs to the current project's repo list
   useEffect(() => {
     if (!selectedRepo) { setProfile(null); setProfileLoading(false); return; }
-    // Guard: if repos loaded but selectedRepo isn't in the list, clear it (stale cross-project ref)
-    if (repos.length > 0 && !repos.some(r => r.id === selectedRepo)) {
-      setSelectedRepo('');
-      setProfile(null);
-      setProfileLoading(false);
-      return;
-    }
+    // Note: cross-project guard removed — the [projectId] effect already clears
+    // selectedRepo on project change, so no stale refs are possible.
     let cancelled = false;
     setProfileLoading(true);
     (async () => {
@@ -252,7 +247,7 @@ export function RepoIntelligenceClient() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedRepo, contexts, repos, getProjectHeaders]);
+  }, [selectedRepo, getProjectHeaders]);
 
   // Scan handler
   const handleScan = async () => {
