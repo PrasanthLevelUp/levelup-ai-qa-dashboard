@@ -1,12 +1,12 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 /** GET /api/test-coverage/requirements/:id — Single requirement detail */
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const res = await fetch(backendUrl(`/api/test-coverage/requirements/${params.id}`), { headers: proxyHeaders(), cache: 'no-store' });
+    const res = await fetch(backendUrl(`/api/test-coverage/requirements/${params.id}`), { headers: proxyHeaders(extractProjectHeaders(req)), cache: 'no-store' });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
@@ -16,11 +16,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 /** DELETE /api/test-coverage/requirements/:id */
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const res = await fetch(backendUrl(`/api/test-coverage/requirements/${params.id}`), {
       method: 'DELETE',
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     const data = await res.json();

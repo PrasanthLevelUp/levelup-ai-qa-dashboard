@@ -1,13 +1,13 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
-/** GET /api/test-coverage/requirements — List all requirements */
-export async function GET() {
+/** GET /api/test-coverage/requirements — List all requirements (project-scoped) */
+export async function GET(req: NextRequest) {
   try {
     const res = await fetch(backendUrl('/api/test-coverage/requirements'), {
-      headers: proxyHeaders(),
+      headers: proxyHeaders(extractProjectHeaders(req)),
       cache: 'no-store',
     });
     if (!res.ok) {
