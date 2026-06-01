@@ -17,6 +17,15 @@ import {
   FileSpreadsheet,
   History,
   Code2,
+  ShieldCheck,
+  X,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Database,
+  Globe,
+  BookOpen,
+  GitBranch,
 } from 'lucide-react';
 
 export interface ProjectContext {
@@ -60,6 +69,30 @@ export function ScriptsClient() {
   const [editingContext, setEditingContext] = useState<ProjectContext | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [showVerifyDialog, setShowVerifyDialog] = useState(false);
+  const [verifyData, setVerifyData] = useState<any>(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
+  const fetchIntelligenceVerify = useCallback(async () => {
+    setVerifyLoading(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (activeContext) headers['x-project-id'] = String(activeContext.id);
+      const res = await fetch('/api/intelligence/verify', { headers });
+      const data = await res.json();
+      setVerifyData(data);
+    } catch (err) {
+      console.error('Failed to verify intelligence:', err);
+      setVerifyData(null);
+    } finally {
+      setVerifyLoading(false);
+    }
+  }, [activeContext]);
+
+  const openVerifyDialog = () => {
+    setShowVerifyDialog(true);
+    fetchIntelligenceVerify();
+  };
 
   const fetchContexts = useCallback(async () => {
     try {
@@ -183,13 +216,20 @@ export function ScriptsClient() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={openVerifyDialog}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1e293b] border border-violet-500/30 text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 transition-colors text-xs"
+            title="Verify Intelligence Setup"
+          >
+            <ShieldCheck size={12} />
+            Verify Intelligence
+          </button>
+          <button
             onClick={() => setShowSetup(true)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-xs"
           >
             <Plus size={12} />
             New Project
           </button>
-
         </div>
       </div>
 
@@ -323,6 +363,16 @@ export function ScriptsClient() {
       {activeTab === 'history' && (
         <ScriptHistoryTab />
       )}
+
+      {/* ---- Verify Intelligence Dialog ---- */}
+      {showVerifyDialog && (
+        <VerifyIntelligenceDialog
+          data={verifyData}
+          loading={verifyLoading}
+          onClose={() => setShowVerifyDialog(false)}
+          onRefresh={fetchIntelligenceVerify}
+        />
+      )}
     </div>
   );
 }
@@ -397,6 +447,250 @@ function ContextField({ label, value }: { label: string; value: string }) {
     <div className="bg-[#0c1222] rounded-lg p-3">
       <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{label}</p>
       <p className="text-xs text-slate-300 leading-relaxed line-clamp-3">{value}</p>
+    </div>
+  );
+}
+
+/* ─── Verify Intelligence Dialog ─────────────────────────────────────────── */
+
+function VerifyIntelligenceDialog({
+  data,
+  loading,
+  onClose,
+  onRefresh,
+}: {
+  data: any;
+  loading: boolean;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const repo = data?.repositoryIntelligence;
+  const profiles = data?.applicationProfiles;
+  const knowledge = data?.appKnowledge;
+  const readiness = data?.readinessScore ?? 0;
+
+  const scoreColor =
+    readiness >= 80
+      ? 'text-emerald-400'
+      : readiness >= 50
+        ? 'text-amber-400'
+        : 'text-red-400';
+
+  const scoreBg =
+    readiness >= 80
+      ? 'from-emerald-500/20 to-emerald-600/10'
+      : readiness >= 50
+        ? 'from-amber-500/20 to-amber-600/10'
+        : 'from-red-500/20 to-red-600/10';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-[#0f172a] border border-[#2a3040] rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a3040]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-600/20 border border-violet-500/30 flex items-center justify-center">
+              <ShieldCheck size={18} className="text-violet-400" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-white">Verify Intelligence Setup</h2>
+              <p className="text-[11px] text-slate-500">Check what intelligence sources are available</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              className="p-1.5 rounded-md hover:bg-[#1e293b] text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md hover:bg-[#1e293b] text-slate-400 hover:text-white transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          {loading && !data ? (
+            <div className="flex items-center justify-center py-12 text-slate-400">
+              <RefreshCw size={20} className="animate-spin mr-3" />
+              Checking intelligence sources…
+            </div>
+          ) : data?.error ? (
+            <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              <XCircle size={18} />
+              <span>Could not verify: {data.error}</span>
+            </div>
+          ) : (
+            <>
+              {/* Readiness Score */}
+              <div className={`rounded-xl p-5 bg-gradient-to-r ${scoreBg} border border-[#2a3040]`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-slate-400 uppercase tracking-wider mb-1">Intelligence Readiness</p>
+                    <p className={`text-3xl font-bold ${scoreColor}`}>{readiness}%</p>
+                  </div>
+                  <div className="w-16 h-16 relative">
+                    <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#334155"
+                        strokeWidth="3"
+                      />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeDasharray={`${readiness}, 100`}
+                        className={scoreColor}
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  {readiness >= 80
+                    ? 'Excellent! All major intelligence sources are connected.'
+                    : readiness >= 50
+                      ? 'Good setup. Connect more sources for optimal script quality.'
+                      : 'Limited intelligence available. Connect sources for better scripts.'}
+                </p>
+              </div>
+
+              {/* Source Cards */}
+              <div className="space-y-3">
+                {/* Repository Intelligence */}
+                <IntelligenceSourceCard
+                  icon={<GitBranch size={16} />}
+                  title="Repository Intelligence"
+                  connected={repo?.connected}
+                  details={
+                    repo?.connected
+                      ? [
+                          repo.name && `Repo: ${repo.name}`,
+                          repo.framework && `Framework: ${repo.framework}`,
+                          repo.patternsCount != null && `${repo.patternsCount} test patterns`,
+                          repo.helpersCount != null && `${repo.helpersCount} helpers`,
+                          repo.pageObjectsCount != null && `${repo.pageObjectsCount} page objects`,
+                        ].filter(Boolean) as string[]
+                      : []
+                  }
+                  hint={!repo?.connected ? 'Connect a GitHub repository to enable pattern-aware script generation.' : undefined}
+                />
+
+                {/* Application Profiles */}
+                <IntelligenceSourceCard
+                  icon={<Globe size={16} />}
+                  title="Application Profiles"
+                  connected={profiles?.count > 0}
+                  details={
+                    profiles?.count > 0
+                      ? [
+                          `${profiles.count} profile${profiles.count > 1 ? 's' : ''} available`,
+                          profiles.freshCount != null && `${profiles.freshCount} fresh (< 24h)`,
+                        ].filter(Boolean) as string[]
+                      : []
+                  }
+                  hint={!(profiles?.count > 0) ? 'Generate scripts for a URL to auto-create application profiles.' : undefined}
+                />
+
+                {/* App Knowledge */}
+                <IntelligenceSourceCard
+                  icon={<BookOpen size={16} />}
+                  title="App Knowledge Base"
+                  connected={knowledge?.itemsCount > 0}
+                  details={
+                    knowledge?.itemsCount > 0
+                      ? [
+                          `${knowledge.itemsCount} knowledge items`,
+                          ...(knowledge.categories || []).map((c: string) => c),
+                        ]
+                      : []
+                  }
+                  hint={!(knowledge?.itemsCount > 0) ? 'Add app knowledge items to teach the AI about your domain.' : undefined}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-[#2a3040] flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-xs"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IntelligenceSourceCard({
+  icon,
+  title,
+  connected,
+  details,
+  hint,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  connected?: boolean;
+  details: string[];
+  hint?: string;
+}) {
+  return (
+    <div className={`rounded-lg border p-4 ${
+      connected
+        ? 'bg-[#1a1f2e] border-emerald-500/20'
+        : 'bg-[#1a1f2e] border-[#2a3040]'
+    }`}>
+      <div className="flex items-start gap-3">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+          connected
+            ? 'bg-emerald-500/10 text-emerald-400'
+            : 'bg-slate-700/30 text-slate-500'
+        }`}>
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium text-white">{title}</span>
+            {connected ? (
+              <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <CheckCircle2 size={10} />
+                Connected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/30 border border-slate-600/20 text-slate-500">
+                <AlertTriangle size={10} />
+                Not Connected
+              </span>
+            )}
+          </div>
+          {details.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {details.map((d, i) => (
+                <span key={i} className="text-[11px] text-slate-400 bg-[#0c1222] px-2 py-0.5 rounded">
+                  {d}
+                </span>
+              ))}
+            </div>
+          )}
+          {hint && (
+            <p className="text-[11px] text-slate-500 mt-1.5">{hint}</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
