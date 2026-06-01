@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ProjectSetup } from './project-setup';
 import { ScriptGenerator } from './script-generator';
-import { ScriptHistory } from './script-history';
 import { ScriptHistoryTab } from './script-history-tab';
 import { UploadTestCases } from './upload-test-cases';
 import {
@@ -11,7 +10,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  FileCode,
   FolderOpen,
   ChevronDown,
   ChevronUp,
@@ -57,7 +55,6 @@ export interface GeneratedScriptRecord {
 export function ScriptsClient() {
   const [contexts, setContexts] = useState<ProjectContext[]>([]);
   const [activeContext, setActiveContext] = useState<ProjectContext | null>(null);
-  const [scripts, setScripts] = useState<GeneratedScriptRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSetup, setShowSetup] = useState(false);
   const [editingContext, setEditingContext] = useState<ProjectContext | null>(null);
@@ -79,21 +76,9 @@ export function ScriptsClient() {
     }
   }, [activeContext]);
 
-  const fetchScripts = useCallback(async () => {
-    try {
-      const res = await fetch('/api/scripts/recent');
-      const data = await res.json();
-      if (data.success && data.data) {
-        setScripts(data.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch scripts:', err);
-    }
-  }, []);
-
   useEffect(() => {
-    Promise.all([fetchContexts(), fetchScripts()]).finally(() => setLoading(false));
-  }, [fetchContexts, fetchScripts]);
+    fetchContexts().finally(() => setLoading(false));
+  }, [fetchContexts]);
 
   const handleContextSaved = (ctx: ProjectContext) => {
     setShowSetup(false);
@@ -103,7 +88,6 @@ export function ScriptsClient() {
   };
 
   const handleScriptGenerated = () => {
-    fetchScripts();
     fetchContexts(); // refresh script count
   };
 
@@ -205,13 +189,7 @@ export function ScriptsClient() {
             <Plus size={12} />
             New Project
           </button>
-          <button
-            onClick={() => fetchScripts()}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-xs"
-          >
-            <RefreshCw size={12} />
-            Refresh
-          </button>
+
         </div>
       </div>
 
@@ -338,8 +316,6 @@ export function ScriptsClient() {
             />
           )}
 
-          {/* Quick Script History (inline) */}
-          <ScriptHistory scripts={scripts} />
         </>
       )}
 
