@@ -36,7 +36,7 @@ interface HistoryScript {
   filesGenerated: any;
   createdAt: string | null;
   projectContext?: { name: string } | null;
-  generated_code?: string;
+  script_content?: string;
   framework?: string;
   name?: string;
 }
@@ -179,7 +179,7 @@ export function ScriptHistoryTab() {
 
   /* ---- Copy code to clipboard ---- */
   const handleCopy = async (script: HistoryScript) => {
-    const code = script.generated_code || script.instructions || '';
+    const code = script.script_content || script.instructions || '';
     if (!code) return;
     try {
       await navigator.clipboard.writeText(code);
@@ -246,7 +246,7 @@ export function ScriptHistoryTab() {
             const status = getStatusConfig(script.validationStatus);
             const StatusIcon = status.icon;
             const filesCount = Array.isArray(script.filesGenerated) ? script.filesGenerated.length : 0;
-            const hasCode = !!(script.generated_code);
+            const hasCode = !!(script.script_content);
 
             return (
               <div key={script.id} className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl overflow-hidden hover:border-[#3a4060] transition-all">
@@ -354,7 +354,7 @@ export function ScriptHistoryTab() {
                       </button>
                     </div>
                     <pre className="bg-[#0a0e1a] px-5 py-4 overflow-x-auto text-xs text-slate-300 leading-relaxed max-h-[400px] overflow-y-auto">
-                      <code>{script.generated_code}</code>
+                      <code>{script.script_content}</code>
                     </pre>
                   </div>
                 )}
