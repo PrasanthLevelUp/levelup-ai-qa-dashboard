@@ -12,17 +12,20 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  ExternalLink,
   Eye,
   Zap,
   Search,
-  Filter,
-  ChevronDown,
   ChevronUp,
   Brain,
-  FileCode,
   FolderOpen,
   X,
+  Plus,
+  Lightbulb,
+  ArrowRight,
+  Info,
+  Link2,
+  Shield,
+  FileSearch,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -72,7 +75,7 @@ function expiresIn(dateStr: string): string {
 
 function statusBadge(status: string, expiresAt: string) {
   const expDiff = new Date(expiresAt).getTime() - Date.now();
-  const isExpiringSoon = expDiff > 0 && expDiff < 7 * 24 * 60 * 60 * 1000; // < 7 days
+  const isExpiringSoon = expDiff > 0 && expDiff < 7 * 24 * 60 * 60 * 1000;
 
   if (status === 'fresh' && !isExpiringSoon) {
     return (
@@ -131,18 +134,19 @@ export function ProfilesClient() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
-  // Build project headers from activeProject directly inside callbacks
-  // to avoid stale closure issues with useProjectHeaders()
+  /* -- Crawl URL dialog state -- */
+  const [showCrawlDialog, setShowCrawlDialog] = useState(false);
+  const [crawlUrl, setCrawlUrl] = useState('');
+  const [crawlStatus, setCrawlStatus] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+  const [crawlMessage, setCrawlMessage] = useState('');
+
   const getHeaders = useCallback((): Record<string, string> => {
     if (!activeProject) return {};
     return { 'x-project-id': String(activeProject.id) };
   }, [activeProject]);
 
   const fetchProfiles = useCallback(async () => {
-    // Don't fetch until project context is resolved — prevents
-    // the initial fetch from returning unscoped (all) data
     if (projectLoading) return;
-
     setLoading(true);
     try {
       const qs = filterStatus ? `?status=${filterStatus}` : '';
@@ -159,12 +163,10 @@ export function ProfilesClient() {
     setLoading(false);
   }, [filterStatus, activeProject?.id, projectLoading, getHeaders]);
 
-  // Re-fetch when project changes or project finishes loading
   useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
 
-  // Clear profiles immediately on project switch for snappy UX
   useEffect(() => {
     setProfiles([]);
     setTotal(0);
@@ -201,11 +203,49 @@ export function ProfilesClient() {
     setActionLoading(prev => ({ ...prev, [profile.id]: false }));
   };
 
+  /* -- Check profile status for a URL -- */
+  const handleCheckUrl = async () => {
+    if (!crawlUrl.trim()) return;
+    setCrawlStatus('checking');
+    setCrawlMessage('');
+    try {
+      const res = await fetch(
+        `/api/intelligence/profiles/status?url=${encodeURIComponent(crawlUrl.trim())}`,
+        { headers: getHeaders() },
+      );
+      const data = await res.json();
+      if (data.success && data.data) {
+        const d = data.data;
+        if (d.hasProfile && d.status === 'fresh') {
+          setCrawlMessage(
+            `✅ A fresh profile already exists for this URL. It was crawled ${timeAgo(d.crawledAt)} and expires in ${expiresIn(d.expiresAt)}. No re-crawl needed — your next script generation will use the cached data instantly.`,
+          );
+        } else if (d.hasProfile && d.status === 'expired') {
+          setCrawlMessage(
+            `⚠️ A profile exists but has expired. The next script generation for this URL will automatically re-crawl and refresh the cache.`,
+          );
+        } else {
+          setCrawlMessage(
+            `ℹ️ No cached profile for this URL yet. When you generate a test script for this URL, the system will crawl it and create a profile automatically. Future generations will use the cached data for 30× faster performance.`,
+          );
+        }
+        setCrawlStatus('done');
+      } else {
+        setCrawlMessage(
+          `ℹ️ No cached profile for this URL. Generate a test script for this URL to create one automatically.`,
+        );
+        setCrawlStatus('done');
+      }
+    } catch {
+      setCrawlMessage('Failed to check profile status. Please try again.');
+      setCrawlStatus('error');
+    }
+  };
+
   const filteredProfiles = profiles.filter(p =>
     !search || p.base_url.toLowerCase().includes(search.toLowerCase()),
   );
 
-  // Stats
   const freshCount = profiles.filter(p => p.status === 'fresh').length;
   const expiredCount = profiles.filter(p => p.status === 'expired').length;
   const errorCount = profiles.filter(p => p.status === 'error').length;
@@ -231,90 +271,171 @@ export function ProfilesClient() {
             </div>
           )}
         </div>
-        <button
-          onClick={fetchProfiles}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-sm"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowCrawlDialog(true); setCrawlUrl(''); setCrawlStatus('idle'); setCrawlMessage(''); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+          >
+            <Plus size={14} />
+            Check / Crawl URL
+          </button>
+          <button
+            onClick={fetchProfiles}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-sm"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {/* Crawl URL Dialog */}
+      {showCrawlDialog && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a3040]">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-violet-500/10 rounded-lg">
+                  <FileSearch size={18} className="text-violet-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Check URL Profile</h2>
+                  <p className="text-xs text-slate-500">See if a cached profile exists for your application URL</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCrawlDialog(false)}
+                className="p-1.5 rounded-lg hover:bg-[#2a3040] text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">Application URL</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Link2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="url"
+                      value={crawlUrl}
+                      onChange={e => { setCrawlUrl(e.target.value); setCrawlStatus('idle'); setCrawlMessage(''); }}
+                      placeholder="https://your-app.com"
+                      className="w-full pl-9 pr-3 py-2.5 bg-[#0f172a] border border-[#334155] rounded-lg text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+                      onKeyDown={e => e.key === 'Enter' && handleCheckUrl()}
+                    />
+                  </div>
+                  <button
+                    onClick={handleCheckUrl}
+                    disabled={!crawlUrl.trim() || crawlStatus === 'checking'}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors whitespace-nowrap"
+                  >
+                    {crawlStatus === 'checking' ? (
+                      <><Loader2 size={14} className="animate-spin" /> Checking...</>
+                    ) : (
+                      <><Search size={14} /> Check Status</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Result */}
+              {crawlMessage && (
+                <div className={`p-4 rounded-lg border text-sm leading-relaxed ${
+                  crawlStatus === 'error'
+                    ? 'bg-red-500/5 border-red-500/20 text-red-300'
+                    : 'bg-[#0f172a] border-[#334155] text-slate-300'
+                }`}>
+                  {crawlMessage}
+                </div>
+              )}
+
+              {/* Tip */}
+              <div className="flex items-start gap-2.5 p-3 bg-violet-500/5 border border-violet-500/15 rounded-lg">
+                <Info size={14} className="text-violet-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-violet-300/80 leading-relaxed">
+                  Profiles are automatically created when you generate test scripts. The first generation
+                  crawls your app (~30s), and all subsequent generations reuse the cached data instantly.
+                </p>
+              </div>
+
+              {/* Action */}
+              {crawlStatus === 'done' && (
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setShowCrawlDialog(false)}
+                    className="px-4 py-2 rounded-lg bg-[#0f172a] border border-[#334155] text-slate-300 hover:text-white text-sm transition-colors"
+                  >
+                    Close
+                  </button>
+                  <a
+                    href="/scripts"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+                  >
+                    <Zap size={14} />
+                    Generate Script
+                    <ArrowRight size={14} />
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-violet-500/10 rounded-lg">
-              <Database size={18} className="text-violet-400" />
+      {total > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-violet-500/10 rounded-lg">
+                <Database size={18} className="text-violet-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-white">{total}</p>
+                <p className="text-xs text-slate-500">Total Profiles</p>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{total}</p>
-              <p className="text-xs text-slate-500">Total Profiles</p>
+          </div>
+          <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 rounded-lg">
+                <CheckCircle2 size={18} className="text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-emerald-400">{freshCount}</p>
+                <p className="text-xs text-slate-500">Fresh (Cached)</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500/10 rounded-lg">
+                <AlertTriangle size={18} className="text-amber-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-amber-400">{expiredCount}</p>
+                <p className="text-xs text-slate-500">Expired</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-500/10 rounded-lg">
+                <XCircle size={18} className="text-red-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-red-400">{errorCount}</p>
+                <p className="text-xs text-slate-500">Errors</p>
+              </div>
             </div>
           </div>
         </div>
-        <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg">
-              <CheckCircle2 size={18} className="text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-emerald-400">{freshCount}</p>
-              <p className="text-xs text-slate-500">Fresh (Cached)</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500/10 rounded-lg">
-              <AlertTriangle size={18} className="text-amber-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-amber-400">{expiredCount}</p>
-              <p className="text-xs text-slate-500">Expired</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-500/10 rounded-lg">
-              <XCircle size={18} className="text-red-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-red-400">{errorCount}</p>
-              <p className="text-xs text-slate-500">Errors</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
-      {/* Filters */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search by URL..."
-            className="w-full pl-9 pr-3 py-2 bg-[#1a1f2e] border border-[#2a3040] rounded-lg text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50"
-          />
-        </div>
-        <select
-          value={filterStatus}
-          onChange={e => setFilterStatus(e.target.value)}
-          className="px-3 py-2 bg-[#1a1f2e] border border-[#2a3040] rounded-lg text-sm text-slate-300 focus:outline-none focus:border-violet-500/50"
-        >
-          <option value="">All Statuses</option>
-          <option value="fresh">🟢 Fresh</option>
-          <option value="expired">🔴 Expired</option>
-          <option value="error">⚠️ Error</option>
-          <option value="crawling">🔄 Crawling</option>
-        </select>
-      </div>
-
-      {/* Profile List */}
+      {/* Main content */}
       {loading || projectLoading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 size={24} className="animate-spin text-violet-400" />
@@ -322,131 +443,213 @@ export function ProfilesClient() {
             {projectLoading ? 'Loading project context...' : 'Loading profiles...'}
           </span>
         </div>
-      ) : filteredProfiles.length === 0 ? (
-        <div className="text-center py-16">
-          <Database size={48} className="mx-auto text-slate-600 mb-4" />
-          {activeProject ? (
-            <>
-              <h3 className="text-lg font-semibold text-slate-300 mb-2">
-                No application profiles found for &ldquo;{activeProject.name}&rdquo;
-              </h3>
-              <p className="text-sm text-slate-500 max-w-md mx-auto mb-6">
-                Create your first test script to start building intelligence for this project.
-                Each URL is crawled once and cached for 30 days — making repeat generations 30× faster.
-              </p>
-              <a
-                href="/scripts"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
-              >
-                <Zap size={14} />
-                Go to Script Generator
-              </a>
-            </>
-          ) : (
-            <>
-              <h3 className="text-lg font-semibold text-slate-300 mb-2">No Application Profiles Yet</h3>
-              <p className="text-sm text-slate-500 max-w-md mx-auto">
-                Application profiles are automatically created when you generate test scripts.
-                Each URL is crawled once and cached for 30 days — making repeat generations 30× faster.
-              </p>
-            </>
-          )}
+      ) : total === 0 ? (
+        /* ─── Enhanced Empty State ─── */
+        <div className="text-center py-12">
+          <div className="mx-auto w-20 h-20 bg-gradient-to-br from-violet-500/20 to-violet-600/20 border border-violet-500/30 rounded-2xl flex items-center justify-center mb-6">
+            <Globe className="h-9 w-9 text-violet-400" />
+          </div>
+
+          <h3 className="text-xl font-semibold text-white mb-2">
+            {activeProject
+              ? `No Application Profiles for "${activeProject.name}"`
+              : 'No Application Profiles Yet'}
+          </h3>
+
+          <p className="text-sm text-slate-400 mb-8 max-w-lg mx-auto leading-relaxed">
+            Application Profiles are automatically created when you generate test scripts.
+            They cache your app&apos;s structure, forms, and interactive elements — making
+            repeat generations <span className="text-violet-400 font-medium">30× faster</span>.
+          </p>
+
+          {/* Quick Start Guide */}
+          <div className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl p-6 max-w-lg mx-auto mb-8 text-left">
+            <h4 className="font-semibold text-white mb-4 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-amber-400" />
+              How It Works
+            </h4>
+            <ol className="space-y-3">
+              <li className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-400">1</span>
+                <div>
+                  <p className="text-sm text-slate-200">Go to the Script Generator</p>
+                  <p className="text-xs text-slate-500">Enter your app URL and describe what to test</p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-400">2</span>
+                <div>
+                  <p className="text-sm text-slate-200">AI crawls your application</p>
+                  <p className="text-xs text-slate-500">The first generation takes ~30s to analyze your app&apos;s structure</p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-xs font-bold text-violet-400">3</span>
+                <div>
+                  <p className="text-sm text-slate-200">Profile is cached automatically</p>
+                  <p className="text-xs text-slate-500">Subsequent generations use cached data (instant). Profiles refresh every 30 days.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <a
+              href="/scripts"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white font-medium transition-all shadow-lg shadow-violet-500/20 text-sm"
+            >
+              <Zap size={16} />
+              Generate Your First Script
+              <ArrowRight size={16} />
+            </a>
+            <button
+              onClick={() => { setShowCrawlDialog(true); setCrawlUrl(''); setCrawlStatus('idle'); setCrawlMessage(''); }}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-sm"
+            >
+              <Search size={16} />
+              Check URL Status
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-600 mt-6">
+            💡 Profiles are per-URL — each URL you test gets its own cached intelligence profile.
+          </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredProfiles.map(profile => (
-            <div
-              key={profile.id}
-              className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl overflow-hidden hover:border-[#3a4060] transition-colors"
+        /* ─── Profile List (with search/filter) ─── */
+        <>
+          {/* Filters */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by URL..."
+                className="w-full pl-9 pr-3 py-2 bg-[#1a1f2e] border border-[#2a3040] rounded-lg text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50"
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="px-3 py-2 bg-[#1a1f2e] border border-[#2a3040] rounded-lg text-sm text-slate-300 focus:outline-none focus:border-violet-500/50"
             >
-              {/* Row Header */}
-              <div className="px-5 py-4 flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1">
-                    <Globe size={14} className="text-violet-400 flex-shrink-0" />
-                    <span className="text-sm font-medium text-white truncate">{profile.base_url}</span>
-                    {statusBadge(profile.status, profile.expires_at)}
-                    {profile.auth_required && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded border border-amber-500/20">Auth</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1">
-                      <Clock size={10} />
-                      Crawled {timeAgo(profile.crawled_at)}
-                    </span>
-                    <span>Expires: {expiresIn(profile.expires_at)}</span>
-                    <span>{profile.page_count} page{profile.page_count !== 1 ? 's' : ''}</span>
-                    <span>{profile.total_elements} elements</span>
-                    <span>{profile.total_forms} forms</span>
-                  </div>
-                </div>
+              <option value="">All Statuses</option>
+              <option value="fresh">🟢 Fresh</option>
+              <option value="expired">🔴 Expired</option>
+              <option value="error">⚠️ Error</option>
+              <option value="crawling">🔄 Crawling</option>
+            </select>
+          </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => setExpandedId(expandedId === profile.id ? null : profile.id)}
-                    className="p-2 rounded-lg hover:bg-[#2a3040] text-slate-400 hover:text-white transition-colors"
-                    title="View details"
-                  >
-                    {expandedId === profile.id ? <ChevronUp size={16} /> : <Eye size={16} />}
-                  </button>
-                  <button
-                    onClick={() => handleInvalidate(profile)}
-                    disabled={!!actionLoading[profile.id]}
-                    className="p-2 rounded-lg hover:bg-amber-500/10 text-slate-400 hover:text-amber-400 transition-colors"
-                    title="Re-crawl (invalidate)"
-                  >
-                    {actionLoading[profile.id] ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(profile)}
-                    disabled={!!actionLoading[profile.id]}
-                    className="p-2 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
-                    title="Delete profile"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
+          {/* Profile Cards */}
+          {filteredProfiles.length === 0 ? (
+            <div className="text-center py-12">
+              <Search size={32} className="mx-auto text-slate-600 mb-3" />
+              <p className="text-sm text-slate-400">No profiles match your search or filter.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredProfiles.map(profile => (
+                <div
+                  key={profile.id}
+                  className="bg-[#1a1f2e] border border-[#2a3040] rounded-xl overflow-hidden hover:border-[#3a4060] transition-colors"
+                >
+                  {/* Row Header */}
+                  <div className="px-5 py-4 flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <Globe size={14} className="text-violet-400 flex-shrink-0" />
+                        <span className="text-sm font-medium text-white truncate">{profile.base_url}</span>
+                        {statusBadge(profile.status, profile.expires_at)}
+                        {profile.auth_required && (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded border border-amber-500/20">
+                            <Shield size={8} />
+                            Auth
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span className="flex items-center gap-1">
+                          <Clock size={10} />
+                          Crawled {timeAgo(profile.crawled_at)}
+                        </span>
+                        <span>Expires: {expiresIn(profile.expires_at)}</span>
+                        <span>{profile.page_count} page{profile.page_count !== 1 ? 's' : ''}</span>
+                        <span>{profile.total_elements} elements</span>
+                        <span>{profile.total_forms} forms</span>
+                      </div>
+                    </div>
 
-              {/* Expanded Detail */}
-              {expandedId === profile.id && (
-                <div className="px-5 py-4 border-t border-[#2a3040] bg-[#0f172a]/50">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Fingerprint</p>
-                      <p className="text-xs text-slate-300 font-mono">{profile.app_fingerprint || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Interactive Elements</p>
-                      <p className="text-xs text-slate-300">{profile.total_interactive}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Created</p>
-                      <p className="text-xs text-slate-300">{new Date(profile.created_at).toLocaleDateString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Last Updated</p>
-                      <p className="text-xs text-slate-300">{timeAgo(profile.updated_at)}</p>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => setExpandedId(expandedId === profile.id ? null : profile.id)}
+                        className="p-2 rounded-lg hover:bg-[#2a3040] text-slate-400 hover:text-white transition-colors"
+                        title="View details"
+                      >
+                        {expandedId === profile.id ? <ChevronUp size={16} /> : <Eye size={16} />}
+                      </button>
+                      <button
+                        onClick={() => handleInvalidate(profile)}
+                        disabled={!!actionLoading[profile.id]}
+                        className="p-2 rounded-lg hover:bg-amber-500/10 text-slate-400 hover:text-amber-400 transition-colors"
+                        title="Re-crawl on next generation"
+                      >
+                        {actionLoading[profile.id] ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(profile)}
+                        disabled={!!actionLoading[profile.id]}
+                        className="p-2 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition-colors"
+                        title="Delete profile"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </div>
-                  {profile.error_message && (
-                    <div className="flex items-start gap-2 p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
-                      <AlertTriangle size={14} className="text-red-400 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-red-300">{profile.error_message}</p>
+
+                  {/* Expanded Detail */}
+                  {expandedId === profile.id && (
+                    <div className="px-5 py-4 border-t border-[#2a3040] bg-[#0f172a]/50">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Fingerprint</p>
+                          <p className="text-xs text-slate-300 font-mono">{profile.app_fingerprint || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Interactive Elements</p>
+                          <p className="text-xs text-slate-300">{profile.total_interactive}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Created</p>
+                          <p className="text-xs text-slate-300">{new Date(profile.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Last Updated</p>
+                          <p className="text-xs text-slate-300">{timeAgo(profile.updated_at)}</p>
+                        </div>
+                      </div>
+                      {profile.error_message && (
+                        <div className="flex items-start gap-2 p-3 bg-red-500/5 border border-red-500/20 rounded-lg mb-3">
+                          <AlertTriangle size={14} className="text-red-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-red-300">{profile.error_message}</p>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Zap size={12} className="text-violet-400" />
+                        <p className="text-[10px] text-slate-500">
+                          Next script generation for this URL will use cached data (instant) instead of re-crawling (~30s).
+                        </p>
+                      </div>
                     </div>
                   )}
-                  <div className="mt-3 flex items-center gap-2">
-                    <Zap size={12} className="text-violet-400" />
-                    <p className="text-[10px] text-slate-500">
-                      Next script generation for this URL will use cached data (instant) instead of re-crawling (~30s).
-                    </p>
-                  </div>
                 </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );
