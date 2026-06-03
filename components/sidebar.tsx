@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch } from 'lucide-react';
 import { ProjectSelector } from './project-selector';
 
 interface NavSection {
@@ -21,6 +21,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/scripts', label: 'Script Gen', icon: FileCode },
       { href: '/test-coverage', label: 'Test Case Lab', icon: TestTubeDiagonal },
       { href: '/requirements', label: 'Requirements', icon: FileText },
+      { href: '/rtm', label: 'RTM Dashboard', icon: GitBranch },
       { href: '/webhooks', label: 'Webhooks', icon: Webhook },
       { href: '/knowledge', label: 'App Knowledge', icon: BookOpen },
       { href: '/repo-intelligence', label: 'Repo Intelligence', icon: Cpu },
