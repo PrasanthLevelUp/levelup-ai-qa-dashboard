@@ -20,6 +20,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/jobs', label: 'Healing Jobs', icon: Play },
       { href: '/scripts', label: 'Script Gen', icon: FileCode },
       { href: '/test-coverage', label: 'Test Case Lab', icon: TestTubeDiagonal },
+      { href: '/requirements', label: 'Requirements', icon: FileText },
       { href: '/webhooks', label: 'Webhooks', icon: Webhook },
       { href: '/knowledge', label: 'App Knowledge', icon: BookOpen },
       { href: '/repo-intelligence', label: 'Repo Intelligence', icon: Cpu },

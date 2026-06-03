@@ -1,0 +1,445 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  XCircle,
+  FolderOpen,
+  RefreshCw,
+} from 'lucide-react';
+import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { toast } from 'sonner';
+import RequirementDialog from './requirement-dialog';
+import DeleteConfirmDialog from './delete-confirm-dialog';
+
+/* Matches backend RtmRequirement + aggregate counts from getRequirements() */
+interface Requirement {
+  id: string;
+  requirement_id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  priority: string;
+  status: string;
+  coverage_percentage: number;
+  test_case_count: number;
+  script_count: number;
+  execution_count: number;
+  acceptance_criteria: string | null;
+  created_at: string;
+  tags: string[] | null;
+}
+
+interface CoverageSummary {
+  total: number;
+  covered: number;
+  not_covered: number;
+  passed: number;
+  failed: number;
+  in_progress: number;
+  not_tested: number;
+  avg_coverage: number;
+}
+
+export default function RequirementsClient() {
+  const { activeProject } = useProject();
+  const projectHeaders = useProjectHeaders();
+
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [, setTotal] = useState(0);
+  const [summary, setSummary] = useState<CoverageSummary | null>(null);
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // Dialogs
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
+
+  const fetchRequirements = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (search) params.append('search', search);
+      if (categoryFilter) params.append('category', categoryFilter);
+      if (priorityFilter) params.append('priority', priorityFilter);
+      if (statusFilter) params.append('status', statusFilter);
+
+      const response = await fetch(`/api/requirements?${params.toString()}`, {
+        headers: projectHeaders,
+      });
+      const data = await response.json();
+      if (data.success) {
+        setRequirements(data.data || []);
+        setTotal(data.total || 0);
+      } else {
+        toast.error(data.error || 'Failed to load requirements');
+      }
+    } catch (error) {
+      console.error('Failed to fetch requirements:', error);
+      toast.error('Failed to load requirements');
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, categoryFilter, priorityFilter, statusFilter, activeProject?.id]);
+
+  const fetchSummary = useCallback(async () => {
+    try {
+      const response = await fetch('/api/requirements/coverage-summary', {
+        headers: projectHeaders,
+      });
+      const data = await response.json();
+      if (data.success) setSummary(data.data);
+    } catch (error) {
+      console.error('Failed to fetch summary:', error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProject?.id]);
+
+  useEffect(() => {
+    fetchRequirements();
+    fetchSummary();
+  }, [fetchRequirements, fetchSummary]);
+
+  const handleDelete = async (id: string) => {
+    try {
+      const response = await fetch(`/api/requirements/${id}`, {
+        method: 'DELETE',
+        headers: projectHeaders,
+      });
+      if (response.ok) {
+        toast.success('Requirement deleted');
+        fetchRequirements();
+        fetchSummary();
+        setDeleteDialogOpen(false);
+        setSelectedRequirement(null);
+      } else {
+        throw new Error('Delete failed');
+      }
+    } catch (error) {
+      toast.error('Failed to delete requirement');
+    }
+  };
+
+  const getCoverageColor = (percentage: number) => {
+    if (percentage === 0) return 'bg-slate-500';
+    if (percentage <= 33) return 'bg-yellow-500';
+    if (percentage <= 66) return 'bg-blue-500';
+    return 'bg-green-500';
+  };
+
+  const getStatusBadge = (status: string) => {
+    const configs: Record<string, { color: string; icon: any }> = {
+      Passed: { color: 'bg-green-500/10 text-green-400 border-green-500/20', icon: CheckCircle },
+      Failed: { color: 'bg-red-500/10 text-red-400 border-red-500/20', icon: XCircle },
+      'In Progress': { color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: Clock },
+      'Not Tested': { color: 'bg-slate-500/10 text-slate-400 border-slate-500/20', icon: AlertCircle },
+    };
+    const config = configs[status] || configs['Not Tested'];
+    const Icon = config.icon;
+    return (
+      <Badge variant="outline" className={config.color}>
+        <Icon className="h-3 w-3 mr-1" />
+        {status || 'Not Tested'}
+      </Badge>
+    );
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    const colors: Record<string, string> = {
+      Critical: 'bg-red-500/10 text-red-400 border-red-500/20',
+      High: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+      Medium: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+      Low: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    };
+    return (
+      <Badge variant="outline" className={colors[priority] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}>
+        {priority || '—'}
+      </Badge>
+    );
+  };
+
+  const coveredPct =
+    summary && summary.total > 0 ? Math.round((summary.covered / summary.total) * 100) : 0;
+
+  return (
+    <div className="p-8 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 text-white">Requirements Management</h1>
+          <p className="text-slate-400">Manage requirements and track test coverage</p>
+          {activeProject && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <FolderOpen size={12} className="text-violet-400" />
+              <span className="text-xs text-violet-300/80">
+                Project: <span className="font-medium text-violet-300">{activeProject.name}</span>
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              fetchRequirements();
+              fetchSummary();
+            }}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Requirement
+          </Button>
+        </div>
+      </div>
+
+      {/* Coverage Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="p-6 bg-[#1a1f2e] border-slate-700">
+            <div className="text-sm text-slate-400 mb-1">Total Requirements</div>
+            <div className="text-3xl font-bold text-white">{summary.total || 0}</div>
+          </Card>
+          <Card className="p-6 bg-[#1a1f2e] border-slate-700">
+            <div className="text-sm text-slate-400 mb-1">Covered</div>
+            <div className="text-3xl font-bold text-green-400">
+              {summary.covered || 0}
+              <span className="text-lg text-slate-400 ml-2">({coveredPct}%)</span>
+            </div>
+          </Card>
+          <Card className="p-6 bg-[#1a1f2e] border-slate-700">
+            <div className="text-sm text-slate-400 mb-1">Passed</div>
+            <div className="text-3xl font-bold text-green-400">{summary.passed || 0}</div>
+          </Card>
+          <Card className="p-6 bg-[#1a1f2e] border-slate-700">
+            <div className="text-sm text-slate-400 mb-1">Gaps</div>
+            <div className="text-3xl font-bold text-orange-400">{summary.not_covered || 0}</div>
+          </Card>
+        </div>
+      )}
+
+      {/* Filters */}
+      <Card className="p-4 bg-[#1a1f2e] border-slate-700">
+        <div className="flex gap-4 flex-col md:flex-row">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Search requirements..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-4 py-2 bg-[#0f172a] border border-slate-700 rounded-lg text-sm text-slate-200"
+          >
+            <option value="">All Categories</option>
+            <option value="Authentication">Authentication</option>
+            <option value="Payment">Payment</option>
+            <option value="UI">UI</option>
+            <option value="API">API</option>
+            <option value="Performance">Performance</option>
+            <option value="Security">Security</option>
+          </select>
+
+          <select
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            className="px-4 py-2 bg-[#0f172a] border border-slate-700 rounded-lg text-sm text-slate-200"
+          >
+            <option value="">All Priorities</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-4 py-2 bg-[#0f172a] border border-slate-700 rounded-lg text-sm text-slate-200"
+          >
+            <option value="">All Statuses</option>
+            <option value="Not Tested">Not Tested</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Passed">Passed</option>
+            <option value="Failed">Failed</option>
+          </select>
+        </div>
+      </Card>
+
+      {/* Requirements Table */}
+      <Card className="bg-[#1a1f2e] border-slate-700">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-700">
+                <th className="text-left p-4 font-semibold text-slate-300">ID</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Title</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Category</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Priority</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Status</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Coverage</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Tests</th>
+                <th className="text-right p-4 font-semibold text-slate-300">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="text-center p-8 text-slate-400">
+                    Loading requirements...
+                  </td>
+                </tr>
+              ) : requirements.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center p-8">
+                    <div className="flex flex-col items-center gap-3">
+                      <AlertCircle className="h-12 w-12 text-slate-500" />
+                      <p className="text-slate-400">No requirements found</p>
+                      <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Your First Requirement
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                requirements.map((req) => (
+                  <tr key={req.id} className="border-b border-slate-700 hover:bg-slate-800/50">
+                    <td className="p-4">
+                      <span className="font-mono text-sm text-violet-400">{req.requirement_id}</span>
+                    </td>
+                    <td className="p-4">
+                      <div className="font-medium text-white">{req.title}</div>
+                      {req.description && (
+                        <div className="text-sm text-slate-400 mt-1 truncate max-w-md">
+                          {req.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      <Badge variant="outline" className="text-slate-300 border-slate-600">
+                        {req.category || 'Uncategorized'}
+                      </Badge>
+                    </td>
+                    <td className="p-4">{getPriorityBadge(req.priority)}</td>
+                    <td className="p-4">{getStatusBadge(req.status)}</td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${getCoverageColor(req.coverage_percentage)}`}
+                            style={{ width: `${req.coverage_percentage}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium text-slate-200">
+                          {req.coverage_percentage}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className="text-sm text-slate-400">
+                        {req.test_case_count} TC / {req.script_count} Scripts
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setSelectedRequirement(req);
+                            setEditDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setSelectedRequirement(req);
+                            setDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Dialogs */}
+      <RequirementDialog
+        open={createDialogOpen}
+        onClose={(refresh: boolean) => {
+          setCreateDialogOpen(false);
+          if (refresh) {
+            fetchRequirements();
+            fetchSummary();
+          }
+        }}
+        requirement={null}
+        projectHeaders={projectHeaders}
+      />
+
+      <RequirementDialog
+        open={editDialogOpen}
+        onClose={(refresh: boolean) => {
+          setEditDialogOpen(false);
+          setSelectedRequirement(null);
+          if (refresh) {
+            fetchRequirements();
+            fetchSummary();
+          }
+        }}
+        requirement={selectedRequirement}
+        projectHeaders={projectHeaders}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setSelectedRequirement(null);
+        }}
+        onConfirm={() => {
+          if (selectedRequirement) handleDelete(selectedRequirement.id);
+        }}
+        requirementId={selectedRequirement?.requirement_id}
+      />
+    </div>
+  );
+}
