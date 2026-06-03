@@ -26,7 +26,9 @@ import {
   Link2,
   Shield,
   FileSearch,
+  Pencil,
 } from 'lucide-react';
+import { ProfileEditDialog, type EditableProfile } from './profile-edit-dialog';
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -48,6 +50,15 @@ interface ApplicationProfile {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+  /* Rich, human-editable fields */
+  name?: string | null;
+  description?: string | null;
+  notes?: string | null;
+  business_flows?: any[] | null;
+  url_patterns?: any | null;
+  form_fields?: any[] | null;
+  screenshots?: any[] | null;
+  tags?: string[] | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -139,6 +150,10 @@ export function ProfilesClient() {
   const [crawlUrl, setCrawlUrl] = useState('');
   const [crawlStatus, setCrawlStatus] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
   const [crawlMessage, setCrawlMessage] = useState('');
+
+  /* -- Create / Edit profile dialog state -- */
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState<EditableProfile | null>(null);
 
   const getHeaders = useCallback((): Record<string, string> => {
     if (!activeProject) return {};
@@ -273,10 +288,17 @@ export function ProfilesClient() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setShowCrawlDialog(true); setCrawlUrl(''); setCrawlStatus('idle'); setCrawlMessage(''); }}
+            onClick={() => { setSelectedProfile(null); setEditDialogOpen(true); }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
           >
             <Plus size={14} />
+            Create Profile
+          </button>
+          <button
+            onClick={() => { setShowCrawlDialog(true); setCrawlUrl(''); setCrawlStatus('idle'); setCrawlMessage(''); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-sm"
+          >
+            <FileSearch size={14} />
             Check / Crawl URL
           </button>
           <button
@@ -562,7 +584,14 @@ export function ProfilesClient() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
                         <Globe size={14} className="text-violet-400 flex-shrink-0" />
-                        <span className="text-sm font-medium text-white truncate">{profile.base_url}</span>
+                        {profile.name ? (
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-medium text-white truncate">{profile.name}</span>
+                            <span className="text-xs text-slate-500 truncate">{profile.base_url}</span>
+                          </span>
+                        ) : (
+                          <span className="text-sm font-medium text-white truncate">{profile.base_url}</span>
+                        )}
                         {statusBadge(profile.status, profile.expires_at)}
                         {profile.auth_required && (
                           <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded border border-amber-500/20">
@@ -590,6 +619,13 @@ export function ProfilesClient() {
                         title="View details"
                       >
                         {expandedId === profile.id ? <ChevronUp size={16} /> : <Eye size={16} />}
+                      </button>
+                      <button
+                        onClick={() => { setSelectedProfile(profile as EditableProfile); setEditDialogOpen(true); }}
+                        className="p-2 rounded-lg hover:bg-violet-500/10 text-slate-400 hover:text-violet-400 transition-colors"
+                        title="Edit profile"
+                      >
+                        <Pencil size={16} />
                       </button>
                       <button
                         onClick={() => handleInvalidate(profile)}
@@ -651,6 +687,18 @@ export function ProfilesClient() {
           )}
         </>
       )}
+
+      {/* Create / Edit Profile Dialog */}
+      <ProfileEditDialog
+        open={editDialogOpen}
+        profile={selectedProfile}
+        projectHeaders={getHeaders()}
+        onClose={(shouldRefresh) => {
+          setEditDialogOpen(false);
+          setSelectedProfile(null);
+          if (shouldRefresh) fetchProfiles();
+        }}
+      />
     </div>
   );
 }
