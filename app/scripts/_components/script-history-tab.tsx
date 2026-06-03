@@ -64,6 +64,11 @@ interface HistoryScript {
   framework?: string;
   name?: string;
   intelligence_metadata?: IntelligenceMetadata;
+  // RTM traceability (present when the script was generated from a linked test case)
+  requirement_id?: string | null;
+  requirement_ref?: string | null;
+  test_case_id?: number | null;
+  test_case_title?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -543,6 +548,29 @@ export function ScriptHistoryTab() {
 
                       {/* Intelligence Badges */}
                       <IntelligenceBadges intel={intel} />
+
+                      {/* RTM traceability badges (only when the script is linked) */}
+                      {(script.requirement_ref || script.requirement_id || script.test_case_id) && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          {(script.requirement_ref || script.requirement_id) && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-violet-500/10 border border-violet-500/20 text-violet-300"
+                              title="Linked requirement"
+                            >
+                              <GitBranch size={9} />
+                              Req: {script.requirement_ref || script.requirement_id}
+                            </span>
+                          )}
+                          {script.test_case_id != null && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 border border-blue-500/20 text-blue-300"
+                              title={script.test_case_title || 'Linked test case'}
+                            >
+                              TC #{script.test_case_id}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-500">
                         <span className="flex items-center gap-1">
