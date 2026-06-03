@@ -29,6 +29,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Intelligence',
     items: [
+      { href: '/intelligence', label: 'Intelligence Hub', icon: Activity },
       { href: '/flaky', label: 'Flaky Tests', icon: Bug },
       { href: '/dom-memory', label: 'DOM Memory', icon: Database },
       { href: '/profiles', label: 'App Profiles', icon: Fingerprint },
