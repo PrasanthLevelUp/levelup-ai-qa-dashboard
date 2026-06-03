@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,11 +16,16 @@ import {
   XCircle,
   FolderOpen,
   RefreshCw,
+  FlaskConical,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
 import { toast } from 'sonner';
 import RequirementDialog from './requirement-dialog';
 import DeleteConfirmDialog from './delete-confirm-dialog';
+import RequirementFlow from './requirement-flow';
 
 /* Matches backend RtmRequirement + aggregate counts from getRequirements() */
 interface Requirement {
@@ -52,9 +57,11 @@ interface CoverageSummary {
 }
 
 export default function RequirementsClient() {
+  const router = useRouter();
   const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
 
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [, setTotal] = useState(0);
@@ -332,9 +339,25 @@ export default function RequirementsClient() {
                 </tr>
               ) : (
                 requirements.map((req) => (
-                  <tr key={req.id} className="border-b border-slate-700 hover:bg-slate-800/50">
+                  <Fragment key={req.id}>
+                  <tr className="border-b border-slate-700 hover:bg-slate-800/50">
                     <td className="p-4">
-                      <span className="font-mono text-sm text-violet-400">{req.requirement_id}</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId((prev) => (prev === req.id ? null : req.id))}
+                          className="text-slate-500 hover:text-violet-400"
+                          title="Toggle traceability flow"
+                          aria-label="Toggle traceability flow"
+                        >
+                          {expandedId === req.id ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </button>
+                        <span className="font-mono text-sm text-violet-400">{req.requirement_id}</span>
+                      </div>
                     </td>
                     <td className="p-4">
                       <div className="font-medium text-white">{req.title}</div>
@@ -374,6 +397,20 @@ export default function RequirementsClient() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="text-violet-300 hover:bg-violet-500/10"
+                          title="Generate test cases for this requirement"
+                          onClick={() =>
+                            router.push(
+                              `/test-coverage?requirementId=${req.id}&reqTitle=${encodeURIComponent(req.title)}`
+                            )
+                          }
+                        >
+                          <FlaskConical className="h-4 w-4 mr-1" />
+                          Generate Tests
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           onClick={() => {
                             setSelectedRequirement(req);
                             setEditDialogOpen(true);
@@ -394,6 +431,19 @@ export default function RequirementsClient() {
                       </div>
                     </td>
                   </tr>
+                  {expandedId === req.id && (
+                    <tr className="border-b border-slate-700 bg-slate-900/40">
+                      <td colSpan={8} className="px-4 pb-4 pt-1">
+                        <RequirementFlow
+                          testCaseCount={req.test_case_count}
+                          scriptCount={req.script_count}
+                          executionCount={req.execution_count}
+                          coveragePercentage={req.coverage_percentage}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))
               )}
             </tbody>
