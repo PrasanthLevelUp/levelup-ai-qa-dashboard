@@ -267,6 +267,12 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [repoContexts, setRepoContexts] = useState<any[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
 
+  // RTM: optional link to an existing requirement (generated test cases get linked)
+  const [requirements, setRequirements] = useState<any[]>([]);
+  const [selectedRequirementId, setSelectedRequirementId] = useState('');
+  const [requirementSearch, setRequirementSearch] = useState('');
+  const [showRequirementDropdown, setShowRequirementDropdown] = useState(false);
+
   // UI state
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCoverageTypes, setShowCoverageTypes] = useState(false);
@@ -315,6 +321,48 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     [repoContexts]
   );
 
+  // RTM: fetch requirements for the link selector (project-scoped)
+  useEffect(() => {
+    setSelectedRequirementId('');
+    (async () => {
+      try {
+        const headers: Record<string, string> = {};
+        if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+        const res = await fetch('/api/requirements', { headers });
+        const data = await res.json();
+        if (data?.success) setRequirements(data.data || []);
+        else setRequirements([]);
+      } catch {
+        setRequirements([]);
+      }
+    })();
+  }, [activeProject?.id]);
+
+  // RTM: support deep-linking from the Requirements page
+  // (/test-coverage?requirementId=<uuid>&reqTitle=<title>) — pre-selects the
+  // requirement and pre-fills the title so the user can generate immediately.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const reqId = params.get('requirementId');
+    const reqTitle = params.get('reqTitle');
+    if (reqId) setSelectedRequirementId(reqId);
+    if (reqTitle) setTitle((prev) => prev || reqTitle);
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filteredRequirements = useMemo(
+    () =>
+      requirements.filter(
+        (r: any) =>
+          (r.title || '').toLowerCase().includes(requirementSearch.toLowerCase()) ||
+          (r.requirement_id || '').toLowerCase().includes(requirementSearch.toLowerCase())
+      ),
+    [requirements, requirementSearch]
+  );
+  const selectedRequirement = requirements.find((r: any) => r.id === selectedRequirementId);
+
   const toggleType = (t: CoverageType) => {
     setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   };
@@ -354,6 +402,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           useRepoIntelligence: useRepoIntelligence && selectedRepoId ? true : undefined,
           repoId: useRepoIntelligence && selectedRepoId ? parseInt(selectedRepoId, 10) : undefined,
           includeCoverageGaps,
+          requirementId: selectedRequirementId || undefined,
         }),
       });
       const data = await res.json();
@@ -468,6 +517,88 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ── Section 1b: Link to Requirement (RTM) ── */}
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          <GitBranch className="w-4 h-4 text-violet-400" />
+          <span className="text-sm font-semibold text-white">Link to Requirement</span>
+          <span className="text-xs text-slate-500">(Optional)</span>
+          <FieldHelp text="Linking to an RTM requirement automatically connects every generated test case to it and updates that requirement's coverage." />
+        </div>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowRequirementDropdown(v => !v)}
+            className="w-full flex items-center justify-between bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-left hover:border-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+          >
+            {selectedRequirement ? (
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-violet-500/15 text-violet-300 border border-violet-500/20 shrink-0">
+                  {selectedRequirement.requirement_id}
+                </span>
+                <span className="text-sm text-white truncate">{selectedRequirement.title}</span>
+              </span>
+            ) : (
+              <span className="text-sm text-slate-500">Select a requirement to link…</span>
+            )}
+            <Search className="w-4 h-4 text-slate-500 shrink-0" />
+          </button>
+
+          {showRequirementDropdown && (
+            <div className="absolute z-50 mt-1 w-full bg-[#0f172a] border border-slate-700 rounded-lg shadow-xl max-h-72 overflow-hidden flex flex-col">
+              <div className="p-2 border-b border-slate-700">
+                <input
+                  autoFocus
+                  type="text"
+                  value={requirementSearch}
+                  onChange={e => setRequirementSearch(e.target.value)}
+                  placeholder="Search requirements…"
+                  className="w-full bg-slate-900/60 border border-slate-600/50 rounded-md px-3 py-1.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                />
+              </div>
+              <div className="overflow-y-auto p-1">
+                <div
+                  className="px-3 py-2 rounded-md hover:bg-slate-800 cursor-pointer text-sm text-slate-400"
+                  onClick={() => { setSelectedRequirementId(''); setShowRequirementDropdown(false); }}
+                >
+                  None — don&apos;t link
+                </div>
+                {filteredRequirements.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-slate-500 text-center">
+                    {requirements.length === 0 ? 'No requirements found for this project.' : 'No matches.'}
+                  </div>
+                ) : (
+                  filteredRequirements.map((req: any) => (
+                    <div
+                      key={req.id}
+                      className="px-3 py-2 rounded-md hover:bg-slate-800 cursor-pointer"
+                      onClick={() => { setSelectedRequirementId(req.id); setShowRequirementDropdown(false); }}
+                    >
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/15 text-violet-300 border border-violet-500/20">
+                          {req.requirement_id}
+                        </span>
+                        {req.priority && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] text-slate-400 border border-slate-600">
+                            {req.priority}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-slate-200 truncate">{req.title}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        {selectedRequirement && (
+          <p className="text-xs text-slate-500 mt-1.5">
+            Category: {selectedRequirement.category || '—'} • Current coverage: {Math.round(selectedRequirement.coverage_percentage ?? 0)}%
+          </p>
+        )}
       </div>
 
       {/* ── Section 2: Test Scenario Details ── */}
