@@ -291,6 +291,7 @@ export function ScriptsClient() {
                     <Settings size={16} className="text-white" />
                   </div>
                   <div className="text-left">
+                    <p className="text-[10px] uppercase tracking-wider text-violet-400/70 font-medium">Project Context</p>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-semibold text-white">{activeContext.name}</h3>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400">
@@ -298,7 +299,7 @@ export function ScriptsClient() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {activeContext.appUrl}
+                      Default target &amp; generation settings · {activeContext.appUrl}
                       {activeContext.framework && ` · ${activeContext.framework}`}
                       {activeContext._count && ` · ${activeContext._count.scripts} scripts generated`}
                     </p>
