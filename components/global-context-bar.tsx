@@ -37,7 +37,7 @@ export function GlobalContextBar() {
   const pct = sprintProgress?.percentComplete;
 
   return (
-    <div className="sticky top-0 z-30 lg:ml-64 border-b border-[#1e293b] bg-[#0b1220]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0b1220]/80">
+    <div className="sticky top-0 z-40 lg:ml-64 border-b border-[#1e293b] bg-[#0b1220]/95 backdrop-blur supports-[backdrop-filter]:bg-[#0b1220]/80">
       <div className="flex items-center gap-2 px-4 py-2 overflow-x-auto">
         {/* Project name */}
         <div className="hidden md:flex items-center gap-1.5 pr-2 mr-1 border-r border-[#1e293b] flex-shrink-0">
