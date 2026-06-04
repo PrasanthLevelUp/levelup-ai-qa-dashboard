@@ -1,26 +1,22 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
-const API_KEY = process.env.BACKEND_API_KEY || '';
-
-const headers = (): Record<string, string> => ({
-  'Content-Type': 'application/json',
-  ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
-});
+import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 
 /**
  * DELETE /api/tools/:id — Disconnect a tool (proxy to backend)
+ *
+ * SECURITY: proxyHeaders() forwards the session cookie so the backend only
+ * deletes a connection owned by the current user.
  */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/notifications/config/${params.id}`, {
+    const res = await fetch(backendUrl(`/api/notifications/config/${params.id}`), {
       method: 'DELETE',
-      headers: headers(),
+      headers: proxyHeaders(),
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.status });
@@ -42,9 +38,9 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const res = await fetch(`${BACKEND_URL}/api/notifications/config/${params.id}`, {
+    const res = await fetch(backendUrl(`/api/notifications/config/${params.id}`), {
       method: 'PATCH',
-      headers: headers(),
+      headers: proxyHeaders(),
       body: JSON.stringify(body),
     });
     const data = await res.json();

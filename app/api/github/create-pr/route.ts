@@ -1,14 +1,24 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { backendPost } from '@/lib/backend-api';
+import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 
-/** POST /api/github/create-pr — proxy to backend */
+/**
+ * POST /api/github/create-pr — proxy to backend
+ *
+ * SECURITY: proxyHeaders() forwards the session cookie so the PR is created
+ * using the CURRENT USER's stored GitHub token.
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const data = await backendPost('/api/github/create-pr', body);
-    return NextResponse.json(data);
+    const res = await fetch(backendUrl('/api/github/create-pr'), {
+      method: 'POST',
+      headers: proxyHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error('[GitHub Create PR]', error);
     return NextResponse.json(

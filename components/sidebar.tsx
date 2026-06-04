@@ -68,7 +68,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'Admin',
     items: [
       { href: '/admin/users', label: 'User Management', icon: UserCog },
-      { href: '/admin/roles', label: 'Roles & Access', icon: Users },
+      { href: '/admin/roles', label: 'Roles & Permissions', icon: Users },
       { href: '/admin/audit-logs', label: 'Audit Logs', icon: ScrollText },
       { href: '/api-docs', label: 'API Docs', icon: FileText },
     ],

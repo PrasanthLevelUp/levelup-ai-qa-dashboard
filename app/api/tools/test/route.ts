@@ -1,24 +1,20 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
-const API_KEY = process.env.BACKEND_API_KEY || '';
-
-const headers = (): Record<string, string> => ({
-  'Content-Type': 'application/json',
-  ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
-});
+import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 
 /**
  * POST /api/tools/test — Test a tool connection (proxy to backend)
+ *
+ * SECURITY: proxyHeaders() forwards the session cookie so any persisted test
+ * result is scoped to the current user's connection.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const res = await fetch(`${BACKEND_URL}/api/notifications/test`, {
+    const res = await fetch(backendUrl('/api/notifications/test'), {
       method: 'POST',
-      headers: headers(),
+      headers: proxyHeaders(),
       body: JSON.stringify(body),
     });
     const data = await res.json();
