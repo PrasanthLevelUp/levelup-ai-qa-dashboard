@@ -5,8 +5,9 @@ import {
   RefreshCw, Shield, ShieldAlert, ShieldCheck, ShieldX,
   AlertTriangle, TrendingUp, TrendingDown, Activity,
   Target, Zap, Bug, CheckCircle2, XCircle, ArrowRight,
-  BarChart3, Layers, Clock,
+  BarChart3, Layers, Clock, FolderOpen, ClipboardCheck,
 } from 'lucide-react';
+import { useProject, useProjectHeaders } from '@/lib/project-context';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip,
   ResponsiveContainer, CartesianGrid,
@@ -93,17 +94,21 @@ const PERIOD_OPTIONS = [
 /* ------------------------------------------------------------------ */
 
 export function ReleaseRiskClient() {
+  const { activeProject, loading: projectLoading } = useProject();
+  const projectHeaders = useProjectHeaders();
+
   const [loading, setLoading] = useState(true);
   const [assessment, setAssessment] = useState<RiskAssessment | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [days, setDays] = useState('30');
 
   const fetchData = useCallback(async () => {
+    if (projectLoading) return;
     setLoading(true);
     try {
       const [assessRes, trendRes] = await Promise.all([
-        fetch(`/api/release-risk?days=${days}`).then(r => r.json()),
-        fetch(`/api/release-risk/trend?days=${days}`).then(r => r.json()),
+        fetch(`/api/release-risk?days=${days}`, { headers: projectHeaders }).then(r => r.json()),
+        fetch(`/api/release-risk/trend?days=${days}`, { headers: projectHeaders }).then(r => r.json()),
       ]);
       if (!assessRes.error) setAssessment(assessRes);
       if (Array.isArray(trendRes)) setTrend(trendRes);
@@ -112,7 +117,8 @@ export function ReleaseRiskClient() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, projectLoading, activeProject?.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -139,8 +145,24 @@ export function ReleaseRiskClient() {
             Release Risk Engine
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            AI-powered release confidence assessment
+            Diagnostic view — analyzes how risky the current release is and pinpoints what is driving that risk.
           </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
+            {activeProject && (
+              <span className="flex items-center gap-1.5 text-xs text-blue-300/90">
+                <FolderOpen size={12} className="text-blue-400" />
+                Project: <span className="font-medium text-blue-300">{activeProject.name}</span>
+              </span>
+            )}
+            <a
+              href="/release-signoff"
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <ClipboardCheck size={12} />
+              Need a go / no-go decision? Open Release Signoff
+              <ArrowRight size={11} />
+            </a>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
@@ -150,7 +172,7 @@ export function ReleaseRiskClient() {
                 onClick={() => setDays(p.value)}
                 className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
                   days === p.value
-                    ? 'bg-slate-600 text-white'
+                    ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >

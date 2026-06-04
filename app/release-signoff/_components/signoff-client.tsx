@@ -6,11 +6,12 @@ import {
   Shield, ShieldCheck, ShieldAlert, ShieldX,
   ClipboardCheck, FileCheck, ChevronDown, ChevronUp,
   Activity, TrendingUp, Bug, Brain, Layers, Zap,
-  Clock,
+  Clock, FolderOpen, ArrowRight,
 } from 'lucide-react';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer,
 } from 'recharts';
+import { useProject, useProjectHeaders } from '@/lib/project-context';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -88,6 +89,9 @@ const SECTION_ICONS: Record<string, React.ElementType> = {
 /* ------------------------------------------------------------------ */
 
 export default function SignoffClient() {
+  const { activeProject, loading: projectLoading } = useProject();
+  const projectHeaders = useProjectHeaders();
+
   const [report, setReport] = useState<SignoffReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,10 +99,11 @@ export default function SignoffClient() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
   const fetchReport = useCallback(async () => {
+    if (projectLoading) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/release-signoff?days=${days}`);
+      const res = await fetch(`/api/release-signoff?days=${days}`, { headers: projectHeaders });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setReport(data);
@@ -111,7 +116,8 @@ export default function SignoffClient() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, projectLoading, activeProject?.id]);
 
   useEffect(() => {
     fetchReport();
@@ -235,7 +241,25 @@ export default function SignoffClient() {
             <ClipboardCheck className="h-7 w-7 text-blue-400" />
             Release Signoff Assistant
           </h1>
-          <p className="text-slate-400 text-sm mt-1">AI-powered quality gate assessment for release readiness</p>
+          <p className="text-slate-400 text-sm mt-1">
+            Decision view — turns risk &amp; quality-gate checks into a clear go / no-go signoff for this release.
+          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
+            {activeProject && (
+              <span className="flex items-center gap-1.5 text-xs text-blue-300/90">
+                <FolderOpen size={12} className="text-blue-400" />
+                Project: <span className="font-medium text-blue-300">{activeProject.name}</span>
+              </span>
+            )}
+            <a
+              href="/release-risk"
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <Shield size={12} />
+              Want the detailed risk breakdown? Open Release Risk
+              <ArrowRight size={11} />
+            </a>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {/* Period selector */}
@@ -246,7 +270,7 @@ export default function SignoffClient() {
                 onClick={() => setDays(opt.value)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
                   days === opt.value
-                    ? 'bg-blue-600 text-white shadow-lg'
+                    ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -257,9 +281,10 @@ export default function SignoffClient() {
           <button
             onClick={fetchReport}
             disabled={loading}
-            className="p-2 bg-slate-800/50 rounded-lg border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 transition-all"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
           </button>
         </div>
       </div>
