@@ -38,8 +38,18 @@ export function proxyHeaders(extraHeaders?: Record<string, string>): Record<stri
   return h;
 }
 
-/** Extract x-project-id from incoming request for forwarding to backend */
+/**
+ * Extract the workspace-context headers (project / environment / sprint) from an
+ * incoming request for forwarding to the backend. Backward compatible — only
+ * emits the headers that are present.
+ */
 export function extractProjectHeaders(req: { headers: { get(name: string): string | null } }): Record<string, string> {
+  const out: Record<string, string> = {};
   const projectId = req.headers.get('x-project-id');
-  return projectId ? { 'x-project-id': projectId } : {};
+  const environmentId = req.headers.get('x-environment-id');
+  const sprintId = req.headers.get('x-sprint-id');
+  if (projectId) out['x-project-id'] = projectId;
+  if (environmentId) out['x-environment-id'] = environmentId;
+  if (sprintId) out['x-sprint-id'] = sprintId;
+  return out;
 }

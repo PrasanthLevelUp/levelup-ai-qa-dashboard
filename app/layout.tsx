@@ -4,6 +4,8 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { ChunkLoadErrorHandler } from '@/components/chunk-load-error-handler'
 import { ProjectProvider } from '@/lib/project-context'
+import { WorkspaceProvider } from '@/lib/workspace-context'
+import { GlobalContextBar } from '@/components/global-context-bar'
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +41,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${dmSans.variable} ${jakartaSans.variable} ${jetbrainsMono.variable} font-sans`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
           <ProjectProvider>
-            {children}
+            <WorkspaceProvider>
+              <GlobalContextBar />
+              {children}
+            </WorkspaceProvider>
           </ProjectProvider>
           <Toaster />
           <ChunkLoadErrorHandler />
