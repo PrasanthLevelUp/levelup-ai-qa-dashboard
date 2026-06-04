@@ -55,14 +55,20 @@ export async function POST(req: NextRequest) {
     console.log('[ScriptGen] Generating for:', url, 'with context:', !!projectContextId);
 
     // Call backend script generation engine
-    // Forward project context header for multi-project isolation
+    // Forward workspace context headers (project / environment / sprint) so the
+    // backend can isolate by project and stamp new scripts with write-path
+    // attribution (environment_id / sprint_id).
     const projectIdHeader = req.headers.get('x-project-id');
+    const environmentIdHeader = req.headers.get('x-environment-id');
+    const sprintIdHeader = req.headers.get('x-sprint-id');
     const response = await fetch(`${BACKEND_URL}/api/scripts/generate`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
         ...(projectIdHeader ? { 'x-project-id': projectIdHeader } : {}),
+        ...(environmentIdHeader ? { 'x-environment-id': environmentIdHeader } : {}),
+        ...(sprintIdHeader ? { 'x-sprint-id': sprintIdHeader } : {}),
       },
       body: JSON.stringify({
         url,

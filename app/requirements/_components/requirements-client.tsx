@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { useWorkspaceHeaders } from '@/lib/workspace-context';
 import { toast } from 'sonner';
 import RequirementDialog from './requirement-dialog';
 import DeleteConfirmDialog from './delete-confirm-dialog';
@@ -60,6 +61,9 @@ export default function RequirementsClient() {
   const router = useRouter();
   const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
+  // Full workspace headers (project + environment + sprint) — passed to the
+  // create/edit dialog so new requirements are stamped with active env/sprint.
+  const workspaceHeaders = useWorkspaceHeaders();
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
@@ -482,7 +486,7 @@ export default function RequirementsClient() {
           }
         }}
         requirement={null}
-        projectHeaders={projectHeaders}
+        projectHeaders={workspaceHeaders}
       />
 
       <RequirementDialog
