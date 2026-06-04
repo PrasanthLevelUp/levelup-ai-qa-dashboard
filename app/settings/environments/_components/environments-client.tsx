@@ -139,7 +139,8 @@ export default function EnvironmentsClient() {
       const res = await fetch(`/api/projects/${projectId}/environments/${env.id}/health-check`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Health check failed');
-      toast.success(`Health: ${data.health_status || data.status || 'checked'}`);
+      const status = data.health?.status || data.health_status || data.status || 'checked';
+      toast.success(`Health: ${status}`);
       await refresh();
     } catch (e: any) {
       toast.error(e.message || 'Health check failed');
@@ -213,7 +214,7 @@ export default function EnvironmentsClient() {
                       <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-500">
                         <span className="flex items-center gap-1"><Activity size={11} /> {(env.health_status || 'unknown')}</span>
                         {env.last_health_check_at && <span>checked {new Date(env.last_health_check_at).toLocaleString()}</span>}
-                        {u && <span className="flex items-center gap-1"><BarChart3 size={11} /> {u.test_executions ?? u.executions ?? 0} runs</span>}
+                        {u && <span className="flex items-center gap-1"><BarChart3 size={11} /> {u.testExecutions ?? u.test_executions ?? 0} runs</span>}
                       </div>
                     </div>
                   </div>
