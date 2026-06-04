@@ -399,11 +399,31 @@ export default function RequirementsClient() {
                           variant="ghost"
                           className="text-violet-300 hover:bg-violet-500/10"
                           title="Generate test cases for this requirement"
-                          onClick={() =>
+                          onClick={() => {
+                            // Stash the full requirement so the Test Case Lab can
+                            // pre-fill ALL relevant fields (not just the title).
+                            // sessionStorage handles long description/AC text that
+                            // would be impractical to pass via the URL.
+                            try {
+                              sessionStorage.setItem(
+                                'tcl:prefillRequirement',
+                                JSON.stringify({
+                                  id: req.id,
+                                  requirement_id: req.requirement_id,
+                                  title: req.title,
+                                  description: req.description,
+                                  acceptance_criteria: req.acceptance_criteria,
+                                  category: req.category,
+                                  priority: req.priority,
+                                })
+                              );
+                            } catch {
+                              /* sessionStorage unavailable — fall back to query params */
+                            }
                             router.push(
                               `/test-coverage?requirementId=${req.id}&reqTitle=${encodeURIComponent(req.title)}`
-                            )
-                          }
+                            );
+                          }}
                         >
                           <FlaskConical className="h-4 w-4 mr-1" />
                           Generate Tests

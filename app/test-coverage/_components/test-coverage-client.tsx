@@ -277,6 +277,8 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCoverageTypes, setShowCoverageTypes] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  // Banner shown when the form was pre-filled from a linked requirement
+  const [prefilledFrom, setPrefilledFrom] = useState<{ id: string; label: string } | null>(null);
 
   // Validation hints
   const titleValid = title.trim().length >= 5;
@@ -340,14 +342,43 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 
   // RTM: support deep-linking from the Requirements page
   // (/test-coverage?requirementId=<uuid>&reqTitle=<title>) — pre-selects the
-  // requirement and pre-fills the title so the user can generate immediately.
+  // requirement and pre-fills ALL relevant fields so the user can review and
+  // generate immediately. The full requirement is stashed in sessionStorage by
+  // the Requirements page (handles long description / acceptance criteria text);
+  // we fall back to the URL query params if it is unavailable.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const reqId = params.get('requirementId');
     const reqTitle = params.get('reqTitle');
+
+    // Try the richer sessionStorage payload first
+    let prefill: any = null;
+    try {
+      const raw = sessionStorage.getItem('tcl:prefillRequirement');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // Only use it if it matches the requirement we deep-linked to (or no id in URL)
+        if (!reqId || String(parsed.id) === String(reqId)) prefill = parsed;
+        sessionStorage.removeItem('tcl:prefillRequirement');
+      }
+    } catch {
+      /* ignore malformed payload */
+    }
+
     if (reqId) setSelectedRequirementId(reqId);
-    if (reqTitle) setTitle((prev) => prev || reqTitle);
+
+    if (prefill) {
+      if (prefill.title) setTitle((prev) => prev || prefill.title);
+      if (prefill.description) setDescription((prev) => prev || prefill.description);
+      if (prefill.acceptance_criteria) setAcceptanceCriteria((prev) => prev || prefill.acceptance_criteria);
+      if (prefill.category) setModule((prev) => prev || prefill.category);
+      if (prefill.requirement_id) setJiraId((prev) => prev || prefill.requirement_id);
+      setPrefilledFrom({ id: String(prefill.id), label: prefill.requirement_id || prefill.title || 'requirement' });
+    } else if (reqTitle) {
+      setTitle((prev) => prev || reqTitle);
+      setPrefilledFrom({ id: reqId || '', label: reqTitle });
+    }
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -437,6 +468,8 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setUseRepoIntelligence(false);
     setSelectedRepoId('');
     setSelectedTemplate(null);
+    setSelectedRequirementId('');
+    setPrefilledFrom(null);
   };
 
   // Show results if we have them
@@ -494,6 +527,23 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 
   return (
     <div className="space-y-5">
+      {/* Prefill banner — shown when arriving from the Requirements page */}
+      {prefilledFrom && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span className="text-sm text-emerald-300 flex-1">
+            Form pre-filled from requirement <span className="font-semibold">{prefilledFrom.label}</span>. Review the details below and generate when ready.
+          </span>
+          <button
+            onClick={() => setPrefilledFrom(null)}
+            className="text-emerald-400/70 hover:text-emerald-300 transition-colors"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* ── Section 1: Quick Start from Template ── */}
       <div className="bg-gradient-to-r from-violet-600/10 to-purple-600/10 rounded-xl border border-violet-500/20 p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -1653,7 +1703,21 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
   const req = data.requirement || {};
   const scenarios = data.scenarios || [];
   const testCases = data.testCases || [];
-  const analysis = req.analysis || {};
+  // analysis can come back as a parsed object or (defensively) a JSON string
+  const analysis = (() => {
+    const a = req.analysis;
+    if (!a) return {};
+    if (typeof a === 'string') { try { return JSON.parse(a); } catch { return {}; } }
+    return a;
+  })();
+  // Coverage gaps are persisted inside the analysis JSONB (no separate table).
+  // Prefer top-level data.coverageGaps if the API ever returns it, else read from analysis.
+  const coverageGaps = (() => {
+    const g = data.coverageGaps ?? analysis.coverageGaps;
+    if (!g) return [];
+    if (typeof g === 'string') { try { return JSON.parse(g); } catch { return []; } }
+    return Array.isArray(g) ? g : [];
+  })();
 
   const toggleCase = (i: number) => {
     setExpandedCases(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
@@ -1841,6 +1905,43 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           );
         })()}
       </div>
+
+      {/* Coverage Gaps — persisted from generation (areas impractical to automate) */}
+      {coverageGaps.length > 0 && (
+        <div className="bg-slate-800/50 rounded-xl border border-amber-500/20 p-4">
+          <h4 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-amber-400" />
+            {coverageGaps.length} Coverage Gap{coverageGaps.length !== 1 ? 's' : ''}
+            <span className="text-xs text-slate-400 font-normal">Areas that may need manual / out-of-band testing</span>
+          </h4>
+          <div className="space-y-2 mt-3">
+            {coverageGaps.map((gap: any, gi: number) => (
+              <div key={gi} className="bg-slate-900/40 border border-amber-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    gap.severity === 'critical' || gap.severity === 'high' ? 'bg-red-500/20' : 'bg-amber-500/20'
+                  }`}>
+                    <Shield className={`w-4 h-4 ${RISK_COLORS[gap.severity] || 'text-amber-400'}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-white">{gap.area}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[gap.severity] || ''}`}>{gap.severity}</span>
+                    </div>
+                    <div className="text-xs text-slate-400">{gap.description}</div>
+                    {gap.suggestion && (
+                      <div className="text-xs text-emerald-400 mt-2 flex items-center gap-1 bg-emerald-500/10 rounded-lg px-2.5 py-1.5">
+                        <Lightbulb className="w-3 h-3 flex-shrink-0" />
+                        <span>{gap.suggestion}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
