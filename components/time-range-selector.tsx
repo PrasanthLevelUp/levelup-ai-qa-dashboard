@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useProjectContext, TimeRange } from '@/lib/workspace-context';
 import { CalendarRange, ChevronDown, Check } from 'lucide-react';
+import { AnchoredMenu } from '@/components/ui/anchored-menu';
 
 const PRESETS: { value: string; label: string }[] = [
   { value: 'sprint', label: 'Current Sprint' },
@@ -26,6 +27,7 @@ export function TimeRangeSelector() {
   const [open, setOpen] = useState(false);
   const [customStart, setCustomStart] = useState(timeRange.start || '');
   const [customEnd, setCustomEnd] = useState(timeRange.end || '');
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   const applyCustom = () => {
     if (customStart && customEnd) {
@@ -35,8 +37,9 @@ export function TimeRangeSelector() {
   };
 
   return (
-    <div className="relative">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#1e293b] hover:bg-[#283548] border border-[#334155] transition-all max-w-[220px]"
       >
@@ -45,11 +48,8 @@ export function TimeRangeSelector() {
         <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-[#0f1729] border border-[#334155] rounded-lg shadow-xl">
-            {PRESETS.map((p) => (
+      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchorRef={btnRef} align="right" width={240}>
+        {PRESETS.map((p) => (
               <button
                 key={p.value}
                 onClick={() => {
@@ -87,9 +87,7 @@ export function TimeRangeSelector() {
                 Apply
               </button>
             </div>
-          </div>
-        </>
-      )}
-    </div>
+      </AnchoredMenu>
+    </>
   );
 }

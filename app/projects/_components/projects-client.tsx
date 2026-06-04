@@ -46,7 +46,14 @@ const ROLE_COLORS: Record<string, string> = {
 
 export function ProjectsClient() {
   const { projects, activeProject, setActiveProject, refreshProjects, loading: projectsLoading } = useProject();
-  const [selectedProject, setSelectedProject] = useState<(Project & { repositories?: Repository[] }) | null>(null);
+  const [selectedProject, setSelectedProject] = useState<(Project & {
+    repositories?: Repository[];
+    release_cycle_type?: string | null;
+    release_cycle_days?: number | null;
+    release_day_of_week?: number | null;
+    release_timezone?: string | null;
+    overview_default_range?: string | null;
+  }) | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Create project form
@@ -92,6 +99,18 @@ export function ProjectsClient() {
       loadProjectDetail(activeProject.id);
     }
   }, [activeProject, loadProjectDetail]);
+
+  // Keep the release-config form in sync with the saved project values so the
+  // form reflects what is persisted (rather than always showing defaults,
+  // which made saved config appear to "vanish").
+  useEffect(() => {
+    if (!selectedProject) return;
+    setReleaseCycleType(selectedProject.release_cycle_type ?? 'continuous');
+    setReleaseCycleDays(selectedProject.release_cycle_days ?? 14);
+    setReleaseDayOfWeek(selectedProject.release_day_of_week ?? null);
+    setReleaseTimezone(selectedProject.release_timezone ?? 'UTC');
+    setOverviewDefaultRange(selectedProject.overview_default_range ?? '7d');
+  }, [selectedProject]);
 
   async function handleCreateProject(e: React.FormEvent) {
     e.preventDefault();
@@ -165,11 +184,11 @@ export function ProjectsClient() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          releaseCycleType: releaseCycleType,
-          releaseCycleDays: releaseCycleDays,
-          releaseDayOfWeek: releaseDayOfWeek,
-          releaseTimezone: releaseTimezone,
-          overviewDefaultRange: overviewDefaultRange,
+          release_cycle_type: releaseCycleType,
+          release_cycle_days: releaseCycleDays,
+          release_day_of_week: releaseDayOfWeek,
+          release_timezone: releaseTimezone,
+          overview_default_range: overviewDefaultRange,
         }),
       });
       if (!res.ok) {
@@ -178,6 +197,8 @@ export function ProjectsClient() {
         return;
       }
       setShowReleaseConfig(false);
+      // Re-fetch so the form reflects what was actually persisted.
+      await loadProjectDetail(selectedProject.id);
     } catch (err: any) {
       alert('Failed to save: ' + err.message);
     } finally {
