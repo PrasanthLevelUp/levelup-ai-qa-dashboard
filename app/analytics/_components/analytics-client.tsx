@@ -1,25 +1,58 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { BarChart3, TrendingUp } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { BarChart3, TrendingUp, CalendarClock, RefreshCw } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, AreaChart, Area } from 'recharts';
+import { useProject } from '@/lib/project-context';
+import { useProjectSprints } from '@/lib/workspace-context';
+
+const PERIOD_OPTIONS = [
+  { label: '7d', value: '7d' },
+  { label: '14d', value: '14d' },
+  { label: '30d', value: '30d' },
+  { label: '90d', value: '90d' },
+];
 
 export function AnalyticsClient() {
+  const { activeProject, loading: projectLoading } = useProject();
+  const projectId = activeProject?.id ?? null;
+
+  // Phase 2 (WHEN): the active sprint window scopes healing analytics.
+  const { activeSprint } = useProjectSprints();
+  const sprintHasWindow = !!(activeSprint?.start_date && activeSprint?.end_date);
+  const [mode, setMode] = useState<string>('sprint');
+  const effectiveMode = mode === 'sprint' && !sprintHasWindow ? '30d' : mode;
+  const useSprint = effectiveMode === 'sprint' && sprintHasWindow;
+
   const [trend, setTrend] = useState<any[]>([]);
   const [strategies, setStrategies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/stats/trend?period=30d').then((r: any) => r?.json?.()),
-      fetch('/api/stats/strategies?period=30d').then((r: any) => r?.json?.()),
-    ])
-      .then(([tr, st]: [any, any]) => {
-        setTrend(tr ?? []);
-        setStrategies(st ?? []);
-      })
-      .catch((err: any) => console.error('Analytics error:', err))
-      .finally(() => setLoading(false));
-  }, []);
+  const fetchData = useCallback(async () => {
+    if (projectLoading) return;
+    setLoading(true);
+    const periodParam = useSprint ? '30d' : effectiveMode;
+    const win = useSprint
+      ? `&startDate=${encodeURIComponent(activeSprint!.start_date!)}&endDate=${encodeURIComponent(activeSprint!.end_date!)}`
+      : '';
+    const pid = projectId ? `&projectId=${projectId}` : '';
+    try {
+      const [tr, st] = await Promise.all([
+        fetch(`/api/stats/trend?period=${periodParam}${pid}${win}`).then((r: any) => r?.json?.()),
+        fetch(`/api/stats/strategies?period=${periodParam}${pid}${win}`).then((r: any) => r?.json?.()),
+      ]);
+      setTrend(Array.isArray(tr) ? tr : []);
+      setStrategies(Array.isArray(st) ? st : []);
+    } catch (err: any) {
+      console.error('Analytics error:', err);
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveMode, useSprint, activeSprint, projectId, projectLoading]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const windowLabel = useSprint ? (activeSprint?.name ?? 'Sprint') : effectiveMode.replace('d', '-day');
 
   const formatDate = (dateStr: string) => {
     try {
@@ -48,11 +81,49 @@ export function AnalyticsClient() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white font-display tracking-tight flex items-center gap-2">
-          <BarChart3 size={24} className="text-blue-400" /> Analytics
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">30-day healing performance insights</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white font-display tracking-tight flex items-center gap-2">
+            <BarChart3 size={24} className="text-blue-400" /> Analytics
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Self-healing performance insights
+            {useSprint && <> · <span className="text-violet-300">{activeSprint?.name}</span></>}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
+            <button
+              onClick={() => setMode('sprint')}
+              disabled={!sprintHasWindow}
+              title={sprintHasWindow ? activeSprint?.name : 'No active sprint with a date range'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                effectiveMode === 'sprint' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <CalendarClock size={12} />
+              Sprint
+            </button>
+            {PERIOD_OPTIONS.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setMode(p.value)}
+                className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                  effectiveMode === p.value ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -87,7 +158,7 @@ export function AnalyticsClient() {
           {/* Strategy Bar */}
           <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-5">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-              ⚙️ Strategy Usage (30 Days)
+              ⚙️ Strategy Usage ({windowLabel})
             </h3>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -109,7 +180,7 @@ export function AnalyticsClient() {
           {/* Success Rate Trend */}
           <div className="lg:col-span-2 rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-5">
             <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-              📈 Success Rate Trend (30 Days)
+              📈 Success Rate Trend ({windowLabel})
             </h3>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">

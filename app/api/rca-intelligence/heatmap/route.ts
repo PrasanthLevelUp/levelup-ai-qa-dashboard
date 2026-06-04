@@ -7,7 +7,12 @@ import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 export async function GET(req: NextRequest) {
   try {
     const days = req.nextUrl.searchParams.get('days') || '30';
-    const res = await fetch(backendUrl(`/api/rca-intelligence/heatmap?days=${days}`), { headers: proxyHeaders() });
+    const startDate = req.nextUrl.searchParams.get('startDate');
+    const endDate = req.nextUrl.searchParams.get('endDate');
+    const win = startDate && endDate
+      ? `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`
+      : '';
+    const res = await fetch(backendUrl(`/api/rca-intelligence/heatmap?days=${days}${win}`), { headers: proxyHeaders() });
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {
