@@ -1,25 +1,24 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
-const API_KEY = process.env.BACKEND_API_KEY || '';
-
-const headers = (): Record<string, string> => ({
-  'Content-Type': 'application/json',
-  ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
-});
+import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 
 /**
- * GET /api/tools — List all tool connections (proxy to backend)
+ * GET /api/tools — List the CURRENT USER's tool connections (proxy to backend)
+ *
+ * SECURITY: proxyHeaders() forwards the levelup_session cookie so the backend
+ * can resolve the logged-in user (and tenant) and return only that user's
+ * connections. Without the cookie the backend would fall back to a default
+ * tenant and leak other users' tools.
  */
 export async function GET() {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/notifications/config`, {
-      headers: headers(),
+    const res = await fetch(backendUrl('/api/notifications/config'), {
+      headers: proxyHeaders(),
+      cache: 'no-store',
     });
     const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error('[Tools GET proxy]', error);
     return NextResponse.json(
@@ -30,14 +29,14 @@ export async function GET() {
 }
 
 /**
- * POST /api/tools — Create or update a tool connection (proxy to backend)
+ * POST /api/tools — Create or update a tool connection for the current user
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const res = await fetch(`${BACKEND_URL}/api/notifications/config`, {
+    const res = await fetch(backendUrl('/api/notifications/config'), {
       method: 'POST',
-      headers: headers(),
+      headers: proxyHeaders(),
       body: JSON.stringify(body),
     });
     const data = await res.json();

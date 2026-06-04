@@ -1,27 +1,24 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-
-const BACKEND_URL = process.env.BACKEND_API_URL || 'https://levelup-ai-qa-agent-production.up.railway.app';
-const API_KEY = process.env.BACKEND_API_KEY || '';
-
-const headers = (): Record<string, string> => ({
-  'Content-Type': 'application/json',
-  ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
-});
+import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 
 /**
- * GET /api/tools/logs — Fetch notification activity logs (proxy to backend)
+ * GET /api/tools/logs — Fetch the current user's tool activity logs (proxy)
+ *
+ * SECURITY: proxyHeaders() forwards the session cookie so the backend returns
+ * only the logged-in user's notification/activity logs.
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const limit = searchParams.get('limit') || '50';
-    const res = await fetch(`${BACKEND_URL}/api/notifications/logs?limit=${limit}`, {
-      headers: headers(),
+    const res = await fetch(backendUrl(`/api/notifications/logs?limit=${limit}`), {
+      headers: proxyHeaders(),
+      cache: 'no-store',
     });
     const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error('[Tools Logs proxy]', error);
     return NextResponse.json(
