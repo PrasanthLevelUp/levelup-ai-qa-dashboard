@@ -51,15 +51,29 @@ export function EnvironmentSelector({ compact = false }: { compact?: boolean }) 
       <button
         ref={btnRef}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#1e293b] hover:bg-[#283548] border border-[#334155] transition-all max-w-[200px]"
+        title={
+          activeEnvironment
+            ? `Environment (WHERE): ${activeEnvironment.name} · ${activeEnvironment.environment_type || 'env'}${activeEnvironment.base_url ? ` · ${activeEnvironment.base_url}` : ''}`
+            : 'Select the test environment (QA / Staging / Production)'
+        }
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#1e293b] hover:bg-[#283548] border border-[#334155] transition-all max-w-[220px]"
       >
         <Server size={13} className="text-sky-400 flex-shrink-0" />
         <Circle size={7} className={`flex-shrink-0 fill-current ${healthColor(activeEnvironment?.health_status ?? null)}`} />
         <span className="truncate flex-1 text-left">{activeEnvironment?.name || 'Select Env'}</span>
+        {activeEnvironment?.environment_type && (
+          <span className={`hidden md:inline text-[9px] px-1.5 py-0.5 rounded border ${TYPE_BADGE[(activeEnvironment.environment_type || '').toLowerCase()] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`}>
+            {activeEnvironment.environment_type}
+          </span>
+        )}
         <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       <AnchoredMenu open={open} onClose={() => setOpen(false)} anchorRef={btnRef} width={256}>
+        <div className="px-3 py-2 border-b border-[#1e293b]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-sky-400">Where to test</p>
+          <p className="text-[10px] text-slate-500 leading-tight mt-0.5">The environment your app runs in (QA, Staging, Production).</p>
+        </div>
         {environments.map((env) => (
           <button
             key={env.id}
