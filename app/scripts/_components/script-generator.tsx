@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { useWorkspaceHeaders } from '@/lib/workspace-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
 import {
   Play,
@@ -93,6 +94,9 @@ const TEST_TYPE_OPTIONS = [
 export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed }: ScriptGeneratorProps) {
   const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
+  // Full workspace headers (project + environment + sprint) — sent on record
+  // creation so new scripts are stamped with the active environment / sprint.
+  const workspaceHeaders = useWorkspaceHeaders();
   const [scenario, setScenario] = useState('');
   const [targetUrl, setTargetUrl] = useState(projectContext.appUrl);
   const [testTypes, setTestTypes] = useState<string[]>(['smoke', 'functional']);
@@ -366,7 +370,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     try {
       const res = await fetch('/api/scripts/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...projectHeaders },
+        headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
         body: JSON.stringify({
           projectContextId: projectContext.id,
           url: resolvedUrl,
