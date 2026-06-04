@@ -6,10 +6,11 @@ import {
   CheckCircle2, AlertTriangle, Shield, Zap, Clock, Tag, Trash2,
   Plus, Loader2, RefreshCw, ClipboardList, Lightbulb, Target,
   ArrowRight, CheckSquare, XCircle, Eye, ChevronUp, TestTubeDiagonal,
-  GitBranch, Github, ExternalLink, Code2, Rocket, BookOpen,
+  GitBranch, Code2, BookOpen,
   Brain, Cpu, Info, HelpCircle, LayoutTemplate, Copy,
   Download, Filter, Search, Check, X,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
 import { toast } from 'sonner';
@@ -1745,12 +1746,35 @@ function HistoryTab() {
 /* ---- Requirement Detail View ---- */
 function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onBack: () => void; onDelete: (id: number) => void; loading: boolean }) {
   const { activeProject } = useProject();
+  const router = useRouter();
   const [expandedCases, setExpandedCases] = useState<Set<number>>(new Set());
-  const [showScriptModal, setShowScriptModal] = useState(false);
   const [detailExporting, setDetailExporting] = useState(false);
   const req = data.requirement || {};
   const scenarios = data.scenarios || [];
   const testCases = data.testCases || [];
+
+  // RTM requirement id (UUID) linked to these test cases — derive from the first
+  // test case that carries one. Used to deep-link the Script Generation page so
+  // it can show the Requirement Info banner and update coverage on success.
+  const rtmRequirementId: string | null = (() => {
+    for (const tc of testCases) {
+      if (tc?.requirement_id) return String(tc.requirement_id);
+    }
+    return req?.requirement_id ? String(req.requirement_id) : null;
+  })();
+
+  /**
+   * Navigate to the Script Generation page with the Requirement → Test Case
+   * context as query params. Replaces the old in-page "Generate Scripts & PR"
+   * dialog — the Script Gen page now owns the full intelligence-driven flow.
+   */
+  const goToScriptGen = (testCaseId?: number) => {
+    const params = new URLSearchParams();
+    if (rtmRequirementId) params.set('requirement_id', rtmRequirementId);
+    if (testCaseId != null) params.set('test_case_id', String(testCaseId));
+    const qs = params.toString();
+    router.push(`/scripts${qs ? `?${qs}` : ''}`);
+  };
   // analysis can come back as a parsed object or (defensively) a JSON string
   const analysis = (() => {
     const a = req.analysis;
@@ -1814,11 +1838,13 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           Export
         </button>
         <button
-          onClick={() => setShowScriptModal(true)}
+          onClick={() => goToScriptGen()}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-emerald-900/30"
+          title="Open the Script Generation page with this requirement"
         >
           <Code2 className="w-4 h-4" />
-          Generate Scripts & PR
+          Generate Scripts
+          <ArrowRight className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={() => onDelete(req.id)}
@@ -1827,15 +1853,6 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           <Trash2 className="w-4 h-4 text-red-400" />
         </button>
       </div>
-
-      {showScriptModal && (
-        <GenerateScriptsModal
-          requirementId={req.id}
-          requirementTitle={req.title}
-          testCaseCount={testCases.length}
-          onClose={() => setShowScriptModal(false)}
-        />
-      )}
 
       {/* Knowledge used badge */}
       {analysis.knowledgeItemTitles?.length > 0 && (
@@ -1941,6 +1958,19 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
                                 ))}
                                 <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">{tc.coverage_type}</span>
                               </div>
+                              {tc.id != null && (
+                                <div className="pt-2 border-t border-slate-700/30">
+                                  <button
+                                    onClick={() => goToScriptGen(Number(tc.id))}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-medium rounded-lg border border-emerald-500/30 transition-all"
+                                    title="Generate an automation script from this test case"
+                                  >
+                                    <Code2 className="w-3.5 h-3.5" />
+                                    Generate Script
+                                    <ArrowRight className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1990,216 +2020,6 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Generate Scripts & Create PR Modal                                 */
-/* ------------------------------------------------------------------ */
-
-type ScriptModalStep = 'configure' | 'generating' | 'success' | 'error';
-
-function GenerateScriptsModal({
-  requirementId,
-  requirementTitle,
-  testCaseCount,
-  onClose,
-}: {
-  requirementId: number;
-  requirementTitle: string;
-  testCaseCount: number;
-  onClose: () => void;
-}) {
-  const { activeProject } = useProject();
-  const [step, setStep] = useState<ScriptModalStep>('configure');
-  const [repos, setRepos] = useState<any[]>([]);
-  const [selectedRepoId, setSelectedRepoId] = useState<string>('');
-  const [baseUrl, setBaseUrl] = useState('http://localhost:3000');
-  const [framework] = useState('playwright');
-  const [outputDir, setOutputDir] = useState('tests/generated');
-  const [loadingRepos, setLoadingRepos] = useState(true);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState<any>(null);
-  const [progressMsg, setProgressMsg] = useState('');
-
-  useEffect(() => {
-    (async () => {
-      try {
-        if (!activeProject?.id) { setLoadingRepos(false); return; }
-        const res = await fetch(`/api/projects/${activeProject.id}/repositories`);
-        if (res.ok) {
-          const data = await res.json();
-          const repoList = Array.isArray(data) ? data : (data.repositories || []);
-          setRepos(repoList);
-          if (repoList.length === 1) setSelectedRepoId(String(repoList[0].id));
-        }
-      } catch { /* ignore */ }
-      setLoadingRepos(false);
-    })();
-  }, [activeProject?.id]);
-
-  const handleGenerate = async () => {
-    if (!selectedRepoId) { setError('Please select a repository'); return; }
-    setStep('generating');
-    setError('');
-    setProgressMsg('Generating Playwright scripts from test cases...');
-    try {
-      await new Promise(r => setTimeout(r, 500));
-      setProgressMsg('Creating scripts with AI...');
-      const res = await fetch(`/api/test-coverage/requirements/${requirementId}/generate-scripts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repositoryId: parseInt(selectedRepoId, 10),
-          projectId: activeProject?.id,
-          framework,
-          baseUrl,
-          outputDir,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.details || 'Failed to generate scripts');
-      setResult(data.data || data);
-      setStep('success');
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred');
-      setStep('error');
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-700/50 bg-slate-800/50">
-          <div className="p-2 bg-emerald-500/20 rounded-lg"><Rocket className="w-5 h-5 text-emerald-400" /></div>
-          <div className="flex-1">
-            <h3 className="text-base font-semibold text-white">Generate Scripts & Create PR</h3>
-            <p className="text-xs text-slate-400">{testCaseCount} test cases → Playwright scripts → GitHub PR</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-700/50 rounded-lg"><XCircle className="w-5 h-5 text-slate-400" /></button>
-        </div>
-
-        <div className="px-6 py-5">
-          {step === 'configure' && (
-            <div className="space-y-4">
-              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/30">
-                <p className="text-sm text-white font-medium">{requirementTitle}</p>
-                <p className="text-xs text-slate-400 mt-1">{testCaseCount} test cases will be converted to Playwright scripts</p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Target Repository *</label>
-                {loadingRepos ? (
-                  <div className="flex items-center gap-2 text-slate-500 text-sm py-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading repos...</div>
-                ) : repos.length === 0 ? (
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-                    <p className="text-xs text-amber-300">No repositories found.</p>
-                    <a href="/projects" className="text-xs text-amber-400 underline mt-1 inline-block">Go to Projects →</a>
-                  </div>
-                ) : (
-                  <select value={selectedRepoId} onChange={e => setSelectedRepoId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500/50 outline-none">
-                    <option value="">Select a repository...</option>
-                    {repos.map((r: any) => (
-                      <option key={r.id} value={String(r.id)}>{r.name} {r.branch ? `(${r.branch})` : ''} — {r.url?.replace('https://github.com/', '')}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Application Base URL</label>
-                <input type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="http://localhost:3000" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Output Directory</label>
-                <input type="text" value={outputDir} onChange={e => setOutputDir(e.target.value)} placeholder="tests/generated" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600 focus:ring-2 focus:ring-emerald-500/50 outline-none" />
-              </div>
-              <div className="flex items-center gap-2 justify-center py-2 text-xs text-slate-500">
-                <span className="bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded">Test Cases</span>
-                <ArrowRight className="w-3 h-3" />
-                <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">AI Scripts</span>
-                <ArrowRight className="w-3 h-3" />
-                <span className="bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">GitHub PR</span>
-              </div>
-              {error && <p className="text-xs text-red-400">{error}</p>}
-            </div>
-          )}
-          {step === 'generating' && (
-            <div className="flex flex-col items-center justify-center py-8 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-medium text-white">{progressMsg}</p>
-                <p className="text-xs text-slate-400 mt-1">This may take 30-60 seconds...</p>
-              </div>
-            </div>
-          )}
-          {step === 'success' && result && (
-            <div className="space-y-4">
-              <div className="flex flex-col items-center py-4">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/20 flex items-center justify-center mb-3">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-                </div>
-                <h4 className="text-base font-semibold text-white">PR Created Successfully!</h4>
-                <p className="text-xs text-slate-400 mt-1">{result.totalTests} test cases → {result.totalFiles} scripts → 1 Pull Request</p>
-              </div>
-              {result.github?.prUrl && (
-                <a href={result.github.prUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 hover:border-emerald-500/50 rounded-xl p-4 transition-all group">
-                  <div className="p-2 bg-slate-700/50 rounded-lg group-hover:bg-emerald-500/20 transition-colors">
-                    <Github className="w-5 h-5 text-white group-hover:text-emerald-300" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">PR #{result.github.prNumber}</p>
-                    <p className="text-xs text-slate-400 truncate">{result.github.branchName}</p>
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-slate-500 group-hover:text-emerald-400" />
-                </a>
-              )}
-              <div className="bg-slate-800/50 rounded-lg border border-slate-700/30 p-3">
-                <h5 className="text-xs font-medium text-slate-400 mb-2">Generated Files</h5>
-                <div className="space-y-1.5">
-                  {(result.scripts || []).map((s: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-slate-300 font-mono truncate flex-1">{s.filePath}</span>
-                      <span className="text-slate-500">{s.testCount} tests</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-          {step === 'error' && (
-            <div className="flex flex-col items-center py-6 space-y-4">
-              <div className="w-14 h-14 rounded-full bg-red-500/20 flex items-center justify-center">
-                <XCircle className="w-8 h-8 text-red-400" />
-              </div>
-              <div className="text-center">
-                <h4 className="text-base font-semibold text-white">Generation Failed</h4>
-                <p className="text-xs text-red-300 mt-2 max-w-sm">{error}</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t border-slate-700/50 bg-slate-800/30 flex items-center justify-end gap-3">
-          {step === 'configure' && (
-            <>
-              <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
-              <button onClick={handleGenerate} disabled={!selectedRepoId || repos.length === 0} className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all">
-                <Rocket className="w-4 h-4" /> Generate & Create PR
-              </button>
-            </>
-          )}
-          {step === 'generating' && <p className="text-xs text-slate-500">Please wait...</p>}
-          {(step === 'success' || step === 'error') && (
-            <button onClick={onClose} className="px-5 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-all">Close</button>
-          )}
-          {step === 'error' && (
-            <button onClick={() => { setStep('configure'); setError(''); }} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-all">Try Again</button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

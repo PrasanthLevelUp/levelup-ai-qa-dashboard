@@ -73,6 +73,23 @@ export function ScriptsClient() {
   const [verifyData, setVerifyData] = useState<any>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
 
+  // Sprint 4 — deep link from the Test Case Lab: /scripts?requirement_id=X&test_case_id=Y.
+  // Read once on mount (window.location avoids a Suspense boundary for useSearchParams).
+  const [deepLink, setDeepLink] = useState<{ requirementId: string | null; testCaseId: string | null }>({
+    requirementId: null,
+    testCaseId: null,
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const requirementId = sp.get('requirement_id');
+    const testCaseId = sp.get('test_case_id');
+    if (requirementId || testCaseId) {
+      setDeepLink({ requirementId, testCaseId });
+      setActiveTab('generate');
+    }
+  }, []);
+
   const fetchIntelligenceVerify = useCallback(async () => {
     setVerifyLoading(true);
     try {
@@ -353,6 +370,7 @@ export function ScriptsClient() {
             <InputModes
               projectContext={activeContext}
               onGenerated={handleScriptGenerated}
+              deepLink={deepLink}
             />
           )}
 
@@ -382,9 +400,11 @@ type InputMode = 'scenario' | 'upload';
 function InputModes({
   projectContext,
   onGenerated,
+  deepLink,
 }: {
   projectContext: ProjectContext;
   onGenerated: () => void;
+  deepLink?: { requirementId: string | null; testCaseId: string | null };
 }) {
   const [mode, setMode] = useState<InputMode>('scenario');
   const [uploadScenarios, setUploadScenarios] = useState<string[] | null>(null);
@@ -429,6 +449,8 @@ function InputModes({
           onGenerated={onGenerated}
           prefillScenarios={uploadScenarios}
           onPrefillConsumed={() => setUploadScenarios(null)}
+          requirementId={deepLink?.requirementId ?? null}
+          testCaseId={deepLink?.testCaseId ?? null}
         />
       )}
 
