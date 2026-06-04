@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FileText, Sparkles, BarChart3, ChevronDown, ChevronRight,
   CheckCircle2, AlertTriangle, Shield, Zap, Clock, Tag, Trash2,
@@ -279,6 +279,12 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   // Banner shown when the form was pre-filled from a linked requirement
   const [prefilledFrom, setPrefilledFrom] = useState<{ id: string; label: string } | null>(null);
+  // Snapshot of the values last auto-filled from a requirement. Used so that
+  // switching the linked requirement updates fields the user hasn't manually
+  // edited, while preserving anything they typed themselves.
+  const prefilledSnapshotRef = useRef<{
+    title: string; description: string; acceptance_criteria: string; category: string; requirement_id: string;
+  } | null>(null);
 
   // Validation hints
   const titleValid = title.trim().length >= 5;
@@ -369,12 +375,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     if (reqId) setSelectedRequirementId(reqId);
 
     if (prefill) {
-      if (prefill.title) setTitle((prev) => prev || prefill.title);
-      if (prefill.description) setDescription((prev) => prev || prefill.description);
-      if (prefill.acceptance_criteria) setAcceptanceCriteria((prev) => prev || prefill.acceptance_criteria);
-      if (prefill.category) setModule((prev) => prev || prefill.category);
-      if (prefill.requirement_id) setJiraId((prev) => prev || prefill.requirement_id);
-      setPrefilledFrom({ id: String(prefill.id), label: prefill.requirement_id || prefill.title || 'requirement' });
+      prefillFromRequirement(prefill);
     } else if (reqTitle) {
       setTitle((prev) => prev || reqTitle);
       setPrefilledFrom({ id: reqId || '', label: reqTitle });
@@ -382,6 +383,17 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Safety net: if a requirement is selected (e.g. via a deep-link URL that had
+  // no sessionStorage payload) but the form was never auto-filled, prefill it
+  // once the requirements list has loaded and the matching record is available.
+  useEffect(() => {
+    if (!selectedRequirementId) return;
+    if (prefilledSnapshotRef.current) return; // already prefilled — don't override
+    const match = requirements.find((r: any) => String(r.id) === String(selectedRequirementId));
+    if (match) prefillFromRequirement(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requirements, selectedRequirementId]);
 
   const filteredRequirements = useMemo(
     () =>
@@ -396,6 +408,37 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 
   const toggleType = (t: CoverageType) => {
     setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  };
+
+  // Prefill the form fields from a requirement object (shared by the deep-link
+  // mount effect and the "Link to Requirement" dropdown selection). A field is
+  // filled when it is empty, or when it still holds the value auto-filled from a
+  // previously linked requirement (so switching requirements updates untouched
+  // fields but never clobbers text the user typed manually).
+  const prefillFromRequirement = (req: any, opts: { announce?: boolean } = {}) => {
+    if (!req) return;
+    const snap = prefilledSnapshotRef.current;
+    const apply = (current: string, setter: (v: string) => void, nextVal: any, prevVal?: string) => {
+      const next = (nextVal ?? '').toString();
+      if (!next) return;
+      if (current.trim() === '' || (snap && current === (prevVal ?? ''))) setter(next);
+    };
+    apply(title, setTitle, req.title, snap?.title);
+    apply(description, setDescription, req.description, snap?.description);
+    apply(acceptanceCriteria, setAcceptanceCriteria, req.acceptance_criteria, snap?.acceptance_criteria);
+    apply(module, setModule, req.category, snap?.category);
+    apply(jiraId, setJiraId, req.requirement_id, snap?.requirement_id);
+    prefilledSnapshotRef.current = {
+      title: (req.title ?? '').toString(),
+      description: (req.description ?? '').toString(),
+      acceptance_criteria: (req.acceptance_criteria ?? '').toString(),
+      category: (req.category ?? '').toString(),
+      requirement_id: (req.requirement_id ?? '').toString(),
+    };
+    setSelectedTemplate(null);
+    if (opts.announce !== false) {
+      setPrefilledFrom({ id: String(req.id), label: req.requirement_id || req.title || 'requirement' });
+    }
   };
 
   const applyTemplate = (templateId: string) => {
@@ -624,7 +667,12 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
                     <div
                       key={req.id}
                       className="px-3 py-2 rounded-md hover:bg-slate-800 cursor-pointer"
-                      onClick={() => { setSelectedRequirementId(req.id); setShowRequirementDropdown(false); }}
+                      onClick={() => {
+                        setSelectedRequirementId(req.id);
+                        prefillFromRequirement(req);
+                        setRequirementSearch('');
+                        setShowRequirementDropdown(false);
+                      }}
                     >
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/15 text-violet-300 border border-violet-500/20">
