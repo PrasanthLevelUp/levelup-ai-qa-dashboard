@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Activity, CheckCircle2, Coins, RefreshCw, Zap, ArrowRight, DollarSign,
   Wand2, Search, GitBranch, FileCheck2, ShieldCheck, Brain, Repeat,
-  Layers, Database, BookOpen, Cpu, Sparkles, Folder,
+  Layers, Database, BookOpen, Cpu, Sparkles, Folder, CalendarClock,
 } from 'lucide-react';
 import Link from 'next/link';
 import { MetricCard } from '@/components/metric-card';
@@ -15,9 +15,21 @@ import { RecentHealingsTable } from '@/components/recent-healings-table';
 import { FeatureCard, FeatureColor } from '@/components/showcase/feature-card';
 import { ReleaseRiskGauge } from '@/components/showcase/release-risk-gauge';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { useProjectSprints } from '@/lib/workspace-context';
 
 type Period = '7d' | '30d' | '90d';
 const PERIOD_DAYS: Record<Period, number> = { '7d': 7, '30d': 30, '90d': 90 };
+
+/** Phase 2: the active time filter — either the current Sprint (WHEN) or a rolling window. */
+type FilterMode = 'sprint' | Period;
+
+/** Inclusive day-span of a sprint window (min 1). */
+function spanDays(start: string, end: string): number {
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (isNaN(s) || isNaN(e) || e <= s) return 7;
+  return Math.max(1, Math.round((e - s) / 86400000));
+}
 
 /* Skeleton shimmer block */
 function Skeleton({ className = '' }: { className?: string }) {
@@ -37,7 +49,13 @@ export function DashboardClient() {
   const projectId = activeProject?.id ?? null;
   const projectHeaders = useProjectHeaders();
 
-  const [period, setPeriod] = useState<Period>('7d');
+  // Phase 2 (WHEN): the active sprint window drives all dashboard analytics.
+  const { activeSprint } = useProjectSprints();
+  const sprintHasWindow = !!(activeSprint?.start_date && activeSprint?.end_date);
+
+  const [mode, setMode] = useState<FilterMode>('sprint');
+  // Coerce to a rolling window when there is no usable sprint window.
+  const effectiveMode: FilterMode = mode === 'sprint' && !sprintHasWindow ? '7d' : mode;
   const [overview, setOverview] = useState<any>(null);
   const [trend, setTrend] = useState<any[]>([]);
   const [strategies, setStrategies] = useState<any[]>([]);
@@ -52,7 +70,17 @@ export function DashboardClient() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const days = PERIOD_DAYS[period];
+    // Resolve the active window. In sprint mode we send the sprint's date range;
+    // otherwise we fall back to the rolling N-day window.
+    const useSprint = effectiveMode === 'sprint' && sprintHasWindow;
+    const days = useSprint
+      ? spanDays(activeSprint!.start_date!, activeSprint!.end_date!)
+      : PERIOD_DAYS[effectiveMode as Period];
+    // `period` is still sent as a harmless fallback the backend ignores when a window is present.
+    const periodParam: Period = useSprint ? '30d' : (effectiveMode as Period);
+    const win = useSprint
+      ? `&startDate=${encodeURIComponent(activeSprint!.start_date!)}&endDate=${encodeURIComponent(activeSprint!.end_date!)}`
+      : '';
     // legacy stats routes are scoped via the projectId query param
     const pid = projectId ? `&projectId=${projectId}` : '';
     // header-scoped proxy routes get the active project via x-project-id
@@ -60,10 +88,10 @@ export function DashboardClient() {
     const safeJson = (r: any) => (r?.ok ? r.json() : null);
     try {
       const [ov, tr, st, cs, hx, rtmRes, covRes, scrRes, riskRes] = await Promise.all([
-        fetch(`/api/stats/overview?period=${period}${pid}`).then(safeJson).catch(() => null),
-        fetch(`/api/stats/trend?period=${period}${pid}`).then(safeJson).catch(() => null),
-        fetch(`/api/stats/strategies?period=${period}${pid}`).then(safeJson).catch(() => null),
-        fetch(`/api/stats/cost-savings?period=${period}${pid}`).then(safeJson).catch(() => null),
+        fetch(`/api/stats/overview?period=${periodParam}${pid}${win}`).then(safeJson).catch(() => null),
+        fetch(`/api/stats/trend?period=${periodParam}${pid}${win}`).then(safeJson).catch(() => null),
+        fetch(`/api/stats/strategies?period=${periodParam}${pid}${win}`).then(safeJson).catch(() => null),
+        fetch(`/api/stats/cost-savings?period=${periodParam}${pid}${win}`).then(safeJson).catch(() => null),
         fetch(`/api/healings/recent?limit=12${pid}`).then(safeJson).catch(() => null),
         fetch(`/api/rtm/statistics`, h).then(safeJson).catch(() => null),
         fetch(`/api/test-coverage/stats`, h).then(safeJson).catch(() => null),
@@ -85,7 +113,7 @@ export function DashboardClient() {
     } finally {
       setLoading(false);
     }
-  }, [period, projectId, projectHeaders]);
+  }, [effectiveMode, sprintHasWindow, activeSprint, projectId, projectHeaders]);
 
   useEffect(() => {
     if (projectLoading) return;
@@ -218,6 +246,15 @@ export function DashboardClient() {
                 {activeProject.name}
               </span>
             )}
+            {effectiveMode === 'sprint' && activeSprint && (
+              <span
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20"
+                title="All metrics below are scoped to this sprint"
+              >
+                <CalendarClock size={12} />
+                {activeSprint.name}
+              </span>
+            )}
           </div>
           <p className="text-sm text-slate-400 mt-1">
             One intelligent platform for self-healing, root-cause analysis, traceability & release confidence
@@ -226,12 +263,30 @@ export function DashboardClient() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-[#1e293b] rounded-lg p-1">
+            {/* Sprint (WHEN) — the primary, context-aware filter */}
+            <button
+              onClick={() => setMode('sprint')}
+              disabled={!sprintHasWindow}
+              title={
+                sprintHasWindow
+                  ? `Filter by the active sprint: ${activeSprint?.name}`
+                  : 'No active sprint with dates — pick one in the workspace bar above'
+              }
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                effectiveMode === 'sprint'
+                  ? 'bg-violet-500/20 text-violet-300'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <CalendarClock size={12} />
+              Sprint
+            </button>
             {(['7d', '30d', '90d'] as Period[]).map((p) => (
               <button
                 key={p}
-                onClick={() => setPeriod(p)}
+                onClick={() => setMode(p)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                  period === p
+                  effectiveMode === p
                     ? 'bg-emerald-500/20 text-emerald-400'
                     : 'text-slate-400 hover:text-white'
                 }`}
@@ -268,7 +323,7 @@ export function DashboardClient() {
           icon={Activity}
           color="purple"
           trend={overview?.trends?.runs}
-          trendLabel={`vs prev ${period}`}
+          trendLabel={effectiveMode === 'sprint' ? 'vs prev sprint' : `vs prev ${effectiveMode}`}
         />
         <MetricCard
           title="Healing Success Rate"
@@ -277,7 +332,7 @@ export function DashboardClient() {
           color="emerald"
           format="percent"
           trend={overview?.trends?.success}
-          trendLabel={`vs prev ${period}`}
+          trendLabel={effectiveMode === 'sprint' ? 'vs prev sprint' : `vs prev ${effectiveMode}`}
         />
         <MetricCard
           title="Cost Saved"
