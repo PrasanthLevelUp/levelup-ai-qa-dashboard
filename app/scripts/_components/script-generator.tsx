@@ -14,6 +14,7 @@ import {
   Clock,
   Zap,
   AlertTriangle,
+  AlertCircle,
   ChevronDown,
   ChevronUp,
   GitBranch,
@@ -30,6 +31,11 @@ import {
   Fingerprint,
   Database,
   RefreshCw,
+  FileText,
+  ListChecks,
+  Target,
+  Link2,
+  ArrowRight,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
@@ -38,6 +44,9 @@ interface ScriptGeneratorProps {
   onGenerated: () => void;
   prefillScenarios?: string[] | null;
   onPrefillConsumed?: () => void;
+  /** Sprint 4 — deep link context from the Test Case Lab. */
+  requirementId?: string | null;
+  testCaseId?: string | null;
 }
 
 interface GenerationResult {
@@ -63,9 +72,55 @@ interface GenerationResult {
       crawlTimeMs?: number;
       profileAge?: string;
       patternsDetected?: number;
+      generationSource?: string;
+      testCaseId?: number | null;
+      testCaseDataUsed?: boolean;
+      folderDecision?: { testRoot?: string; targetDirectory?: string; fileName?: string; reason?: string };
+    };
+    // Sprint 4 — locator resolution report (element → locator + confidence)
+    locatorReport?: {
+      totalLocators: number;
+      validatedCount: number;
+      avgConfidence: number;
+      todoCount: number;
+    };
+    // Sprint 4 — RTM auto-update result (requirement link + coverage delta)
+    rtmUpdate?: {
+      requirementId: string | null;
+      linksCreated: string[];
+      coverageBefore: number | null;
+      coverageAfter: number | null;
+      statusBefore: string | null;
+      statusAfter: string | null;
     };
   };
   error?: string;
+}
+
+/** Sprint 4 — requirement + test case context loaded from a deep link. */
+interface RequirementInfo {
+  id: string;
+  requirement_id?: string;
+  title: string;
+  description?: string | null;
+  acceptance_criteria?: string | null;
+  priority?: string | null;
+  category?: string | null;
+  status?: string | null;
+  coverage_percentage?: number | null;
+}
+
+interface TestCaseInfo {
+  id: number;
+  title?: string;
+  description?: string | null;
+  preconditions?: string | null;
+  steps?: any;
+  expected_result?: string | null;
+  test_data?: string | null;
+  priority?: string | null;
+  requirement_id?: string | null;
+  requirement?: RequirementInfo | null;
 }
 
 interface PushResult {
@@ -91,7 +146,43 @@ const TEST_TYPE_OPTIONS = [
   { value: 'navigation', label: 'Navigation Tests', description: 'Page routing & links' },
 ];
 
-export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed }: ScriptGeneratorProps) {
+/**
+ * Build a readable, plain-English test scenario from a structured test case so
+ * the generator textarea is pre-populated when arriving from the Test Case Lab.
+ */
+function buildScenarioFromTestCase(tc: TestCaseInfo): string {
+  const lines: string[] = [];
+  if (tc.title) lines.push(tc.title.trim());
+
+  // Normalise steps (array of strings/objects, or a JSON-encoded / newline string).
+  let steps: any = tc.steps;
+  if (typeof steps === 'string') {
+    try { steps = JSON.parse(steps); } catch { /* keep as raw string */ }
+  }
+  const stepTexts: string[] = [];
+  if (Array.isArray(steps)) {
+    for (const s of steps) {
+      if (typeof s === 'string') { if (s.trim()) stepTexts.push(s.trim()); }
+      else if (s && typeof s === 'object') {
+        const t = s.action ?? s.step ?? s.description ?? s.text ?? s.element ?? s.name;
+        if (typeof t === 'string' && t.trim()) stepTexts.push(t.trim());
+      }
+    }
+  } else if (typeof steps === 'string' && steps.trim()) {
+    for (const ln of steps.split(/\r?\n/)) { if (ln.trim()) stepTexts.push(ln.trim()); }
+  }
+
+  if (tc.preconditions) lines.push('', `Preconditions: ${tc.preconditions.trim()}`);
+  if (stepTexts.length > 0) {
+    lines.push('', 'Steps:');
+    stepTexts.forEach((s, i) => lines.push(`${i + 1}. ${s.replace(/^\d+[.)]\s*/, '')}`));
+  }
+  if (tc.expected_result) lines.push('', `Expected result: ${tc.expected_result.trim()}`);
+  if (tc.test_data) lines.push('', `Test data: ${tc.test_data.trim()}`);
+  return lines.join('\n').trim();
+}
+
+export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed, requirementId, testCaseId }: ScriptGeneratorProps) {
   const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
   // Full workspace headers (project + environment + sprint) — sent on record
@@ -153,6 +244,59 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     pageCount?: number;
   } | null>(null);
   const [profileChecking, setProfileChecking] = useState(false);
+
+  // ── Sprint 4: Requirement → Test Case context (deep link from Test Case Lab) ──
+  const [requirementInfo, setRequirementInfo] = useState<RequirementInfo | null>(null);
+  const [testCaseInfo, setTestCaseInfo] = useState<TestCaseInfo | null>(null);
+  const [loadingContext, setLoadingContext] = useState(false);
+  const [contextError, setContextError] = useState<string | null>(null);
+
+  // Intelligence source toggles — which sources to fuse into generation.
+  const [useRepoIntelligence, setUseRepoIntelligence] = useState(true);
+  const [useAppProfile, setUseAppProfile] = useState(true);
+  const [useAppKnowledge, setUseAppKnowledge] = useState(true);
+
+  // ── Sprint 4: Load Requirement + Test Case context from the deep link ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!testCaseId && !requirementId) return;
+      setLoadingContext(true);
+      setContextError(null);
+      try {
+        if (testCaseId) {
+          const res = await fetch(`/api/test-cases/${testCaseId}`, { headers: { ...projectHeaders } });
+          const data = await res.json();
+          if (cancelled) return;
+          if (res.ok && data?.success && data.data) {
+            const tc: TestCaseInfo = data.data;
+            setTestCaseInfo(tc);
+            if (tc.requirement) setRequirementInfo(tc.requirement);
+            // Pre-populate the scenario textarea from the structured test case.
+            const built = buildScenarioFromTestCase(tc);
+            if (built) setScenario(built);
+          } else {
+            setContextError(data?.error || 'Could not load the linked test case.');
+          }
+        }
+        // If only a requirement id was provided (no test case), fetch it for the banner.
+        if (!testCaseId && requirementId) {
+          const res = await fetch(`/api/requirements/${requirementId}`, { headers: { ...projectHeaders } });
+          const data = await res.json();
+          if (cancelled) return;
+          if (res.ok && (data?.data || data?.success)) {
+            setRequirementInfo(data.data || data);
+          }
+        }
+      } catch {
+        if (!cancelled) setContextError('Failed to load requirement / test case context.');
+      } finally {
+        if (!cancelled) setLoadingContext(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testCaseId, requirementId]);
 
   // Auto-fill from CSV/Excel upload
   useEffect(() => {
@@ -377,9 +521,15 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           scenario: scenario.trim(),
           testTypes,
           includeNegativeTests: includeNegative,
-          ...(forceFreshCrawl ? { forceFreshCrawl: true } : {}),
-          ...(selectedRepoId ? { repoId: selectedRepoId } : {}),
-          ...(selectedKnowledgeIds.length > 0 ? { knowledgeItemIds: selectedKnowledgeIds } : {}),
+          // Intelligence sources are gated by the IntelligenceSelector toggles.
+          // App Profile OFF (or the manual override) forces a fresh crawl.
+          ...((forceFreshCrawl || !useAppProfile) ? { forceFreshCrawl: true } : {}),
+          ...(useRepoIntelligence && selectedRepoId ? { repoId: selectedRepoId } : {}),
+          ...(useAppKnowledge && selectedKnowledgeIds.length > 0 ? { knowledgeItemIds: selectedKnowledgeIds } : {}),
+          // ── Sprint 4: Requirement → Test Case → Script context ──
+          ...(testCaseId != null ? { testCaseId: Number(testCaseId) } : {}),
+          ...(requirementId ? { requirementId } : {}),
+          generationSource: testCaseId ? 'test_case_based' : (requirementId ? 'requirement_based' : 'url_based'),
           ...(authEnabled && authUsername && authPassword ? {
             authConfig: {
               loginUrl: authLoginUrl || undefined,
@@ -459,6 +609,71 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             </p>
           </div>
         </div>
+
+        {/* ── Sprint 4: Requirement context banner (deep link from Test Case Lab) ── */}
+        {loadingContext && (
+          <div className="flex items-center gap-2 px-3 py-2.5 mb-3 rounded-lg bg-violet-500/5 border border-violet-500/20 text-xs text-violet-300">
+            <Loader2 size={13} className="animate-spin" />
+            Loading requirement &amp; test case context…
+          </div>
+        )}
+        {contextError && !loadingContext && (
+          <div className="flex items-center gap-2 px-3 py-2.5 mb-3 rounded-lg bg-amber-500/5 border border-amber-500/20 text-xs text-amber-400">
+            <AlertCircle size={13} />
+            {contextError}
+          </div>
+        )}
+        {requirementInfo && !loadingContext && (
+          <div className="mb-3 rounded-lg bg-gradient-to-br from-violet-500/10 to-indigo-500/5 border border-violet-500/25 overflow-hidden">
+            <div className="px-3.5 py-2.5 border-b border-violet-500/15 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Target size={14} className="text-violet-300" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {requirementInfo.requirement_id && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-200 border border-violet-500/30">
+                        {requirementInfo.requirement_id}
+                      </span>
+                    )}
+                    <h3 className="text-sm font-semibold text-white truncate">{requirementInfo.title}</h3>
+                  </div>
+                  {requirementInfo.description && (
+                    <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{requirementInfo.description}</p>
+                  )}
+                </div>
+              </div>
+              <a
+                href="/rtm"
+                className="text-[10px] text-violet-300 hover:text-violet-200 flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
+                title="Open Requirements Traceability Matrix"
+              >
+                View in RTM <ArrowRight size={11} />
+              </a>
+            </div>
+            <div className="px-3.5 py-2 flex items-center gap-4 flex-wrap text-[10px]">
+              {requirementInfo.priority && (
+                <span className="text-slate-400">Priority: <span className="text-slate-200 font-medium">{requirementInfo.priority}</span></span>
+              )}
+              {requirementInfo.category && (
+                <span className="text-slate-400">Category: <span className="text-slate-200 font-medium">{requirementInfo.category}</span></span>
+              )}
+              {requirementInfo.status && (
+                <span className="text-slate-400">Status: <span className="text-slate-200 font-medium">{requirementInfo.status}</span></span>
+              )}
+              {requirementInfo.coverage_percentage != null && (
+                <span className="text-slate-400">Coverage: <span className="text-emerald-300 font-medium">{requirementInfo.coverage_percentage}%</span></span>
+              )}
+              {testCaseInfo && (
+                <span className="inline-flex items-center gap-1 text-emerald-300">
+                  <ListChecks size={11} />
+                  Test case #{testCaseInfo.id} loaded
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* GitHub Connection Status Badge */}
         {ghConnected !== null && (
@@ -554,6 +769,103 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 ) : null}
               </div>
             )}
+          </div>
+
+          {/* ── Sprint 4: Intelligence Sources — choose which signals fuse into generation ── */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Cpu size={14} className="text-violet-400" />
+              <span className="text-xs font-medium text-slate-300">Intelligence Sources</span>
+              <span className="text-[10px] text-slate-500">— fused into generation</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* Repo Intelligence */}
+              <button
+                type="button"
+                onClick={() => setUseRepoIntelligence((v) => !v)}
+                disabled={generating}
+                className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                  useRepoIntelligence
+                    ? 'bg-violet-500/10 border-violet-500/30'
+                    : 'bg-[#0c1222] border-[#1e293b] hover:border-[#334155]'
+                }`}
+              >
+                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
+                  useRepoIntelligence ? 'bg-violet-500 border-violet-500' : 'border-slate-600'
+                }`}>
+                  {useRepoIntelligence && <CheckCircle2 size={12} className="text-white" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
+                    <Brain size={12} className="text-violet-400" /> Repo Intelligence
+                  </span>
+                  <span className="block text-[10px] text-slate-500 mt-0.5">
+                    {selectedRepoId
+                      ? (repoContextLoaded ? 'Context loaded' : 'Repo selected')
+                      : 'No repo selected'}
+                  </span>
+                </span>
+              </button>
+
+              {/* App Profile */}
+              <button
+                type="button"
+                onClick={() => setUseAppProfile((v) => !v)}
+                disabled={generating}
+                className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                  useAppProfile
+                    ? 'bg-violet-500/10 border-violet-500/30'
+                    : 'bg-[#0c1222] border-[#1e293b] hover:border-[#334155]'
+                }`}
+              >
+                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
+                  useAppProfile ? 'bg-violet-500 border-violet-500' : 'border-slate-600'
+                }`}>
+                  {useAppProfile && <CheckCircle2 size={12} className="text-white" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
+                    <Database size={12} className="text-emerald-400" /> App Profile
+                  </span>
+                  <span className="block text-[10px] text-slate-500 mt-0.5">
+                    {profileStatus?.exists
+                      ? (profileStatus.status === 'ready' ? `Cached · ${profileStatus.pageCount || 0} pages` : 'Expired — re-crawl')
+                      : 'Will crawl on demand'}
+                  </span>
+                </span>
+              </button>
+
+              {/* App Knowledge */}
+              <button
+                type="button"
+                onClick={() => setUseAppKnowledge((v) => !v)}
+                disabled={generating}
+                className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                  useAppKnowledge
+                    ? 'bg-violet-500/10 border-violet-500/30'
+                    : 'bg-[#0c1222] border-[#1e293b] hover:border-[#334155]'
+                }`}
+              >
+                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
+                  useAppKnowledge ? 'bg-violet-500 border-violet-500' : 'border-slate-600'
+                }`}>
+                  {useAppKnowledge && <CheckCircle2 size={12} className="text-white" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
+                    <BookOpen size={12} className="text-amber-400" /> App Knowledge
+                  </span>
+                  <span className="block text-[10px] text-slate-500 mt-0.5">
+                    {selectedKnowledgeIds.length > 0
+                      ? `${selectedKnowledgeIds.length} item${selectedKnowledgeIds.length !== 1 ? 's' : ''} selected`
+                      : 'None selected'}
+                  </span>
+                </span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-600">
+              Toggle off App Profile to force a fresh crawl. Configure repo &amp; knowledge selections in Advanced Options.
+            </p>
           </div>
 
           {/* Advanced Options Toggle */}
@@ -1138,6 +1450,86 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 />
               </div>
 
+              {/* ── Sprint 4: RTM auto-update — coverage delta + traceability link ── */}
+              {result.data.rtmUpdate && (
+                <div className="rounded-lg bg-gradient-to-br from-emerald-500/10 to-violet-500/5 border border-emerald-500/25 overflow-hidden">
+                  <div className="px-4 py-3 flex items-start justify-between gap-3 border-b border-emerald-500/15">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                        <Target size={15} className="text-emerald-300" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">Requirements Traceability Updated</h4>
+                        <p className="text-[11px] text-slate-400">
+                          {result.data.rtmUpdate.linksCreated.length > 0
+                            ? `${result.data.rtmUpdate.linksCreated.length} traceability link${result.data.rtmUpdate.linksCreated.length !== 1 ? 's' : ''} created`
+                            : 'Requirement linked to generated scripts'}
+                        </p>
+                      </div>
+                    </div>
+                    <a
+                      href="/rtm"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition-colors text-[11px] font-medium whitespace-nowrap"
+                    >
+                      <Link2 size={12} /> View RTM <ArrowRight size={11} />
+                    </a>
+                  </div>
+                  <div className="px-4 py-3 flex items-center gap-6 flex-wrap">
+                    {(result.data.rtmUpdate.coverageBefore != null || result.data.rtmUpdate.coverageAfter != null) && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Coverage</span>
+                        <span className="flex items-center gap-1.5 text-sm font-bold">
+                          <span className="text-slate-400">{result.data.rtmUpdate.coverageBefore ?? 0}%</span>
+                          <ArrowRight size={12} className="text-emerald-400" />
+                          <span className="text-emerald-300">{result.data.rtmUpdate.coverageAfter ?? 0}%</span>
+                          {result.data.rtmUpdate.coverageAfter != null && result.data.rtmUpdate.coverageBefore != null &&
+                            result.data.rtmUpdate.coverageAfter > result.data.rtmUpdate.coverageBefore && (
+                            <span className="text-[10px] text-emerald-400 font-medium">
+                              +{result.data.rtmUpdate.coverageAfter - result.data.rtmUpdate.coverageBefore}%
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                    {(result.data.rtmUpdate.statusBefore || result.data.rtmUpdate.statusAfter) && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Status</span>
+                        <span className="flex items-center gap-1.5 text-xs font-medium">
+                          <span className="text-slate-400">{result.data.rtmUpdate.statusBefore ?? '—'}</span>
+                          <ArrowRight size={11} className="text-emerald-400" />
+                          <span className="text-emerald-300">{result.data.rtmUpdate.statusAfter ?? '—'}</span>
+                        </span>
+                      </div>
+                    )}
+                    {result.data.rtmUpdate.requirementId && (
+                      <span className="text-[10px] font-mono text-slate-500 ml-auto">
+                        req {result.data.rtmUpdate.requirementId.slice(0, 8)}…
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Sprint 4: Locator resolution report ── */}
+              {result.data.locatorReport && result.data.locatorReport.totalLocators > 0 && (
+                <div className="bg-[#0c1222] rounded-lg p-3 flex items-center gap-3">
+                  <Link2 size={14} className="text-blue-400 shrink-0" />
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                    <span className="text-slate-300 font-medium">Locator Resolution</span>
+                    <span className="text-slate-500">
+                      <span className="text-emerald-400 font-medium">{result.data.locatorReport.validatedCount}</span>
+                      /{result.data.locatorReport.totalLocators} validated
+                    </span>
+                    <span className="text-slate-500">
+                      Avg confidence: <span className="text-blue-300 font-medium">{Math.round(result.data.locatorReport.avgConfidence)}%</span>
+                    </span>
+                    {result.data.locatorReport.todoCount > 0 && (
+                      <span className="text-amber-400">{result.data.locatorReport.todoCount} need review</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Intelligence Info */}
               {result.data.intelligence && (
                 <div className="bg-[#0c1222] rounded-lg p-3 flex items-center gap-3">
@@ -1165,6 +1557,18 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                     <span className="text-slate-600">
                       Profile #{result.data.intelligence.profileId} cached for 30 days
                     </span>
+                    {result.data.intelligence.generationSource && (
+                      <span className="inline-flex items-center gap-1 text-slate-500">
+                        <FileText size={10} />
+                        Source: <span className="text-slate-400">{result.data.intelligence.generationSource.replace(/_/g, ' ')}</span>
+                      </span>
+                    )}
+                    {result.data.intelligence.folderDecision?.targetDirectory && (
+                      <span className="inline-flex items-center gap-1 text-slate-500" title={result.data.intelligence.folderDecision.reason || ''}>
+                        <ListChecks size={10} />
+                        <span className="text-slate-400 font-mono">{result.data.intelligence.folderDecision.targetDirectory}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

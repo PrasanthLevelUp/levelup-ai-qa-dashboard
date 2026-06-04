@@ -6,7 +6,12 @@ import { backendGet, backendPost, BACKEND_URL, API_KEY } from '@/lib/backend-api
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { projectContextId, url, scenario, testTypes, includeNegativeTests, repoId, knowledgeItemIds, authConfig, additionalUrls } = body;
+    const {
+      projectContextId, url, scenario, testTypes, includeNegativeTests, repoId,
+      knowledgeItemIds, authConfig, additionalUrls, forceFreshCrawl,
+      // ── Sprint 4: Enterprise Script Generation Enhancement ──
+      testCaseId, requirementId, generationSource, locatorStrategy, folderStrategy,
+    } = body;
 
     const missingFields: string[] = [];
     if (!url) missingFields.push('url');
@@ -78,8 +83,15 @@ export async function POST(req: NextRequest) {
         includeNegativeTests: includeNegativeTests ?? true,
         followLinks: false,
         maxPages: 3,
+        ...(forceFreshCrawl ? { forceFreshCrawl: true } : {}),
         ...(repoId ? { repoId } : {}),
         ...(Array.isArray(knowledgeItemIds) && knowledgeItemIds.length > 0 ? { knowledgeItemIds } : {}),
+        // ── Sprint 4: Requirement → Test Case → Script context + strategies ──
+        ...(testCaseId != null ? { testCaseId } : {}),
+        ...(requirementId ? { requirementId } : {}),
+        ...(generationSource ? { generationSource } : {}),
+        ...(locatorStrategy ? { locatorStrategy } : {}),
+        ...(folderStrategy ? { folderStrategy } : {}),
         // Pass auth config through — backend validates & sanitizes
         ...(authConfig && typeof authConfig === 'object' && authConfig.username && authConfig.password
           ? { authConfig }
