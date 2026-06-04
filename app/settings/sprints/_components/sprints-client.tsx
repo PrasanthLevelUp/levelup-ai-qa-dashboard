@@ -6,7 +6,7 @@ import { useProjectSprints, ProjectSprint } from '@/lib/workspace-context';
 import { toast } from 'sonner';
 import {
   Rocket, Plus, Edit, Trash2, Play, CheckCircle2, RefreshCw, X, FolderOpen,
-  Settings2, Calendar, Target, Flag, CircleDot, BarChart3, TrendingUp,
+  Settings2, Calendar, Target, Flag, CircleDot, BarChart3, TrendingUp, Info,
 } from 'lucide-react';
 
 const STATUS_BADGE: Record<string, string> = {
@@ -223,6 +223,18 @@ export default function SprintsClient() {
             <Plus size={16} /> New Sprint
           </button>
         </div>
+      </div>
+
+      {/* Help banner */}
+      <div className="flex items-start gap-2.5 mb-6 p-3 rounded-lg bg-violet-500/5 border border-violet-500/15">
+        <Info size={16} className="text-violet-400 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-400 leading-relaxed">
+          <span className="text-slate-200 font-medium">Sprints are WHEN — time-based cycles</span> (typically 2 weeks) used to
+          filter dashboards and track test execution &amp; healing metrics over time. Set your cadence below, then create
+          sprints (or use <span className="text-slate-300">Auto Next</span>). Switch the active sprint any time from the
+          workspace bar. For WHERE you test, see{' '}
+          <a href="/settings/environments" className="text-violet-400 hover:underline">Settings → Environments</a>.
+        </p>
       </div>
 
       {/* Current sprint card */}

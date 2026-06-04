@@ -6,7 +6,7 @@ import { useProjectEnvironments, ProjectEnvironment } from '@/lib/workspace-cont
 import { toast } from 'sonner';
 import {
   Server, Plus, Edit, Trash2, Star, Activity, RefreshCw, X, Circle,
-  FolderOpen, BarChart3, CheckCircle2, AlertTriangle,
+  FolderOpen, BarChart3, CheckCircle2, AlertTriangle, Info,
 } from 'lucide-react';
 
 const ENV_TYPES = ['development', 'qa', 'staging', 'production'];
@@ -182,6 +182,17 @@ export default function EnvironmentsClient() {
             <Plus size={16} /> New Environment
           </button>
         </div>
+      </div>
+
+      {/* Help banner */}
+      <div className="flex items-start gap-2.5 mb-6 p-3 rounded-lg bg-sky-500/5 border border-sky-500/15">
+        <Info size={16} className="text-sky-400 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-400 leading-relaxed">
+          <span className="text-slate-200 font-medium">Environments are WHERE your application runs</span> — the URLs you test
+          against (e.g. QA, Staging, Production). Mark one as default; switch the active environment any time from the workspace
+          bar at the top of every page. For time-based tracking (sprints), see{' '}
+          <a href="/settings/sprints" className="text-sky-400 hover:underline">Settings → Sprints</a>.
+        </p>
       </div>
 
       {/* List */}

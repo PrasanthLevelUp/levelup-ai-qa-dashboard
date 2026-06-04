@@ -17,6 +17,29 @@ function statusColor(status: string | null): string {
   return STATUS_COLORS[(status || '').toLowerCase()] || 'text-slate-500';
 }
 
+function fmt(d: string | null): string {
+  if (!d) return '';
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** Compact "Mar 1 – Mar 14" range, or '' when no dates are set. */
+function dateRange(start: string | null, end: string | null): string {
+  const s = fmt(start);
+  const e = fmt(end);
+  if (s && e) return `${s} – ${e}`;
+  return s || e || '';
+}
+
+/** Whole days left until the end date (null when no end date / past). */
+function daysLeft(end: string | null): number | null {
+  if (!end) return null;
+  const ms = new Date(end).getTime() - Date.now();
+  if (isNaN(ms)) return null;
+  return Math.max(0, Math.ceil(ms / 86_400_000));
+}
+
 export function SprintSelector({ compact = false }: { compact?: boolean }) {
   const { sprints, currentSprint, activeSprint, setActiveSprint, loading } = useProjectSprints();
   const [open, setOpen] = useState(false);
@@ -43,18 +66,32 @@ export function SprintSelector({ compact = false }: { compact?: boolean }) {
       <button
         ref={btnRef}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#1e293b] hover:bg-[#283548] border border-[#334155] transition-all max-w-[200px]"
+        title={
+          activeSprint
+            ? `Sprint (WHEN): ${activeSprint.name}${dateRange(activeSprint.start_date, activeSprint.end_date) ? ` · ${dateRange(activeSprint.start_date, activeSprint.end_date)}` : ''}`
+            : 'Select the sprint / time period to scope the data'
+        }
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-200 bg-[#1e293b] hover:bg-[#283548] border border-[#334155] transition-all max-w-[240px]"
       >
         <Rocket size={13} className="text-violet-400 flex-shrink-0" />
         <span className="truncate flex-1 text-left">{activeSprint?.name || 'Select Sprint'}</span>
+        {activeSprint?.end_date && daysLeft(activeSprint.end_date) != null && (
+          <span className="hidden md:inline text-[9px] text-slate-400 flex-shrink-0 tabular-nums">{daysLeft(activeSprint.end_date)}d left</span>
+        )}
         {activeSprint && currentSprint && activeSprint.id === currentSprint.id && (
           <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 flex-shrink-0">current</span>
         )}
         <ChevronDown size={13} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchorRef={btnRef} width={256}>
-        {sprints.map((sprint) => (
+      <AnchoredMenu open={open} onClose={() => setOpen(false)} anchorRef={btnRef} width={272}>
+        <div className="px-3 py-2 border-b border-[#1e293b]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">When (time period)</p>
+          <p className="text-[10px] text-slate-500 leading-tight mt-0.5">Sprints are time-based cycles used to filter data and track metrics.</p>
+        </div>
+        {sprints.map((sprint) => {
+          const range = dateRange(sprint.start_date, sprint.end_date);
+          return (
           <button
             key={sprint.id}
             onClick={() => { setActiveSprint(sprint); setOpen(false); }}
@@ -63,11 +100,15 @@ export function SprintSelector({ compact = false }: { compact?: boolean }) {
             }`}
           >
             <CircleDot size={10} className={`flex-shrink-0 ${statusColor(sprint.status)}`} />
-            <span className="truncate flex-1 text-left">{sprint.name}</span>
-            {currentSprint?.id === sprint.id && <span className="text-[9px] text-emerald-400">current</span>}
+            <span className="flex flex-col items-start flex-1 min-w-0">
+              <span className="truncate w-full text-left">{sprint.name}</span>
+              {range && <span className="text-[9px] text-slate-500">{range}</span>}
+            </span>
+            {currentSprint?.id === sprint.id && <span className="text-[9px] text-emerald-400 flex-shrink-0">current</span>}
             {activeSprint?.id === sprint.id && <Check size={12} className="text-violet-400 flex-shrink-0" />}
           </button>
-        ))}
+          );
+        })}
         <div className="border-t border-[#1e293b]">
           <Link
             href="/settings/sprints"
