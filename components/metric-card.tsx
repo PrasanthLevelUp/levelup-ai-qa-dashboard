@@ -7,6 +7,7 @@ interface MetricCardProps {
   title: string;
   value: number;
   suffix?: string;
+  prefix?: string;
   trend?: 'up' | 'down';
   trendLabel?: string;
   icon: LucideIcon;
@@ -31,7 +32,7 @@ function formatValue(value: number, format: string, suffix: string): string {
   return `${Math.round(value ?? 0)}${suffix}`;
 }
 
-export function MetricCard({ title, value, suffix = '', trend, trendLabel, icon: Icon, color, format = 'number' }: MetricCardProps) {
+export function MetricCard({ title, value, suffix = '', prefix = '', trend, trendLabel, icon: Icon, color, format = 'number' }: MetricCardProps) {
   const [displayValue, setDisplayValue] = useState(0);
   const { ref, inView } = useInView({ triggerOnce: true });
   const colors = COLOR_MAP[color] ?? COLOR_MAP.emerald;
@@ -64,7 +65,7 @@ export function MetricCard({ title, value, suffix = '', trend, trendLabel, icon:
       </div>
       <div className="flex items-end justify-between">
         <span className={`text-3xl font-bold font-mono tracking-tight ${colors.text}`}>
-          {formatValue(displayValue, format ?? 'number', suffix ?? '')}
+          {prefix ?? ''}{formatValue(displayValue, format ?? 'number', suffix ?? '')}
         </span>
         {trend && (
           <div className={`flex items-center gap-1 text-xs ${
