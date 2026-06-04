@@ -7,7 +7,13 @@ import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-p
 export async function GET(req: NextRequest) {
   try {
     const days = req.nextUrl.searchParams.get('days') || '30';
-    const res = await fetch(backendUrl(`/api/release-risk/signals?days=${days}`), { headers: proxyHeaders(extractProjectHeaders(req)) });
+    // Phase 2: forward the active sprint window (WHEN) when present.
+    const startDate = req.nextUrl.searchParams.get('startDate') || '';
+    const endDate = req.nextUrl.searchParams.get('endDate') || '';
+    const win = startDate && endDate
+      ? `&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`
+      : '';
+    const res = await fetch(backendUrl(`/api/release-risk/signals?days=${days}${win}`), { headers: proxyHeaders(extractProjectHeaders(req)) });
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {

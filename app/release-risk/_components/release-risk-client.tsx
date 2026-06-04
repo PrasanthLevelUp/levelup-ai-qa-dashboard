@@ -5,9 +5,10 @@ import {
   RefreshCw, Shield, ShieldAlert, ShieldCheck, ShieldX,
   AlertTriangle, TrendingUp, TrendingDown, Activity,
   Target, Zap, Bug, CheckCircle2, XCircle, ArrowRight,
-  BarChart3, Layers, Clock, FolderOpen, ClipboardCheck,
+  BarChart3, Layers, Clock, FolderOpen, ClipboardCheck, CalendarClock,
 } from 'lucide-react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { useProjectSprints } from '@/lib/workspace-context';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip,
   ResponsiveContainer, CartesianGrid,
@@ -97,18 +98,35 @@ export function ReleaseRiskClient() {
   const { activeProject, loading: projectLoading } = useProject();
   const projectHeaders = useProjectHeaders();
 
+  // Phase 2 (WHEN): active sprint scopes the risk assessment window.
+  const { activeSprint } = useProjectSprints();
+  const sprintHasWindow = !!(activeSprint?.start_date && activeSprint?.end_date);
+
   const [loading, setLoading] = useState(true);
   const [assessment, setAssessment] = useState<RiskAssessment | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
-  const [days, setDays] = useState('30');
+  // 'sprint' = use the active sprint window; otherwise a rolling N-day window.
+  const [mode, setMode] = useState<string>('sprint');
+  const effectiveMode = mode === 'sprint' && !sprintHasWindow ? '30' : mode;
+  const useSprint = effectiveMode === 'sprint' && sprintHasWindow;
+  // Day-span of the sprint (for the backend's `days` fallback param + window label).
+  const sprintDays = useSprint
+    ? Math.max(1, Math.round(
+        (new Date(activeSprint!.end_date!).getTime() - new Date(activeSprint!.start_date!).getTime()) / 86400000,
+      ))
+    : 0;
+  const days = useSprint ? String(sprintDays) : effectiveMode;
 
   const fetchData = useCallback(async () => {
     if (projectLoading) return;
     setLoading(true);
+    const win = useSprint
+      ? `&startDate=${encodeURIComponent(activeSprint!.start_date!)}&endDate=${encodeURIComponent(activeSprint!.end_date!)}`
+      : '';
     try {
       const [assessRes, trendRes] = await Promise.all([
-        fetch(`/api/release-risk?days=${days}`, { headers: projectHeaders }).then(r => r.json()),
-        fetch(`/api/release-risk/trend?days=${days}`, { headers: projectHeaders }).then(r => r.json()),
+        fetch(`/api/release-risk?days=${days}${win}`, { headers: projectHeaders }).then(r => r.json()),
+        fetch(`/api/release-risk/trend?days=${days}${win}`, { headers: projectHeaders }).then(r => r.json()),
       ]);
       if (!assessRes.error) setAssessment(assessRes);
       if (Array.isArray(trendRes)) setTrend(trendRes);
@@ -118,7 +136,7 @@ export function ReleaseRiskClient() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, projectLoading, activeProject?.id]);
+  }, [days, useSprint, activeSprint, projectLoading, activeProject?.id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -166,12 +184,25 @@ export function ReleaseRiskClient() {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700/50">
+            <button
+              onClick={() => setMode('sprint')}
+              disabled={!sprintHasWindow}
+              title={sprintHasWindow ? activeSprint?.name : 'No active sprint with a date range'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                effectiveMode === 'sprint'
+                  ? 'bg-violet-600 text-white'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <CalendarClock size={12} />
+              Sprint
+            </button>
             {PERIOD_OPTIONS.map(p => (
               <button
                 key={p.value}
-                onClick={() => setDays(p.value)}
+                onClick={() => setMode(p.value)}
                 className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
-                  days === p.value
+                  effectiveMode === p.value
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -241,7 +272,9 @@ export function ReleaseRiskClient() {
                   <Clock size={12} />
                   Assessed: {new Date(assessment.assessedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   <span>•</span>
-                  Window: {days} days
+                  {useSprint
+                    ? <>Window: <span className="text-violet-300">{activeSprint?.name}</span> ({days}d)</>
+                    : <>Window: {days} days</>}
                 </div>
               </div>
             </div>

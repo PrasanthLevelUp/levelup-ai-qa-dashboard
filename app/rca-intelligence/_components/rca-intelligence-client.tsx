@@ -6,8 +6,9 @@ import {
   Search, Brain, Shield, Layers, Bug, Activity,
   Cpu, Globe, FlaskConical, HelpCircle, Lightbulb,
   TrendingUp, TrendingDown, Minus, Clock,
-  ChevronDown, ChevronUp, Info,
+  ChevronDown, ChevronUp, Info, CalendarClock,
 } from 'lucide-react';
+import { useProjectSprints } from '@/lib/workspace-context';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip,
   ResponsiveContainer, CartesianGrid,
@@ -175,16 +176,32 @@ export default function RCAIntelligenceClient() {
   const [recentRCAs, setRecentRCAs] = useState<RecentRCA[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [days, setDays] = useState(30);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [expandedRCA, setExpandedRCA] = useState<number | null>(null);
+
+  // Phase 2 (WHEN): active sprint scopes the intelligence window.
+  const { activeSprint } = useProjectSprints();
+  const sprintHasWindow = !!(activeSprint?.start_date && activeSprint?.end_date);
+  // 'sprint' = use the active sprint window; otherwise a rolling N-day window.
+  const [mode, setMode] = useState<string>('sprint');
+  const effectiveMode = mode === 'sprint' && !sprintHasWindow ? '30' : mode;
+  const useSprint = effectiveMode === 'sprint' && sprintHasWindow;
+  const sprintDays = useSprint
+    ? Math.max(1, Math.round(
+        (new Date(activeSprint!.end_date!).getTime() - new Date(activeSprint!.start_date!).getTime()) / 86400000,
+      ))
+    : 0;
+  const days = useSprint ? sprintDays : parseInt(effectiveMode, 10);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const win = useSprint
+      ? `&startDate=${encodeURIComponent(activeSprint!.start_date!)}&endDate=${encodeURIComponent(activeSprint!.end_date!)}`
+      : '';
     try {
       const [reportRes, recentRes] = await Promise.all([
-        fetch(`/api/rca-intelligence?days=${days}`),
+        fetch(`/api/rca-intelligence?days=${days}${win}`),
         fetch(`/api/rca-intelligence/recent?limit=30`),
       ]);
       if (!reportRes.ok) throw new Error(`Report: HTTP ${reportRes.status}`);
@@ -200,7 +217,8 @@ export default function RCAIntelligenceClient() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, useSprint, activeSprint]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -251,12 +269,23 @@ export default function RCAIntelligenceClient() {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center bg-slate-800/50 rounded-lg border border-slate-700/50 p-0.5">
+            <button
+              onClick={() => setMode('sprint')}
+              disabled={!sprintHasWindow}
+              title={sprintHasWindow ? activeSprint?.name : 'No active sprint with a date range'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                effectiveMode === 'sprint' ? 'bg-violet-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <CalendarClock className="h-3 w-3" />
+              Sprint
+            </button>
             {PERIOD_OPTIONS.map(opt => (
               <button
                 key={opt.value}
-                onClick={() => setDays(opt.value)}
+                onClick={() => setMode(String(opt.value))}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                  days === opt.value ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'
+                  effectiveMode === String(opt.value) ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 {opt.label}
