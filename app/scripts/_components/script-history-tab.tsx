@@ -100,12 +100,58 @@ function getStatusConfig(status: string | null) {
   }
 }
 
+/** Sprint 4 — trigger a client-side download of a single file's contents. */
+function downloadTextFile(path: string, content: string) {
+  const filename = path.split('/').pop() || 'script.txt';
+  const blob = new Blob([content ?? ''], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** Sprint 4 — human-readable byte size for file cards. */
 function formatBytes(bytes?: number): string {
   if (bytes == null || isNaN(bytes)) return '';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Escape HTML so highlighted code can be injected safely. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Sprint 4 — lightweight, dependency-free syntax highlighter for the file
+ * cards. Tokenises strings, comments, numbers and a shared set of keywords
+ * common to JS/TS/Python/Java test scripts. Returns safe HTML (input is
+ * HTML-escaped first; token classes are applied to escaped text only).
+ */
+const HL_KEYWORDS = [
+  'import', 'from', 'export', 'default', 'const', 'let', 'var', 'function', 'return',
+  'async', 'await', 'class', 'extends', 'new', 'if', 'else', 'for', 'while', 'try',
+  'catch', 'finally', 'throw', 'typeof', 'instanceof', 'this', 'super', 'yield',
+  'def', 'self', 'None', 'True', 'False', 'and', 'or', 'not', 'in', 'is', 'with', 'as',
+  'public', 'private', 'protected', 'static', 'void', 'package', 'true', 'false', 'null', 'undefined',
+];
+function highlightCode(code: string): string {
+  const escaped = escapeHtml(code ?? '');
+  // Order matters: comments → strings → numbers → keywords (over plain text only).
+  return escaped
+    // line comments (// ... and # ...) and block comments
+    .replace(/(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)/g, '<span class="text-slate-500 italic">$1</span>')
+    // strings: single, double, backtick
+    .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;|`[^`]*?`|"[^"]*?"|'[^']*?')/g, '<span class="text-emerald-300">$1</span>')
+    // numbers
+    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="text-amber-300">$1</span>')
+    // keywords
+    .replace(new RegExp(`\\b(${HL_KEYWORDS.join('|')})\\b`, 'g'), '<span class="text-violet-300 font-medium">$1</span>');
 }
 
 /** Sprint 4 — derive a language label from a file path/extension. */
@@ -385,10 +431,17 @@ function FileBlock({ file }: { file: { path: string; content: string; type?: str
         >
           {copied ? <><CheckCircle2 size={10} className="text-emerald-400" /> Copied</> : <><Copy size={10} /> Copy</>}
         </button>
+        <button
+          onClick={() => downloadTextFile(file.path, file.content || '')}
+          className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-slate-400 hover:text-white bg-[#1a1f2e] border border-[#2a3040] rounded-md transition-colors shrink-0"
+          title="Download this file"
+        >
+          <Download size={10} /> Download
+        </button>
       </div>
       {open && (
         <pre className="bg-[#0a0e1a] border-t border-[#2a3040] px-4 py-3 overflow-x-auto text-xs text-slate-300 leading-relaxed max-h-[360px] overflow-y-auto">
-          <code>{file.content}</code>
+          <code dangerouslySetInnerHTML={{ __html: highlightCode(file.content || '') }} />
         </pre>
       )}
     </div>
@@ -722,16 +775,27 @@ export function ScriptHistoryTab() {
                             ? `Generated Files (${fileList.length})`
                             : 'Generated Code'}
                         </span>
-                        <button
-                          onClick={() => handleCopy(script)}
-                          className="flex items-center gap-1 px-2 py-1 text-[10px] text-slate-400 hover:text-white bg-[#1a1f2e] border border-[#2a3040] rounded-md transition-colors"
-                          title="Copy all"
-                        >
-                          {copiedId === script.id
-                            ? <><CheckCircle2 size={10} className="text-emerald-400" /> Copied</>
-                            : <><Copy size={10} /> Copy all</>
-                          }
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {fileList.length > 0 && (
+                            <button
+                              onClick={() => fileList.forEach((f) => downloadTextFile(f.path, f.content || ''))}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] text-slate-400 hover:text-white bg-[#1a1f2e] border border-[#2a3040] rounded-md transition-colors"
+                              title="Download all files"
+                            >
+                              <Download size={10} /> Download all
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleCopy(script)}
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] text-slate-400 hover:text-white bg-[#1a1f2e] border border-[#2a3040] rounded-md transition-colors"
+                            title="Copy all"
+                          >
+                            {copiedId === script.id
+                              ? <><CheckCircle2 size={10} className="text-emerald-400" /> Copied</>
+                              : <><Copy size={10} /> Copy all</>
+                            }
+                          </button>
+                        </div>
                       </div>
                       {fileList.length > 0 ? (
                         <div className="px-4 py-3 space-y-2">

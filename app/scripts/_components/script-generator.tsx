@@ -94,6 +94,14 @@ interface GenerationResult {
       statusBefore: string | null;
       statusAfter: string | null;
     };
+    // Sprint 4B — test case automation marking + requirement automation-coverage delta
+    automationUpdate?: {
+      testCaseId: number;
+      isAutomated: boolean;
+      scriptId: number;
+      coverageBefore: { totalTestCases: number; automatedCount: number; automationPercentage: number } | null;
+      coverageAfter: { totalTestCases: number; automatedCount: number; automationPercentage: number } | null;
+    };
   };
   error?: string;
 }
@@ -1752,6 +1760,39 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                         req {result.data.rtmUpdate.requirementId.slice(0, 8)}…
                       </span>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Sprint 4B: Test case automation marked + automation-coverage delta ── */}
+              {result.data.automationUpdate && (
+                <div className="rounded-lg bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/25 px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                      <span className="text-base leading-none">🤖</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-semibold text-white">
+                        {result.data.automationUpdate.isAutomated
+                          ? `Test case #${result.data.automationUpdate.testCaseId} marked automated`
+                          : `Script linked to test case #${result.data.automationUpdate.testCaseId}`}
+                      </h4>
+                      {(result.data.automationUpdate.coverageBefore || result.data.automationUpdate.coverageAfter) && (
+                        <div className="flex items-center gap-2 mt-0.5 text-[11px]">
+                          <span className="text-slate-500 uppercase tracking-wider text-[10px]">Requirement automation</span>
+                          <span className="flex items-center gap-1.5 font-bold">
+                            <span className="text-slate-400">{result.data.automationUpdate.coverageBefore?.automationPercentage ?? 0}%</span>
+                            <ArrowRight size={11} className="text-emerald-400" />
+                            <span className="text-emerald-300">{result.data.automationUpdate.coverageAfter?.automationPercentage ?? 0}%</span>
+                          </span>
+                          {result.data.automationUpdate.coverageAfter && (
+                            <span className="text-slate-500">
+                              ({result.data.automationUpdate.coverageAfter.automatedCount}/{result.data.automationUpdate.coverageAfter.totalTestCases} automated)
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
