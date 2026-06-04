@@ -8,6 +8,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   FileCode,
   RefreshCw,
   Loader2,
@@ -61,6 +62,8 @@ interface HistoryScript {
   createdAt: string | null;
   projectContext?: { name: string } | null;
   script_content?: string;
+  // Sprint 4 — per-file breakdown parsed by the backend from the script blob.
+  files?: Array<{ path: string; content: string; type?: string; size?: number }>;
   framework?: string;
   name?: string;
   intelligence_metadata?: IntelligenceMetadata;
@@ -95,6 +98,26 @@ function getStatusConfig(status: string | null) {
     default:
       return { icon: Clock, color: 'text-slate-400', bg: 'bg-slate-500/10 border-slate-500/20', label: 'Pending' };
   }
+}
+
+/** Sprint 4 — human-readable byte size for file cards. */
+function formatBytes(bytes?: number): string {
+  if (bytes == null || isNaN(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Sprint 4 — derive a language label from a file path/extension. */
+function langFromPath(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    ts: 'TypeScript', tsx: 'TypeScript', js: 'JavaScript', jsx: 'JavaScript',
+    py: 'Python', java: 'Java', cs: 'C#', rb: 'Ruby', go: 'Go',
+    json: 'JSON', yml: 'YAML', yaml: 'YAML', md: 'Markdown',
+    html: 'HTML', css: 'CSS', feature: 'Gherkin', sql: 'SQL',
+  };
+  return map[ext] || (ext ? ext.toUpperCase() : 'Text');
 }
 
 /** Parse intelligence_metadata from DB — handles both snake_case and camelCase */
@@ -327,6 +350,52 @@ function IntelligenceDetail({ intel }: { intel?: IntelligenceMetadata }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  File-wise code viewer (Sprint 4)                                   */
+/* ------------------------------------------------------------------ */
+
+/** A single expandable file card — mirrors the script-gen results view. */
+function FileBlock({ file }: { file: { path: string; content: string; type?: string; size?: number } }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const size = file.size ?? (file.content ? new Blob([file.content]).size : 0);
+  const lang = file.type || langFromPath(file.path);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(file.content || '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable — non-fatal */ }
+  };
+
+  return (
+    <div className="border border-[#2a3040] rounded-lg overflow-hidden bg-[#0c1222]/60">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+          {open ? <ChevronDown size={13} className="text-slate-400 shrink-0" /> : <ChevronRight size={13} className="text-slate-400 shrink-0" />}
+          <FileCode size={13} className="text-violet-400 shrink-0" />
+          <span className="text-xs text-slate-200 font-mono truncate">{file.path}</span>
+        </button>
+        <span className="text-[10px] text-slate-500 shrink-0">{lang}</span>
+        {size > 0 && <span className="text-[10px] text-slate-600 shrink-0">{formatBytes(size)}</span>}
+        <button
+          onClick={copy}
+          className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-slate-400 hover:text-white bg-[#1a1f2e] border border-[#2a3040] rounded-md transition-colors shrink-0"
+          title="Copy file contents"
+        >
+          {copied ? <><CheckCircle2 size={10} className="text-emerald-400" /> Copied</> : <><Copy size={10} /> Copy</>}
+        </button>
+      </div>
+      {open && (
+        <pre className="bg-[#0a0e1a] border-t border-[#2a3040] px-4 py-3 overflow-x-auto text-xs text-slate-300 leading-relaxed max-h-[360px] overflow-y-auto">
+          <code>{file.content}</code>
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -507,8 +576,9 @@ export function ScriptHistoryTab() {
             const isExpanded = expandedScripts.has(script.id);
             const status = getStatusConfig(script.validationStatus);
             const StatusIcon = status.icon;
-            const filesCount = Array.isArray(script.filesGenerated) ? script.filesGenerated.length : 0;
-            const hasCode = !!(script.script_content);
+            const fileList = Array.isArray(script.files) ? script.files : [];
+            const filesCount = fileList.length || (Array.isArray(script.filesGenerated) ? script.filesGenerated.length : 0);
+            const hasCode = fileList.length > 0 || !!(script.script_content);
             const intel = script.intelligence_metadata;
             const hasIntel = hasAnyIntelligence(intel);
 
@@ -643,23 +713,37 @@ export function ScriptHistoryTab() {
                       <IntelligenceDetail intel={intel} />
                     </div>
 
-                    {/* Generated Code */}
+                    {/* Generated Code — file-wise when the backend returns a
+                        per-file breakdown; falls back to a single code block. */}
                     <div className="border-t border-[#2a3040]">
                       <div className="flex items-center justify-between px-4 py-2 bg-[#0c1222]/80">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">Generated Code</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider">
+                          {fileList.length > 0
+                            ? `Generated Files (${fileList.length})`
+                            : 'Generated Code'}
+                        </span>
                         <button
                           onClick={() => handleCopy(script)}
                           className="flex items-center gap-1 px-2 py-1 text-[10px] text-slate-400 hover:text-white bg-[#1a1f2e] border border-[#2a3040] rounded-md transition-colors"
+                          title="Copy all"
                         >
                           {copiedId === script.id
                             ? <><CheckCircle2 size={10} className="text-emerald-400" /> Copied</>
-                            : <><Copy size={10} /> Copy</>
+                            : <><Copy size={10} /> Copy all</>
                           }
                         </button>
                       </div>
-                      <pre className="bg-[#0a0e1a] px-5 py-4 overflow-x-auto text-xs text-slate-300 leading-relaxed max-h-[400px] overflow-y-auto">
-                        <code>{script.script_content}</code>
-                      </pre>
+                      {fileList.length > 0 ? (
+                        <div className="px-4 py-3 space-y-2">
+                          {fileList.map((f, i) => (
+                            <FileBlock key={`${f.path}-${i}`} file={f} />
+                          ))}
+                        </div>
+                      ) : (
+                        <pre className="bg-[#0a0e1a] px-5 py-4 overflow-x-auto text-xs text-slate-300 leading-relaxed max-h-[400px] overflow-y-auto">
+                          <code>{script.script_content}</code>
+                        </pre>
+                      )}
                     </div>
                   </div>
                 )}

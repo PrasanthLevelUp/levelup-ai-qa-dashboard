@@ -1938,7 +1938,18 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
                             <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>{tc.priority}</span>
                             <span className="text-sm text-white flex-1 line-clamp-1">{tc.title}</span>
                             <span className={`px-1.5 py-0.5 rounded text-xs ${SEVERITY_COLORS[tc.severity] || ''}`}>{tc.severity}</span>
-                            {tc.automation_ready && <Zap className="w-3.5 h-3.5 text-emerald-400" />}
+                            {/* Sprint 4 — automation status badge + script count */}
+                            {tc.automation_status === 'automated' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 whitespace-nowrap">
+                                🤖 Automated{tc.script_count ? ` (${tc.script_count} script${tc.script_count === 1 ? '' : 's'})` : ''}
+                              </span>
+                            ) : tc.automation_status === 'automation_in_progress' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                                ⏳ In progress
+                              </span>
+                            ) : tc.automation_ready ? (
+                              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : null}
                           </button>
                           {isExpanded && (
                             <div className="border-t border-slate-700/50 p-4 bg-slate-900/30 space-y-3">

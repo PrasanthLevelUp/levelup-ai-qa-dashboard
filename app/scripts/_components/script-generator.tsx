@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
-import { useWorkspaceHeaders } from '@/lib/workspace-context';
+import { useWorkspaceHeaders, useProjectEnvironments } from '@/lib/workspace-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
 import {
   Play,
@@ -31,6 +31,7 @@ import {
   Fingerprint,
   Database,
   RefreshCw,
+  SlidersHorizontal,
   FileText,
   ListChecks,
   Target,
@@ -123,6 +124,31 @@ interface TestCaseInfo {
   requirement?: RequirementInfo | null;
 }
 
+/** Sprint 4 — requirement option for the Script-Gen requirement picker. */
+interface RequirementOption {
+  id: string;
+  requirement_id?: string | null;
+  title: string;
+  priority?: string | null;
+  category?: string | null;
+  status?: string | null;
+  coverage_percentage?: number | null;
+  test_case_count: number;
+  automated_count: number;
+}
+
+/** Sprint 4 — requirement validation (has-test-cases check) result. */
+interface RequirementValidation {
+  requirementId: string;
+  requirementCode?: string | null;
+  title: string;
+  hasTestCases: boolean;
+  testCaseCount: number;
+  automatedCount: number;
+  notAutomatedCount: number;
+  inProgressCount: number;
+}
+
 interface PushResult {
   success: boolean;
   data?: {
@@ -188,13 +214,14 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   // Full workspace headers (project + environment + sprint) — sent on record
   // creation so new scripts are stamped with the active environment / sprint.
   const workspaceHeaders = useWorkspaceHeaders();
+  // Active environment — its base_url auto-populates the target URL (Sprint 4).
+  const { activeEnvironment } = useProjectEnvironments();
   const [scenario, setScenario] = useState('');
-  const [targetUrl, setTargetUrl] = useState(projectContext.appUrl);
+  const [targetUrl, setTargetUrl] = useState(projectContext.appUrl || '');
   const [testTypes, setTestTypes] = useState<string[]>(['smoke', 'functional']);
   const [includeNegative, setIncludeNegative] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Repo intelligence state
   const [selectedRepoId, setSelectedRepoId] = useState('');
@@ -256,6 +283,118 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [useAppProfile, setUseAppProfile] = useState(true);
   const [useAppKnowledge, setUseAppKnowledge] = useState(true);
 
+  // ── Sprint 4: Requirement picker (drives validation + test-case loading) ──
+  const [requirements, setRequirements] = useState<RequirementOption[]>([]);
+  const [loadingRequirements, setLoadingRequirements] = useState(false);
+  const [selectedReqId, setSelectedReqId] = useState<string>(requirementId || '');
+  const [reqValidation, setReqValidation] = useState<RequirementValidation | null>(null);
+  const [validatingReq, setValidatingReq] = useState(false);
+  const [reqTestCases, setReqTestCases] = useState<Array<{ id: number; title: string; priority?: string; automation_status?: string; script_count?: number }>>([]);
+  const [showTestCasePicker, setShowTestCasePicker] = useState(false);
+  const [loadingTestCase, setLoadingTestCase] = useState(false);
+
+  // Fetch the requirement list (with test-case counts) for the picker.
+  // GET /api/requirements already returns test_case_count / automated_count.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingRequirements(true);
+      try {
+        const res = await fetch('/api/requirements', { headers: { ...projectHeaders } });
+        const data = await res.json();
+        if (cancelled) return;
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        if (res.ok && Array.isArray(list)) {
+          setRequirements(list.map((r: any) => ({
+            id: r.id,
+            requirement_id: r.requirement_id ?? r.requirementId ?? null,
+            title: r.title,
+            priority: r.priority ?? null,
+            category: r.category ?? null,
+            status: r.status ?? null,
+            coverage_percentage: r.coverage_percentage ?? null,
+            test_case_count: Number(r.test_case_count ?? 0),
+            automated_count: Number(r.automated_count ?? 0),
+          })));
+        }
+      } catch { /* non-fatal — picker simply stays empty */ }
+      finally { if (!cancelled) setLoadingRequirements(false); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProject?.id]);
+
+  // When a requirement is selected, load its test cases (GET /:id/test-cases)
+  // and derive the has-test-cases validation so we can warn on empty and let
+  // the user optionally load a test case into the form.
+  useEffect(() => {
+    let cancelled = false;
+    setShowTestCasePicker(false);
+    if (!selectedReqId) { setReqValidation(null); setReqTestCases([]); return; }
+    const selected = requirements.find((r) => r.id === selectedReqId);
+    (async () => {
+      setValidatingReq(true);
+      try {
+        const res = await fetch(`/api/requirements/${selectedReqId}/test-cases`, { headers: { ...projectHeaders } });
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        const list: any[] = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        const tcs = list.map((tc: any) => ({
+          id: Number(tc.id),
+          title: tc.title,
+          priority: tc.priority ?? undefined,
+          automation_status: tc.automation_status
+            ?? (tc.is_automated ? 'automated' : 'not_automated'),
+          script_count: Number(tc.script_count ?? 0),
+        }));
+        setReqTestCases(tcs);
+        const automatedCount = tcs.filter((t) => t.automation_status === 'automated').length;
+        const inProgressCount = tcs.filter((t) => t.automation_status === 'automation_in_progress').length;
+        setReqValidation({
+          requirementId: selectedReqId,
+          requirementCode: selected?.requirement_id ?? null,
+          title: selected?.title ?? '',
+          hasTestCases: tcs.length > 0,
+          testCaseCount: tcs.length,
+          automatedCount,
+          notAutomatedCount: tcs.length - automatedCount - inProgressCount,
+          inProgressCount,
+        });
+      } catch {
+        if (!cancelled) { setReqValidation(null); setReqTestCases([]); }
+      } finally {
+        if (!cancelled) setValidatingReq(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedReqId]);
+
+  /** Load a specific test case into the form (scenario + requirement context). */
+  const loadTestCaseIntoForm = useCallback(async (tcId: number) => {
+    setLoadingTestCase(true);
+    setContextError(null);
+    try {
+      const res = await fetch(`/api/test-cases/${tcId}`, { headers: { ...projectHeaders } });
+      const data = await res.json();
+      if (res.ok && data?.success && data.data) {
+        const tc: TestCaseInfo = data.data;
+        setTestCaseInfo(tc);
+        if (tc.requirement) setRequirementInfo(tc.requirement);
+        const built = buildScenarioFromTestCase(tc);
+        if (built) setScenario(built);
+        setShowTestCasePicker(false);
+      } else {
+        setContextError(data?.error || 'Could not load the selected test case.');
+      }
+    } catch {
+      setContextError('Failed to load the selected test case.');
+    } finally {
+      setLoadingTestCase(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectHeaders]);
+
   // ── Sprint 4: Load Requirement + Test Case context from the deep link ──
   useEffect(() => {
     let cancelled = false;
@@ -297,6 +436,17 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testCaseId, requirementId]);
+
+  // Sprint 4 — auto-populate the target URL from the active environment's
+  // base_url. The project appUrl wins if set; otherwise fall back to the
+  // environment. Only fills when the field is still empty (never clobbers
+  // a URL the user typed).
+  useEffect(() => {
+    if (!targetUrl && activeEnvironment?.base_url) {
+      setTargetUrl(activeEnvironment.base_url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEnvironment?.base_url]);
 
   // Auto-fill from CSV/Excel upload
   useEffect(() => {
@@ -498,14 +648,14 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const handleGenerate = async () => {
     if (!scenario.trim()) return;
 
-    const resolvedUrl = targetUrl || projectContext.appUrl;
-    if (!resolvedUrl) {
-      setResult({
-        success: false,
-        error: 'Target URL is required. Please enter the application URL you want to test.',
-      });
-      return;
-    }
+    // Effective test-case id: an explicitly loaded test case (from the picker)
+    // wins, then the deep-link prop. Drives generationSource + auto-marking.
+    const effectiveTestCaseId = testCaseInfo?.id ?? testCaseId ?? null;
+
+    // Resolve the target URL: explicit input → project appUrl → active
+    // environment base_url. The backend can also auto-resolve from the
+    // environment, so an empty URL is no longer a hard blocker.
+    const resolvedUrl = targetUrl || projectContext.appUrl || activeEnvironment?.base_url || '';
 
     setGenerating(true);
     setResult(null);
@@ -517,7 +667,8 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
         headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
         body: JSON.stringify({
           projectContextId: projectContext.id,
-          url: resolvedUrl,
+          // Omit when empty so the backend resolves from the active environment.
+          ...(resolvedUrl ? { url: resolvedUrl } : {}),
           scenario: scenario.trim(),
           testTypes,
           includeNegativeTests: includeNegative,
@@ -527,9 +678,13 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           ...(useRepoIntelligence && selectedRepoId ? { repoId: selectedRepoId } : {}),
           ...(useAppKnowledge && selectedKnowledgeIds.length > 0 ? { knowledgeItemIds: selectedKnowledgeIds } : {}),
           // ── Sprint 4: Requirement → Test Case → Script context ──
-          ...(testCaseId != null ? { testCaseId: Number(testCaseId) } : {}),
-          ...(requirementId ? { requirementId } : {}),
-          generationSource: testCaseId ? 'test_case_based' : (requirementId ? 'requirement_based' : 'url_based'),
+          // Effective ids: deep-link prop, an explicitly loaded test case, or the
+          // requirement chosen in the picker.
+          ...(effectiveTestCaseId != null ? { testCaseId: Number(effectiveTestCaseId) } : {}),
+          ...(selectedReqId ? { requirementId: selectedReqId } : {}),
+          generationSource: effectiveTestCaseId != null
+            ? 'test_case_based'
+            : (selectedReqId ? 'requirement_based' : 'url_based'),
           ...(authEnabled && authUsername && authPassword ? {
             authConfig: {
               loginUrl: authLoginUrl || undefined,
@@ -704,6 +859,101 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
 
         {/* Scenario Input */}
         <div className="space-y-3">
+          {/* ── Sprint 4: Requirement picker ── */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Requirement <span className="text-slate-600">(optional — links the script for traceability)</span>
+            </label>
+            <div className="relative">
+              <select
+                value={selectedReqId}
+                onChange={(e) => setSelectedReqId(e.target.value)}
+                disabled={generating || loadingRequirements}
+                className="w-full px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-white focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 appearance-none pr-8"
+              >
+                <option value="">
+                  {loadingRequirements ? 'Loading requirements…' : 'No requirement — free-form scenario'}
+                </option>
+                {requirements.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {(r.requirement_id ? `${r.requirement_id} · ` : '') + r.title}
+                    {` (${r.test_case_count} test case${r.test_case_count === 1 ? '' : 's'})`}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+            </div>
+
+            {/* Validation feedback for the selected requirement */}
+            {validatingReq && (
+              <p className="mt-1.5 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <Loader2 size={11} className="animate-spin" /> Checking test cases…
+              </p>
+            )}
+            {!validatingReq && reqValidation && !reqValidation.hasTestCases && (
+              <div className="mt-2 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  No test cases found. Create test cases first in{' '}
+                  <a href="/test-coverage" className="underline hover:text-amber-200 font-medium">Test Case Lab</a>.
+                </span>
+              </div>
+            )}
+            {!validatingReq && reqValidation && reqValidation.hasTestCases && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-slate-400">
+                    <span className="text-emerald-400 font-medium">{reqValidation.testCaseCount}</span> test case{reqValidation.testCaseCount === 1 ? '' : 's'}
+                    {reqValidation.automatedCount > 0 && (
+                      <span className="text-slate-500"> · {reqValidation.automatedCount} automated</span>
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowTestCasePicker((v) => !v)}
+                    className="text-[11px] text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                  >
+                    {showTestCasePicker ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    {showTestCasePicker ? 'Hide test cases' : 'Load a test case'}
+                  </button>
+                </div>
+                {showTestCasePicker && (
+                  <div className="mt-2 space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                    {reqTestCases.length === 0 && (
+                      <p className="text-[11px] text-slate-600 px-1">No test cases to load.</p>
+                    )}
+                    {reqTestCases.map((tc) => (
+                      <button
+                        key={tc.id}
+                        type="button"
+                        onClick={() => loadTestCaseIntoForm(tc.id)}
+                        disabled={loadingTestCase}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-[#0c1222] border border-[#2a3040] hover:border-violet-500/50 transition-colors group"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-slate-200 group-hover:text-white truncate">{tc.title}</span>
+                          <span className="flex items-center gap-1.5 shrink-0">
+                            {tc.automation_status === 'automated' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[9px]">
+                                🤖 {tc.script_count ? `${tc.script_count}` : ''}
+                              </span>
+                            )}
+                            {tc.automation_status === 'automation_in_progress' && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[9px]">In progress</span>
+                            )}
+                            {tc.priority && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400 text-[9px] uppercase">{tc.priority}</span>
+                            )}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Test Scenario</label>
             <textarea
@@ -716,26 +966,27 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             />
           </div>
 
-          {/* Target URL - always visible since it's required */}
+          {/* Target URL - auto-populated from the active environment */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1.5">
-              Target URL <span className="text-red-400">*</span>
+            <label className="block text-xs text-slate-400 mb-1.5 flex items-center gap-1.5">
+              Target URL
+              {activeEnvironment?.base_url && targetUrl === activeEnvironment.base_url && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 text-[9px]">
+                  <Database size={9} /> from {activeEnvironment.name || 'environment'}
+                </span>
+              )}
             </label>
             <input
               type="url"
               value={targetUrl}
               onChange={(e) => setTargetUrl(e.target.value)}
               placeholder="https://your-app.com (e.g. https://opensource-demo.orangehrmlive.com)"
-              className={`w-full px-3 py-2 rounded-lg bg-[#0c1222] border text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 ${
-                !targetUrl && !projectContext.appUrl
-                  ? 'border-amber-500/40'
-                  : 'border-[#334155]'
-              }`}
+              className="w-full px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
               disabled={generating}
             />
             <p className="text-[10px] text-slate-600 mt-1">
-              The application URL to generate tests against
-              {projectContext.appUrl ? ` (defaults to ${projectContext.appUrl})` : ''}
+              Auto-populated from the active environment. Override here if you want to target a different URL.
+              {activeEnvironment?.base_url ? ` (environment: ${activeEnvironment.base_url})` : ''}
             </p>
 
             {/* Application Intelligence Profile Badge */}
@@ -868,17 +1119,12 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             </p>
           </div>
 
-          {/* Advanced Options Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            {showAdvanced ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            Advanced Options
-          </button>
-
-          {showAdvanced && (
+          {/* Advanced Options — always visible (Sprint 4) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
+              <SlidersHorizontal size={12} />
+              Advanced Options
+            </div>
             <div className="space-y-3 bg-[#0c1222] rounded-lg p-4 border border-[#1e293b]">
               <div>
                 <label className="block text-xs text-slate-400 mb-2">Test Types</label>
@@ -926,7 +1172,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 <span className="text-[10px] text-slate-600">(bypass cached profile)</span>
               </label>
             </div>
-          )}
+          </div>
 
           {/* Authentication for Login-Protected Pages */}
           <div className="space-y-3">
@@ -1089,7 +1335,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={generating || !scenario.trim() || (!(targetUrl || projectContext.appUrl))}
+            disabled={generating || !scenario.trim() || (!(targetUrl || projectContext.appUrl || activeEnvironment?.base_url))}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-all shadow-lg shadow-violet-500/20"
           >
             {generating ? (
