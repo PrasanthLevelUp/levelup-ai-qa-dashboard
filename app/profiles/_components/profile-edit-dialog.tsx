@@ -15,6 +15,9 @@ import {
   FileText,
   Save,
   Link2,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -54,6 +57,14 @@ export interface EditableProfile {
   form_fields?: any[] | null;
   screenshots?: Screenshot[] | null;
   tags?: string[] | null;
+  auth_required?: boolean | null;
+  // Sanitized auth summary from the list endpoint (never contains the password).
+  auth_config?: {
+    loginUrl?: string;
+    username?: string;
+    hasCredentials?: boolean;
+    customSelectors?: Record<string, string>;
+  } | null;
 }
 
 interface ProfileEditDialogProps {
@@ -63,10 +74,11 @@ interface ProfileEditDialogProps {
   projectHeaders: Record<string, string>;
 }
 
-type TabKey = 'basic' | 'screenshots' | 'flows' | 'fields';
+type TabKey = 'basic' | 'auth' | 'screenshots' | 'flows' | 'fields';
 
 const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'basic', label: 'Basic Info', icon: Info },
+  { key: 'auth', label: 'Authentication', icon: KeyRound },
   { key: 'screenshots', label: 'Screenshots', icon: ImageIcon },
   { key: 'flows', label: 'Business Flows', icon: Workflow },
   { key: 'fields', label: 'Form Fields', icon: FormInput },
@@ -134,6 +146,13 @@ export function ProfileEditDialog({
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState('');
 
+  // Authentication (optional — for apps behind a login)
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authLoginUrl, setAuthLoginUrl] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [hadCredentials, setHadCredentials] = useState(false);
+
   // Rich data
   const [flows, setFlows] = useState<BusinessFlow[]>([]);
   const [fields, setFields] = useState<FormFieldEntry[]>([]);
@@ -156,6 +175,11 @@ export function ProfileEditDialog({
       setFlows(normalizeFlows(profile.business_flows));
       setFields(normalizeFields(profile.form_fields));
       setScreenshots(Array.isArray(profile.screenshots) ? profile.screenshots : []);
+      // Auth summary is sanitized — username/loginUrl may be present, password never is.
+      setAuthUsername(profile.auth_config?.username || '');
+      setAuthLoginUrl(profile.auth_config?.loginUrl || '');
+      setAuthPassword('');
+      setHadCredentials(!!profile.auth_config?.hasCredentials || !!profile.auth_required);
     } else {
       setName('');
       setBaseUrl('');
@@ -165,7 +189,12 @@ export function ProfileEditDialog({
       setFlows([]);
       setFields([]);
       setScreenshots([]);
+      setAuthUsername('');
+      setAuthPassword('');
+      setAuthLoginUrl('');
+      setHadCredentials(false);
     }
+    setShowPassword(false);
   }, [open, profile]);
 
   /* -- Save -- */
@@ -217,18 +246,69 @@ export function ProfileEditDialog({
         }
       );
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.success !== false) {
-        toast.success(isEdit ? 'Profile updated' : 'Profile created');
-        onClose(true);
-      } else {
+      if (!res.ok || data.success === false) {
         toast.error(data.error || `Failed to save profile (${res.status})`);
+        return;
       }
+
+      // Resolve the profile id (existing on edit, returned by the API on create).
+      const profileId: string | undefined = isEdit
+        ? profile!.id
+        : data?.data?.id || data?.id;
+
+      // Optionally persist authentication credentials. The auth endpoint requires
+      // BOTH username and password, so we only call it when a password is supplied
+      // (the password is write-only and never returned from the server).
+      const u = authUsername.trim();
+      const p = authPassword.trim();
+      let authNote = '';
+      if (profileId && p) {
+        if (!u) {
+          toast.error('Username is required to save credentials');
+          setTab('auth');
+          return;
+        }
+        try {
+          const authRes = await fetch(
+            `/api/intelligence/profiles/${profileId}/auth`,
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                authRequired: true,
+                username: u,
+                password: p,
+                loginUrl: authLoginUrl.trim() || undefined,
+              }),
+            }
+          );
+          const authData = await authRes.json().catch(() => ({}));
+          if (authRes.ok && authData.success !== false) {
+            authNote = ' with credentials';
+          } else {
+            toast.error(authData.error || `Profile saved, but credentials failed (${authRes.status})`);
+          }
+        } catch (authErr: any) {
+          toast.error(authErr?.message || 'Profile saved, but credentials failed');
+        }
+      } else if (profileId && u && !p && !hadCredentials) {
+        // Username entered but no password and no existing credentials.
+        toast.error('Enter a password to save credentials');
+        setTab('auth');
+        return;
+      }
+
+      toast.success((isEdit ? 'Profile updated' : 'Profile created') + authNote);
+      onClose(true);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
-  }, [baseUrl, name, description, notes, tags, flows, fields, isEdit, profile, projectHeaders, onClose]);
+  }, [
+    baseUrl, name, description, notes, tags, flows, fields, isEdit, profile,
+    projectHeaders, onClose, authUsername, authPassword, authLoginUrl, hadCredentials,
+  ]);
 
   /* -- Screenshot upload -- */
   const handleUpload = useCallback(
@@ -422,6 +502,90 @@ export function ProfileEditDialog({
                   placeholder="checkout, payments, critical"
                   className="w-full px-3 py-2 rounded-lg bg-[#0f172a] border border-[#2a3040] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ---- Authentication ---- */}
+          {tab === 'auth' && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-4 bg-violet-500/5 border border-violet-500/20 rounded-lg">
+                <KeyRound size={16} className="text-violet-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-slate-300">
+                  Optional. If your app is behind a login (e.g. SauceDemo), add credentials
+                  here so the crawler can sign in and discover pages that require
+                  authentication. The password is stored securely and never shown again.
+                </p>
+              </div>
+
+              {hadCredentials && (
+                <div className="flex items-center gap-2 text-xs text-emerald-400">
+                  <KeyRound size={13} />
+                  Credentials are already saved for this profile. Leave the password
+                  blank to keep them, or enter a new password to replace them.
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Username / Email
+                </label>
+                <input
+                  type="text"
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  placeholder="standard_user"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg bg-[#0f172a] border border-[#2a3040] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder={hadCredentials ? '•••••••• (unchanged)' : 'secret_sauce'}
+                    autoComplete="new-password"
+                    className="w-full pl-3 pr-10 py-2 rounded-lg bg-[#0f172a] border border-[#2a3040] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300 transition-colors"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Login URL <span className="text-slate-500">(optional)</span>
+                </label>
+                <div className="relative">
+                  <Link2
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                  />
+                  <input
+                    type="text"
+                    value={authLoginUrl}
+                    onChange={(e) => setAuthLoginUrl(e.target.value)}
+                    placeholder="https://app.example.com/login"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#0f172a] border border-[#2a3040] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+                  />
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Leave blank to use the Base URL. The crawler auto-detects the login form;
+                  for advanced control over selectors, use the &quot;Configure Auth&quot;
+                  button on the profile after saving.
+                </p>
               </div>
             </div>
           )}
