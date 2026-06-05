@@ -187,6 +187,8 @@ const TEST_TYPE_OPTIONS = [
 function buildScenarioFromTestCase(tc: TestCaseInfo): string {
   const lines: string[] = [];
   if (tc.title) lines.push(tc.title.trim());
+  // Include the test case description so the generator has the full intent.
+  if (tc.description && tc.description.trim()) lines.push('', tc.description.trim());
 
   // Normalise steps (array of strings/objects, or a JSON-encoded / newline string).
   let steps: any = tc.steps;
@@ -213,6 +215,30 @@ function buildScenarioFromTestCase(tc: TestCaseInfo): string {
   }
   if (tc.expected_result) lines.push('', `Expected result: ${tc.expected_result.trim()}`);
   if (tc.test_data) lines.push('', `Test data: ${tc.test_data.trim()}`);
+  return lines.join('\n').trim();
+}
+
+/**
+ * Build a readable test scenario from a requirement so the generator textarea
+ * is pre-populated when the deep link carries only a `requirement_id`
+ * (no specific test case). Uses the requirement's title, description and
+ * acceptance criteria.
+ */
+function buildScenarioFromRequirement(req: RequirementInfo): string {
+  const lines: string[] = [];
+  if (req.title) lines.push(req.title.trim());
+  if (req.description && req.description.trim()) lines.push('', req.description.trim());
+
+  if (req.acceptance_criteria && req.acceptance_criteria.trim()) {
+    const ac = req.acceptance_criteria.trim();
+    const acLines = ac.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    lines.push('', 'Acceptance criteria:');
+    if (acLines.length > 1) {
+      acLines.forEach((l, i) => lines.push(`${i + 1}. ${l.replace(/^\d+[.)]\s*/, '').replace(/^[-*]\s*/, '')}`));
+    } else {
+      lines.push(ac);
+    }
+  }
   return lines.join('\n').trim();
 }
 
@@ -426,13 +452,19 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             setContextError(data?.error || 'Could not load the linked test case.');
           }
         }
-        // If only a requirement id was provided (no test case), fetch it for the banner.
+        // If only a requirement id was provided (no test case), fetch it for the
+        // banner AND pre-populate the scenario textarea from the requirement.
         if (!testCaseId && requirementId) {
           const res = await fetch(`/api/requirements/${requirementId}`, { headers: { ...projectHeaders } });
           const data = await res.json();
           if (cancelled) return;
           if (res.ok && (data?.data || data?.success)) {
-            setRequirementInfo(data.data || data);
+            const req: RequirementInfo = data.data || data;
+            setRequirementInfo(req);
+            // Pre-populate the scenario from the requirement (Issue #1):
+            // requirement-only deep links previously left the textarea empty.
+            const built = buildScenarioFromRequirement(req);
+            if (built) setScenario(built);
           }
         }
       } catch {
