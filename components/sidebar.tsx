@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server, Rocket, HeartPulse } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server, Rocket, HeartPulse, SlidersHorizontal } from 'lucide-react';
 import { ProjectSelector } from './project-selector';
 
 interface NavSection {
@@ -86,6 +86,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/settings/environments', label: 'Environments', icon: Server },
       { href: '/settings/sprints', label: 'Sprints', icon: Rocket },
+      { href: '/settings/healing', label: 'Healing Config', icon: SlidersHorizontal },
     ],
   },
 ];
