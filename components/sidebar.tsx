@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server, Rocket } from 'lucide-react';
+import { LayoutDashboard, Activity, BookOpen, Zap, Menu, X, ChevronRight, Shield, ShieldAlert, ClipboardCheck, Microscope, DollarSign, Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2, Fingerprint, FlaskConical, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload, Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server, Rocket, HeartPulse } from 'lucide-react';
 import { ProjectSelector } from './project-selector';
 
 interface NavSection {
@@ -18,6 +18,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
       { href: '/projects', label: 'Projects', icon: FolderKanban },
       { href: '/jobs', label: 'Healing Jobs', icon: Play },
+      { href: '/healings', label: 'Healings', icon: HeartPulse },
       { href: '/scripts', label: 'Script Gen', icon: FileCode },
       { href: '/test-coverage', label: 'Test Case Lab', icon: TestTubeDiagonal },
       { href: '/requirements', label: 'Requirements', icon: FileText },
