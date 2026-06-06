@@ -30,6 +30,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { ScriptMaintenanceActions } from './script-maintenance-actions';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -860,6 +861,15 @@ export function ScriptHistoryTab() {
                           {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                           {isExpanded ? 'Hide' : 'Code'}
                         </button>
+                      )}
+                      {/* Maintenance: Sync locators + Smart Regenerate */}
+                      {hasCode && (
+                        <ScriptMaintenanceActions
+                          scriptId={script.id}
+                          scriptName={script.name || script.instructions || script.url}
+                          headers={getProjectHeaders()}
+                          onApplied={fetchHistory}
+                        />
                       )}
                       {/* Create PR — opens the same dialog used during generation,
                           pre-populated with this script's data (Bug #1 fix). */}

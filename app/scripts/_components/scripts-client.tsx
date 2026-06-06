@@ -5,6 +5,7 @@ import { ProjectSetup } from './project-setup';
 import { ScriptGenerator } from './script-generator';
 import { ScriptHistoryTab } from './script-history-tab';
 import { ScriptHealthTab } from './script-health-tab';
+import { MigrationAssistant } from './migration-assistant';
 import { UploadTestCases } from './upload-test-cases';
 import {
   Settings,
@@ -28,6 +29,7 @@ import {
   Globe,
   BookOpen,
   GitBranch,
+  GitMerge,
 } from 'lucide-react';
 
 export interface ProjectContext {
@@ -70,7 +72,7 @@ export function ScriptsClient() {
   const [showSetup, setShowSetup] = useState(false);
   const [editingContext, setEditingContext] = useState<ProjectContext | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(false);
-  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'health'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'health' | 'migrate'>('generate');
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
   const [verifyData, setVerifyData] = useState<any>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -287,6 +289,17 @@ export function ScriptsClient() {
           <Activity size={13} />
           Script Health
         </button>
+        <button
+          onClick={() => setActiveTab('migrate')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            activeTab === 'migrate'
+              ? 'bg-[#1a1f2e] text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <GitMerge size={13} />
+          Migration Assistant
+        </button>
       </div>
 
       {/* ---- Generate Tab ---- */}
@@ -399,6 +412,11 @@ export function ScriptsClient() {
       {/* ---- Script Health Tab ---- */}
       {activeTab === 'health' && (
         <ScriptHealthTab />
+      )}
+
+      {/* ---- Migration Assistant Tab ---- */}
+      {activeTab === 'migrate' && (
+        <MigrationAssistant />
       )}
 
       {/* ---- Verify Intelligence Dialog ---- */}
