@@ -7,9 +7,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;
     const limit = searchParams.get('limit') || '50';
     const status = searchParams.get('status') || '';
+    const projectId = searchParams.get('projectId') || '';
 
     let qs = `?limit=${limit}`;
     if (status) qs += `&status=${status}`;
+    if (projectId) qs += `&projectId=${projectId}`;
 
     const result = await backendGet(`/api/dashboard/jobs${qs}`);
     return NextResponse.json(result);

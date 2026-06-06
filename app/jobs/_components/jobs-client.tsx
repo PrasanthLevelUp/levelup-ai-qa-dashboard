@@ -26,6 +26,7 @@ interface JobResult {
 
 interface Job {
   id: string; repositoryId: string; repositoryUrl: string | null;
+  projectId: number | null;
   branch: string | null; commitSha: string | null; status: string;
   progress: string | null; createdAt: string | null; startedAt: string | null;
   completedAt: string | null; result: string | null; resultData: JobResult | null;
@@ -274,7 +275,7 @@ function AddRepoDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () 
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════ */
 export function JobsClient() {
-  const { activeProject } = useProject();
+  const { activeProject, projects } = useProject();
   const projectHeaders = useProjectHeaders();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -284,6 +285,10 @@ export function JobsClient() {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('main');
+  // Optional single spec file to scope the heal to (empty ⇒ run whole suite).
+  const [testFile, setTestFile] = useState<string>('');
+  // Project filter for the jobs list: 'all' or a project id (defaults to active project).
+  const [projectFilter, setProjectFilter] = useState<string>('all');
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [cancellingJob, setCancellingJob] = useState<string | null>(null);
   const [liveProgress, setLiveProgress] = useState<Record<string, string>>({});
@@ -292,13 +297,15 @@ export function JobsClient() {
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch('/api/jobs');
+      const qs = new URLSearchParams({ limit: '50' });
+      if (projectFilter !== 'all') qs.set('projectId', projectFilter);
+      const res = await fetch(`/api/jobs?${qs.toString()}`);
       const data = await res.json();
       setJobs(data.jobs || []);
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
     } finally { setLoading(false); }
-  }, []);
+  }, [projectFilter]);
 
   const fetchRepos = useCallback(async () => {
     if (fetchingReposRef.current) return; // prevent duplicate fetches
@@ -342,6 +349,11 @@ export function JobsClient() {
     }
   }, [jobs, fetchJobs]);
 
+  // Default the jobs-list filter to the currently active project (header switcher).
+  useEffect(() => {
+    if (activeProject?.id != null) setProjectFilter(String(activeProject.id));
+  }, [activeProject?.id]);
+
   useEffect(() => {
     fetchJobs(); fetchRepos();
     const interval = setInterval(fetchJobs, 5000);
@@ -367,7 +379,14 @@ export function JobsClient() {
       const res = await fetch('/api/jobs/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer levelup_dev_test_key_2026', 'x-api-key': 'levelup_dev_test_key_2026' },
-        body: JSON.stringify({ repository: selectedRepo, branch: selectedBranch }),
+        body: JSON.stringify({
+          repository: selectedRepo,
+          branch: selectedBranch,
+          // Optional single spec file — blank means run the whole suite.
+          ...(testFile.trim() ? { testFile: testFile.trim() } : {}),
+          // Scope the job to the active project so it shows up under the right filter.
+          ...(activeProject?.id != null ? { projectId: activeProject.id } : {}),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -418,9 +437,25 @@ export function JobsClient() {
           <h1 className="text-2xl font-bold text-white font-display">Healing Jobs</h1>
           <p className="text-sm text-slate-400 mt-1">Monitor test execution and healing pipeline</p>
         </div>
-        <button onClick={fetchJobs} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-sm self-start">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          {/* Project filter — scopes the job history below. Defaults to the active project. */}
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-slate-500 uppercase tracking-wider hidden sm:block">Project</label>
+            <select
+              value={projectFilter}
+              onChange={e => setProjectFilter(e.target.value)}
+              className="px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="all">All Projects</option>
+              {projects.map(p => (
+                <option key={p.id} value={String(p.id)}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={fetchJobs} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-sm">
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Trigger Panel */}
@@ -454,6 +489,12 @@ export function JobsClient() {
             <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Branch</label>
             <input value={selectedBranch} onChange={e => setSelectedBranch(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+          </div>
+          <div className="w-full md:w-56">
+            <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Test File <span className="text-slate-600 normal-case">(optional)</span></label>
+            <input value={testFile} onChange={e => setTestFile(e.target.value)}
+              placeholder="tests/login.spec.ts — blank = all"
+              className="w-full px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
           </div>
           <div className="flex items-end">
             <button onClick={triggerHealing} disabled={triggerLoading || !selectedRepo}
