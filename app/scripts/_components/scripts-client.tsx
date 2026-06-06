@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { ProjectSetup } from './project-setup';
 import { ScriptGenerator } from './script-generator';
 import { ScriptHistoryTab } from './script-history-tab';
+import { ScriptHealthTab } from './script-health-tab';
 import { UploadTestCases } from './upload-test-cases';
 import {
   Settings,
@@ -17,6 +18,7 @@ import {
   FileSpreadsheet,
   History,
   Code2,
+  Activity,
   ShieldCheck,
   X,
   CheckCircle2,
@@ -68,7 +70,7 @@ export function ScriptsClient() {
   const [showSetup, setShowSetup] = useState(false);
   const [editingContext, setEditingContext] = useState<ProjectContext | null>(null);
   const [showContextPanel, setShowContextPanel] = useState(false);
-  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'health'>('generate');
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
   const [verifyData, setVerifyData] = useState<any>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -274,6 +276,17 @@ export function ScriptsClient() {
           <History size={13} />
           History
         </button>
+        <button
+          onClick={() => setActiveTab('health')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-xs font-medium transition-colors ${
+            activeTab === 'health'
+              ? 'bg-[#1a1f2e] text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Activity size={13} />
+          Script Health
+        </button>
       </div>
 
       {/* ---- Generate Tab ---- */}
@@ -381,6 +394,11 @@ export function ScriptsClient() {
       {/* ---- History Tab ---- */}
       {activeTab === 'history' && (
         <ScriptHistoryTab />
+      )}
+
+      {/* ---- Script Health Tab ---- */}
+      {activeTab === 'health' && (
+        <ScriptHealthTab />
       )}
 
       {/* ---- Verify Intelligence Dialog ---- */}
