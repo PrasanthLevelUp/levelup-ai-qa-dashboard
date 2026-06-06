@@ -249,6 +249,9 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  // Issue #1: duplicate-generation guard. Set when the backend returns 409 DUPLICATE.
+  const [duplicate, setDuplicate] = useState<{ existingRequirementId: number; testCaseCount: number; message: string } | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -454,10 +457,11 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setSelectedTemplate(templateId);
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (force = false) => {
     if (!canGenerate) return;
     setLoading(true);
     setError(null);
+    setDuplicate(null);
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
@@ -478,10 +482,19 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           repoId: useRepoIntelligence && selectedRepoId ? parseInt(selectedRepoId, 10) : undefined,
           includeCoverageGaps,
           requirementId: selectedRequirementId || undefined,
+          force: force || undefined,
         }),
       });
       const data = await res.json();
-      if (!res.ok) {
+      if (res.status === 409 && data?.code === 'DUPLICATE') {
+        // Issue #1: test cases already exist — offer to delete & regenerate.
+        setDuplicate({
+          existingRequirementId: data.existingRequirementId,
+          testCaseCount: data.testCaseCount || 0,
+          message: data.error || 'Test cases already exist for this requirement.',
+        });
+        setResult(null);
+      } else if (!res.ok) {
         setError(data?.details || data?.error || `Server returned ${res.status}`);
         setResult(null);
       } else if (data?.error && !data?.requirementAnalysis) {
@@ -498,9 +511,37 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     }
   };
 
+  // Issue #1: delete the existing generated test cases, then regenerate (force).
+  const handleClearAndRegenerate = async () => {
+    if (!duplicate) return;
+    setClearing(true);
+    setError(null);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+      const res = await fetch(`/api/test-coverage/requirements/${duplicate.existingRequirementId}/test-cases`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(d?.error || `Failed to clear existing test cases (status ${res.status})`);
+        setClearing(false);
+        return;
+      }
+      setDuplicate(null);
+      setClearing(false);
+      await handleGenerate(true);
+    } catch (err: any) {
+      setError(err?.message || 'Network error while clearing test cases');
+      setClearing(false);
+    }
+  };
+
   const handleReset = () => {
     setResult(null);
     setError(null);
+    setDuplicate(null);
     setTitle('');
     setDescription('');
     setJiraId('');
@@ -545,6 +586,37 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           </p>
         )}
         <p className="text-xs text-slate-600 mt-4">This may take 15-30 seconds...</p>
+      </div>
+    );
+  }
+
+  // Issue #1: duplicate-generation guard screen
+  if (duplicate && !result) {
+    return (
+      <div className="bg-slate-800/50 rounded-xl border border-amber-500/30 p-8 text-center">
+        <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-3" />
+        <h3 className="text-lg font-semibold text-white mb-2">Test Cases Already Exist</h3>
+        <p className="text-sm text-slate-400 mb-2 max-w-lg mx-auto">{duplicate.message}</p>
+        <p className="text-xs text-amber-300/80 bg-amber-500/10 rounded-lg px-3 py-2 mb-4 max-w-lg mx-auto">
+          {duplicate.testCaseCount} test case{duplicate.testCaseCount !== 1 ? 's' : ''} are already generated for this requirement.
+          To avoid duplicates, delete the existing set before regenerating.
+        </p>
+        <div className="flex gap-3 justify-center flex-wrap">
+          <button
+            onClick={handleClearAndRegenerate}
+            disabled={clearing}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium inline-flex items-center gap-2"
+          >
+            {clearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {clearing ? 'Regenerating...' : 'Delete existing & Regenerate'}
+          </button>
+          <button onClick={onViewHistory} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm">
+            View existing in History
+          </button>
+          <button onClick={() => setDuplicate(null)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-sm">
+            Cancel
+          </button>
+        </div>
       </div>
     );
   }
@@ -1019,7 +1091,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           )}
         </div>
         <button
-          onClick={handleGenerate}
+          onClick={() => handleGenerate()}
           disabled={!canGenerate}
           className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium transition-all shadow-lg shadow-violet-600/20 whitespace-nowrap"
         >
@@ -1050,6 +1122,8 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const isSaved = result.requirementId != null;
   const warning = result._warning;
   const knowledgeUsed = result.knowledgeUsed || [];
+  // Issue #2: real application profile that grounded this generation, if any.
+  const appProfileUsed = result.appProfileUsed || null;
 
   // Build coverage type lookup
   const labelMap: Record<string, { label: string; icon: string }> = {};
@@ -1140,6 +1214,20 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                 <p className="text-xs text-violet-400 mt-0.5 flex items-center gap-1">
                   <BookOpen className="w-3 h-3" />
                   Used {knowledgeUsed.length} knowledge item{knowledgeUsed.length !== 1 ? 's' : ''}: {knowledgeUsed.map((k: any) => k.title).join(', ')}
+                </p>
+              )}
+              {appProfileUsed ? (
+                <p className="text-xs text-emerald-400 mt-0.5 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Grounded in real app knowledge{appProfileUsed.name ? ` (${appProfileUsed.name})` : ''}
+                  {appProfileUsed.totalElements != null ? ` — ${appProfileUsed.totalElements} elements` : ''}
+                  {appProfileUsed.totalForms != null ? `, ${appProfileUsed.totalForms} forms` : ''}
+                  {appProfileUsed.pageCount != null ? `, ${appProfileUsed.pageCount} pages` : ''}. Selectors and steps reflect your actual application.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                  <Info className="w-3 h-3" />
+                  Generic generation — crawl this app in Application Profiles to ground test cases in real selectors.
                 </p>
               )}
             </div>
