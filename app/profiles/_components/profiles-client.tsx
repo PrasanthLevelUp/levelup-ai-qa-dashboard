@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { ProfileEditDialog, type EditableProfile } from './profile-edit-dialog';
 import { ProfileAuthDialog, type AuthDialogProfile } from './profile-auth-dialog';
+import { ProfileDetail } from './profile-detail';
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -712,96 +713,12 @@ export function ProfilesClient() {
 
                   {/* Expanded Detail */}
                   {expandedId === profile.id && (
-                    <div className="px-5 py-4 border-t border-[#2a3040] bg-[#0f172a]/50">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Fingerprint</p>
-                          <p className="text-xs text-slate-300 font-mono">{profile.app_fingerprint || '—'}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Interactive Elements</p>
-                          <p className="text-xs text-slate-300">{profile.total_interactive}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Created</p>
-                          <p className="text-xs text-slate-300">{new Date(profile.created_at).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Last Updated</p>
-                          <p className="text-xs text-slate-300">{timeAgo(profile.updated_at)}</p>
-                        </div>
-                      </div>
-                      {profile.error_message && (
-                        <div className="flex items-start gap-2 p-3 bg-red-500/5 border border-red-500/20 rounded-lg mb-3">
-                          <AlertTriangle size={14} className="text-red-400 mt-0.5 flex-shrink-0" />
-                          <p className="text-xs text-red-300">{profile.error_message}</p>
-                        </div>
-                      )}
-
-                      {/* Live crawl progress */}
-                      {profile.status === 'crawling' && (
-                        <div className="flex items-center gap-2 p-3 bg-violet-500/5 border border-violet-500/20 rounded-lg mb-3">
-                          <Loader2 size={14} className="text-violet-400 animate-spin flex-shrink-0" />
-                          <p className="text-xs text-violet-300">
-                            Crawl in progress — logging in (if configured), discovering pages and capturing elements.
-                            This view refreshes automatically.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Auth summary */}
-                      {profile.auth_required && profile.auth_config?.hasCredentials && (
-                        <div className="flex items-center gap-2 p-3 bg-amber-500/5 border border-amber-500/15 rounded-lg mb-3">
-                          <Shield size={14} className="text-amber-400 flex-shrink-0" />
-                          <p className="text-xs text-amber-300/90">
-                            Authenticated crawl configured
-                            {profile.auth_config.username ? <> as <span className="font-medium">{profile.auth_config.username}</span></> : null}
-                            {profile.auth_config.loginUrl ? <> · login at <span className="font-mono">{profile.auth_config.loginUrl}</span></> : null}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Discovered sitemap (from a deep crawl) */}
-                      {Array.isArray(profile.crawl_data?.siteMap) && profile.crawl_data.siteMap.length > 0 && (
-                        <div className="mb-3">
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                            <Network size={11} className="text-emerald-400" />
-                            Discovered Pages ({profile.crawl_data.siteMap.length})
-                          </p>
-                          <div className="space-y-1 max-h-44 overflow-auto pr-1">
-                            {profile.crawl_data.siteMap.map((n: any, i: number) => (
-                              <div key={i} className="flex items-center gap-2 text-xs text-slate-400 bg-[#0f172a] rounded px-2 py-1">
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20 flex-shrink-0">{n.pageType || 'page'}</span>
-                                <span className="truncate flex-1 font-mono text-slate-300">{n.title || n.url}</span>
-                                <span className="text-slate-500 flex-shrink-0">{n.elementCount ?? 0} el · {n.formCount ?? 0} forms</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <button
-                          onClick={() => handleCrawlNow(profile)}
-                          disabled={!!actionLoading[profile.id] || profile.status === 'crawling'}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
-                        >
-                          {profile.status === 'crawling'
-                            ? <><Loader2 size={12} className="animate-spin" /> Crawling...</>
-                            : <><Network size={12} /> Crawl Now</>}
-                        </button>
-                        <button
-                          onClick={() => { setAuthProfile(profile as AuthDialogProfile); setAuthDialogOpen(true); }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0f172a] border border-[#334155] text-slate-300 hover:text-amber-300 hover:border-amber-500/30 text-xs transition-colors"
-                        >
-                          <KeyRound size={12} /> {profile.auth_required ? 'Edit Auth' : 'Configure Auth'}
-                        </button>
-                        <p className="text-[10px] text-slate-500 flex items-center gap-1">
-                          <Zap size={11} className="text-violet-400" />
-                          &quot;Crawl Now&quot; runs a real Playwright deep crawl; results are cached and reused for script generation.
-                        </p>
-                      </div>
-                    </div>
+                    <ProfileDetail
+                      profile={profile}
+                      crawlBusy={!!actionLoading[profile.id]}
+                      onCrawlNow={() => handleCrawlNow(profile)}
+                      onConfigureAuth={() => { setAuthProfile(profile as AuthDialogProfile); setAuthDialogOpen(true); }}
+                    />
                   )}
                 </div>
               ))}
