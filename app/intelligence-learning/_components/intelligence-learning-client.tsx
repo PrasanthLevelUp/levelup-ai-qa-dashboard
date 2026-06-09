@@ -172,7 +172,18 @@ export default function IntelligenceLearningClient() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [learningScope, setLearningScope] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Lightweight fetch of the active learning scope for the privacy indicator.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/learning-scope', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j) setLearningScope((j.data || j)?.learningScope ?? null); })
+      .catch(() => { /* indicator is best-effort */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const fetchOverview = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
@@ -278,7 +289,25 @@ export default function IntelligenceLearningClient() {
             <Brain className="h-7 w-7 text-emerald-400" />
             Intelligence Learning
           </h1>
-          <p className="text-slate-400 text-sm mt-1">Watch the AI learn, heal, and harden your test suite over time</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <p className="text-slate-400 text-sm">Watch the AI learn, heal, and harden your test suite over time</p>
+            {learningScope && (
+              <a
+                href="/settings/privacy"
+                title="Learning scope — click to manage privacy controls"
+                className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border transition-colors ${
+                  learningScope === 'disabled'
+                    ? 'bg-slate-500/10 border-slate-500/40 text-slate-300 hover:bg-slate-500/20'
+                    : learningScope === 'company'
+                      ? 'bg-sky-500/10 border-sky-500/40 text-sky-300 hover:bg-sky-500/20'
+                      : 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20'
+                }`}
+              >
+                <ShieldCheck className="h-3 w-3" />
+                Learning: {learningScope === 'project' ? 'Project (isolated)' : learningScope === 'company' ? 'Company' : 'Disabled'}
+              </a>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden">
           <div className="flex items-center bg-slate-800/50 rounded-lg border border-slate-700/50 p-0.5">

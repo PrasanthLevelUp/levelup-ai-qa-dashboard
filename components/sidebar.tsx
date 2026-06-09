@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
   LayoutDashboard, Activity, BookOpen, Menu, X, ChevronRight, ChevronDown,
-  Shield, ShieldAlert, ClipboardCheck, ClipboardList, Microscope, DollarSign,
+  Shield, ShieldAlert, ShieldCheck, ClipboardCheck, ClipboardList, Microscope, DollarSign,
   Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2,
   Fingerprint, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload,
   Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server,
@@ -111,6 +111,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/settings/environments', label: 'Environments', icon: Server },
       { href: '/settings/sprints', label: 'Sprints', icon: Rocket },
       { href: '/settings/healing', label: 'Healing Config', icon: SlidersHorizontal },
+      { href: '/settings/privacy', label: 'Learning & Privacy', icon: ShieldCheck },
       { href: '/api-keys', label: 'API Keys', icon: Key },
       { href: '/ingestion', label: 'Ingestion', icon: Upload },
       { href: '/webhooks', label: 'Webhooks', icon: Webhook },
