@@ -9,7 +9,7 @@ import {
   Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2,
   Fingerprint, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload,
   Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server,
-  Rocket, HeartPulse, SlidersHorizontal, Gauge, Tag,
+  Rocket, HeartPulse, SlidersHorizontal, Gauge, Tag, Sparkles,
 } from 'lucide-react';
 import { ProjectSelector } from './project-selector';
 
@@ -92,6 +92,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/intelligence', label: 'Intelligence Hub', icon: Activity },
       { href: '/learning', label: 'Learning Engine', icon: Brain },
+      { href: '/intelligence-learning', label: 'Learning Dashboard', icon: Sparkles },
       { href: '/dom-memory', label: 'DOM Memory', icon: Database },
       { href: '/profiles', label: 'App Profiles', icon: Fingerprint },
       { href: '/similarity', label: 'Similarity Engine', icon: Fingerprint },
