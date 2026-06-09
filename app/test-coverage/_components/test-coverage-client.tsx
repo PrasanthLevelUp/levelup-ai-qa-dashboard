@@ -160,6 +160,17 @@ const TEMPLATES: Template[] = [
   },
 ];
 
+// Short, scannable one-liners shown on each Quick Start card so users know
+// exactly what a template fills in before clicking it.
+const TEMPLATE_BLURBS: Record<string, string> = {
+  login: 'Email/password auth, validation & sessions',
+  crud: 'Create, read, update & delete flows',
+  checkout: 'Cart, shipping, payment & confirmation',
+  search: 'Query, filters, sorting & pagination',
+  registration: 'Sign-up, validation & email verification',
+  'file-upload': 'Drag & drop, file type/size limits & progress',
+};
+
 /* ------------------------------------------------------------------ */
 /*  Tooltip / Help Component                                           */
 /* ------------------------------------------------------------------ */
@@ -184,6 +195,73 @@ function FieldHelp({ text }: { text: string }) {
         </div>
       )}
     </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Intelligence Source Card — config-driven, reusable toggle card     */
+/* ------------------------------------------------------------------ */
+
+type IntelAccent = 'violet' | 'emerald' | 'amber' | 'sky';
+
+const INTEL_ACCENTS: Record<IntelAccent, { box: string; icon: string; border: string; toggle: string }> = {
+  violet:  { box: 'bg-violet-500/20',  icon: 'text-violet-400',  border: 'border-violet-500/30',  toggle: 'bg-violet-500 border-violet-400' },
+  emerald: { box: 'bg-emerald-500/20', icon: 'text-emerald-400', border: 'border-emerald-500/30', toggle: 'bg-emerald-500 border-emerald-400' },
+  amber:   { box: 'bg-amber-500/20',   icon: 'text-amber-400',   border: 'border-amber-500/20',   toggle: 'bg-amber-500 border-amber-400' },
+  sky:     { box: 'bg-sky-500/20',     icon: 'text-sky-400',     border: 'border-sky-500/30',     toggle: 'bg-sky-500 border-sky-400' },
+};
+
+/**
+ * A single Intelligence Source row rendered from config. Keeps every source
+ * visually consistent (icon, title, description, optional badge, obvious
+ * on/off toggle) so new sources can be added by dropping another entry into
+ * the `intelligenceSources` registry — no bespoke markup required.
+ */
+function IntelligenceSourceCard({
+  accent, icon: Icon, title, description, badge, enabled, onToggle, statusLabel, disabled, children,
+}: {
+  accent: IntelAccent;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  badge?: string;
+  enabled: boolean;
+  onToggle: () => void;
+  statusLabel?: string;
+  disabled?: boolean;
+  children?: React.ReactNode;
+}) {
+  const a = INTEL_ACCENTS[accent];
+  return (
+    <div className={`rounded-xl border transition-all ${enabled ? `bg-slate-800/80 ${a.border}` : 'bg-slate-800/50 border-slate-700/50'} ${disabled ? 'opacity-60' : ''}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={disabled}
+        aria-pressed={enabled}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left disabled:cursor-not-allowed"
+      >
+        <span className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-all ${enabled ? a.toggle : 'border-slate-600 bg-slate-800'}`}>
+          {enabled && <Check className="w-3.5 h-3.5 text-white" />}
+        </span>
+        <span className={`w-8 h-8 rounded-lg ${a.box} flex items-center justify-center flex-shrink-0`}>
+          <Icon className={`w-4 h-4 ${a.icon}`} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-slate-200">{title}</span>
+            {badge && <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">{badge}</span>}
+            {enabled && statusLabel && (
+              <span className="text-[10px] inline-flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 className="w-3 h-3" /> {statusLabel}
+              </span>
+            )}
+          </span>
+          <span className="block text-xs text-slate-500 mt-0.5 leading-snug">{description}</span>
+        </span>
+      </button>
+      {enabled && children && <div className="px-4 pb-3 pt-1">{children}</div>}
+    </div>
   );
 }
 
@@ -278,7 +356,6 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [showRequirementDropdown, setShowRequirementDropdown] = useState(false);
 
   // UI state
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCoverageTypes, setShowCoverageTypes] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   // Banner shown when the form was pre-filled from a linked requirement
@@ -455,6 +532,20 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setAcceptanceCriteria(tmpl.acceptanceCriteria);
     setSelectedTypes(tmpl.coverageTypes);
     setSelectedTemplate(templateId);
+    toast.success(`"${tmpl.name}" template applied`, { description: 'Every field is editable — tweak it to match your scenario.' });
+  };
+
+  // "Start from scratch": clears the scenario fields a template populated so the
+  // user gets a clean form. Leaves intelligence sources and any linked
+  // requirement untouched.
+  const clearTemplate = () => {
+    setSelectedTemplate(null);
+    setTitle('');
+    setDescription('');
+    setModule('');
+    setBusinessFlow('');
+    setAcceptanceCriteria('');
+    setSelectedTypes(['positive', 'negative', 'edge_cases']);
   };
 
   const handleGenerate = async (force = false) => {
@@ -556,6 +647,88 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setSelectedRequirementId('');
     setPrefilledFrom(null);
   };
+
+  // Number of intelligence sources currently contributing context.
+  const activeIntelCount =
+    (selectedKnowledgeIds.length > 0 ? 1 : 0) +
+    (useRepoIntelligence && selectedRepoId ? 1 : 0) +
+    (includeCoverageGaps ? 1 : 0);
+
+  // Config-driven Intelligence Sources registry. Each entry renders a
+  // consistent card; adding/removing a source is just editing this array.
+  const intelligenceSources: Array<{ id: string; render: () => React.ReactNode }> = [
+    {
+      id: 'app-knowledge',
+      render: () => (
+        <KnowledgeSelector
+          selectedIds={selectedKnowledgeIds}
+          onChange={setSelectedKnowledgeIds}
+          contextTitle={title}
+          contextDescription={description}
+        />
+      ),
+    },
+    {
+      id: 'repo-intelligence',
+      render: () => (
+        <IntelligenceSourceCard
+          accent="emerald"
+          icon={Cpu}
+          title="Repository Intelligence"
+          description="Ground tests in your real code — uses architecture & patterns from analyzed repositories."
+          enabled={useRepoIntelligence}
+          onToggle={() => setUseRepoIntelligence(v => !v)}
+          statusLabel={useRepoIntelligence && selectedRepoId ? 'repo selected' : undefined}
+        >
+          {loadingRepos ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading repositories...
+            </div>
+          ) : repos.length === 0 ? (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+              <p className="text-xs text-amber-300">No repositories found. Add a repository in the Projects page first.</p>
+            </div>
+          ) : (
+            <select
+              value={selectedRepoId}
+              onChange={e => setSelectedRepoId(e.target.value)}
+              className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500/50 outline-none"
+            >
+              <option value="">Select a repository...</option>
+              {repos.map((r: any) => {
+                const hasIntel = scannedRepoIds.has(r.id);
+                return (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.name} {r.branch ? `(${r.branch})` : ''} {hasIntel ? '✓ Scanned' : '— Not scanned'}
+                  </option>
+                );
+              })}
+            </select>
+          )}
+          {selectedRepoId && !scannedRepoIds.has(parseInt(selectedRepoId, 10)) && (
+            <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              This repo hasn&apos;t been scanned yet. <a href="/repo-intelligence" className="underline">Scan it first →</a>
+            </p>
+          )}
+        </IntelligenceSourceCard>
+      ),
+    },
+    {
+      id: 'coverage-gaps',
+      render: () => (
+        <IntelligenceSourceCard
+          accent="amber"
+          icon={Shield}
+          title="Coverage Gap Analysis"
+          badge="Recommended"
+          description="Automatically surfaces missing test scenarios you might have overlooked."
+          enabled={includeCoverageGaps}
+          onToggle={() => setIncludeCoverageGaps(v => !v)}
+        />
+      ),
+    },
+  ];
 
   // Show results if we have them
   if (result) {
@@ -662,27 +835,61 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 
       {/* ── Section 1: Quick Start from Template ── */}
       <div className="bg-gradient-to-r from-violet-600/10 to-purple-600/10 rounded-xl border border-violet-500/20 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <LayoutTemplate className="w-4 h-4 text-violet-400" />
-          <span className="text-sm font-semibold text-white">Quick Start</span>
-          <span className="text-xs text-slate-400">— Pick a template or start from scratch</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {TEMPLATES.map(tmpl => (
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div className="flex items-center gap-2">
+            <LayoutTemplate className="w-4 h-4 text-violet-400" />
+            <span className="text-sm font-semibold text-white">Quick Start templates</span>
+            <span className="text-[10px] uppercase tracking-wide text-violet-300/70 bg-violet-500/10 border border-violet-500/20 rounded px-1.5 py-0.5">Optional</span>
+          </div>
+          {selectedTemplate && (
             <button
-              key={tmpl.id}
-              onClick={() => applyTemplate(tmpl.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                selectedTemplate === tmpl.id
-                  ? 'bg-violet-500/20 border-violet-500/40 text-violet-300'
-                  : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
-              }`}
+              onClick={clearTemplate}
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors"
+              title="Clear the template and start with an empty form"
             >
-              <span>{tmpl.icon}</span>
-              {tmpl.name}
+              <RefreshCw className="w-3 h-3" /> Start from scratch
             </button>
-          ))}
+          )}
         </div>
+        <p className="text-xs text-slate-400 mb-3">
+          Pick a common scenario to <span className="text-slate-200 font-medium">pre-fill the form below</span> with a title, description, business flow, acceptance criteria and coverage types. Everything stays fully editable — or just skip this and fill the form yourself.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {TEMPLATES.map(tmpl => {
+            const active = selectedTemplate === tmpl.id;
+            return (
+              <button
+                key={tmpl.id}
+                onClick={() => active ? clearTemplate() : applyTemplate(tmpl.id)}
+                aria-pressed={active}
+                className={`group relative flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all ${
+                  active
+                    ? 'bg-violet-500/15 border-violet-500/50 ring-1 ring-violet-500/30'
+                    : 'bg-slate-800/50 border-slate-700/50 hover:border-violet-500/40 hover:bg-slate-800/80'
+                }`}
+              >
+                <span className="text-lg leading-none mt-0.5">{tmpl.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className={`text-sm font-medium ${active ? 'text-white' : 'text-slate-200'}`}>{tmpl.name}</span>
+                    {active && <CheckCircle2 className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />}
+                  </span>
+                  <span className="block text-[11px] text-slate-500 leading-snug mt-0.5">{TEMPLATE_BLURBS[tmpl.id]}</span>
+                  <span className="block text-[10px] text-slate-600 mt-1">{tmpl.coverageTypes.length} coverage types</span>
+                </span>
+                {active && (
+                  <span className="absolute top-2 right-2 text-[9px] uppercase tracking-wide text-violet-300 bg-violet-500/20 rounded px-1.5 py-0.5">Applied</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {selectedTemplate && (
+          <p className="text-[11px] text-violet-300/80 mt-2.5 flex items-center gap-1.5">
+            <Info className="w-3 h-3 flex-shrink-0" />
+            Template applied — review the pre-filled fields below and edit anything before generating.
+          </p>
+        )}
       </div>
 
       {/* ── Section 1b: Link to Requirement (RTM) ── */}
@@ -854,152 +1061,73 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           </div>
         </div>
 
-        {/* Advanced fields — collapsible */}
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors"
-          >
-            {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            Advanced Details
-            <span className="text-xs text-slate-600">(Business flow, acceptance criteria)</span>
-          </button>
-          {showAdvanced && (
-            <div className="mt-3 space-y-4">
-              <div>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <label className="text-sm font-medium text-slate-300">Business Flow</label>
-                  <FieldHelp text="Describe the step-by-step user journey. Use arrows (→) to separate steps." />
-                </div>
-                <textarea
-                  value={businessFlow}
-                  onChange={e => setBusinessFlow(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. User enters email → receives OTP → enters OTP → session created → redirect to dashboard"
-                  className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
-                />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <label className="text-sm font-medium text-slate-300">Acceptance Criteria</label>
-                  <FieldHelp text="List specific conditions that must be true for the feature to be considered complete. One per line, starting with a dash." />
-                </div>
-                <textarea
-                  value={acceptanceCriteria}
-                  onChange={e => setAcceptanceCriteria(e.target.value)}
-                  rows={3}
-                  placeholder="e.g.&#10;- OTP should expire in 5 minutes&#10;- Account locks after 5 failed attempts&#10;- Admin can reset locked accounts"
-                  className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
-                />
-              </div>
+        {/* Business Context — always visible (optional). Previously hidden behind
+            an "Advanced Details" toggle; opened by default so users (and
+            requirement pre-fill) can see/edit business flow & acceptance criteria
+            without an extra click. */}
+        <div className="mt-5 pt-5 border-t border-slate-700/50 space-y-4">
+          <div className="flex items-center gap-1.5">
+            <ClipboardList className="w-4 h-4 text-violet-400" />
+            <span className="text-sm font-semibold text-white">Business Context</span>
+            <span className="text-xs text-slate-500">(Optional — sharpens accuracy)</span>
+            {(businessFlow.trim() || acceptanceCriteria.trim()) && (
+              <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-emerald-400">
+                <CheckCircle2 className="w-3 h-3" /> filled
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 -mt-2">
+            Add the user journey and acceptance criteria if you have them — leave blank and the AI will infer them.
+          </p>
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-slate-300">Business Flow</label>
+              <FieldHelp text="Describe the step-by-step user journey. Use arrows (→) to separate steps." />
             </div>
-          )}
+            <textarea
+              value={businessFlow}
+              onChange={e => setBusinessFlow(e.target.value)}
+              rows={2}
+              placeholder="e.g. User enters email → receives OTP → enters OTP → session created → redirect to dashboard"
+              className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="text-sm font-medium text-slate-300">Acceptance Criteria</label>
+              <FieldHelp text="List specific conditions that must be true for the feature to be considered complete. One per line, starting with a dash." />
+            </div>
+            <textarea
+              value={acceptanceCriteria}
+              onChange={e => setAcceptanceCriteria(e.target.value)}
+              rows={3}
+              placeholder="e.g.&#10;- OTP should expire in 5 minutes&#10;- Account locks after 5 failed attempts&#10;- Admin can reset locked accounts"
+              className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-4 py-2.5 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 resize-none"
+            />
+          </div>
         </div>
       </div>
 
-      {/* ── Section 3: Intelligence Sources ── */}
+      {/* ── Section 3: Intelligence Sources (config-driven) ── */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5">
-        <h3 className="text-base font-semibold text-white mb-1 flex items-center gap-2">
-          <Brain className="w-4 h-4 text-violet-400" />
-          Intelligence Sources
-          <span className="text-xs text-slate-500 font-normal">(Optional — improves accuracy)</span>
-        </h3>
-        <p className="text-xs text-slate-400 mb-4">Connect knowledge and repository data to generate more relevant and accurate test cases.</p>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <h3 className="text-base font-semibold text-white flex items-center gap-2">
+            <Brain className="w-4 h-4 text-violet-400" />
+            Intelligence Sources
+            <span className="text-xs text-slate-500 font-normal">(Optional — improves accuracy)</span>
+          </h3>
+          <span className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-700/50 rounded-full px-2.5 py-1 whitespace-nowrap">
+            {activeIntelCount} active
+          </span>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          Each source feeds extra context to the AI so the generated test cases match your real product. Toggle the ones you want — the more relevant context, the sharper the results.
+        </p>
 
         <div className="space-y-3">
-          {/* App Knowledge Selector */}
-          <KnowledgeSelector
-            selectedIds={selectedKnowledgeIds}
-            onChange={setSelectedKnowledgeIds}
-            contextTitle={title}
-            contextDescription={description}
-          />
-
-          {/* Repository Intelligence */}
-          <div className={`rounded-xl border transition-all ${
-            useRepoIntelligence ? 'bg-slate-800/80 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'
-          }`}>
-            <div className="flex items-center gap-3 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => setUseRepoIntelligence(!useRepoIntelligence)}
-                className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
-                  useRepoIntelligence ? 'bg-emerald-500 border-emerald-400' : 'border-slate-600 bg-slate-800 hover:border-slate-500'
-                }`}
-              >
-                {useRepoIntelligence && <Check className="w-3.5 h-3.5 text-white" />}
-              </button>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                <Cpu className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="text-sm font-medium text-slate-200">Repository Intelligence</span>
-                <p className="text-xs text-slate-500">Use code patterns and architecture from analyzed repos</p>
-              </div>
-            </div>
-
-            {useRepoIntelligence && (
-              <div className="px-4 pb-3 pt-1">
-                {loadingRepos ? (
-                  <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Loading repositories...
-                  </div>
-                ) : repos.length === 0 ? (
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
-                    <p className="text-xs text-amber-300">No repositories found. Add a repository in the Projects page first.</p>
-                  </div>
-                ) : (
-                  <select
-                    value={selectedRepoId}
-                    onChange={e => setSelectedRepoId(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-emerald-500/50 outline-none"
-                  >
-                    <option value="">Select a repository...</option>
-                    {repos.map((r: any) => {
-                      const hasIntel = scannedRepoIds.has(r.id);
-                      return (
-                        <option key={r.id} value={String(r.id)}>
-                          {r.name} {r.branch ? `(${r.branch})` : ''} {hasIntel ? '✓ Scanned' : '— Not scanned'}
-                        </option>
-                      );
-                    })}
-                  </select>
-                )}
-                {selectedRepoId && !scannedRepoIds.has(parseInt(selectedRepoId, 10)) && (
-                  <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    This repo hasn&apos;t been scanned yet. <a href="/repo-intelligence" className="underline">Scan it first →</a>
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Coverage Gap Analysis */}
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
-            includeCoverageGaps ? 'bg-slate-800/80 border-amber-500/20' : 'bg-slate-800/50 border-slate-700/50'
-          }`}>
-            <button
-              type="button"
-              onClick={() => setIncludeCoverageGaps(!includeCoverageGaps)}
-              className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
-                includeCoverageGaps ? 'bg-amber-500 border-amber-400' : 'border-slate-600 bg-slate-800 hover:border-slate-500'
-              }`}
-            >
-              {includeCoverageGaps && <Check className="w-3.5 h-3.5 text-white" />}
-            </button>
-            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-              <Shield className="w-4 h-4 text-amber-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-slate-200">Include Coverage Gap Analysis</span>
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">Recommended</span>
-              </div>
-              <p className="text-xs text-slate-500">Automatically identifies missing test scenarios you might have overlooked</p>
-            </div>
-          </div>
+          {intelligenceSources.map(src => (
+            <div key={src.id}>{src.render()}</div>
+          ))}
         </div>
       </div>
 
