@@ -9,6 +9,7 @@ import {
   GitBranch, Code2, BookOpen,
   Brain, Cpu, Info, HelpCircle, LayoutTemplate, Copy,
   Download, Filter, Search, Check, X,
+  Globe, Layers, FileStack,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
@@ -266,6 +267,151 @@ function IntelligenceSourceCard({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Application Profile                                                */
+/* ------------------------------------------------------------------ */
+
+/** Normalised shape used by the UI (mapped from the backend ApplicationProfile row). */
+interface AppProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  crawledAt: string | null;
+  elementCount: number;
+  pageCount: number;
+  formCount: number;
+  status: 'fresh' | 'expiring' | 'expired' | 'crawling' | 'error';
+  isLatest: boolean;
+}
+
+/** Map a raw backend profile row → the normalised UI shape. */
+function mapProfile(raw: any): AppProfile {
+  return {
+    id: String(raw.id),
+    name: raw.name || raw.base_url || 'Crawled profile',
+    baseUrl: raw.base_url || '',
+    crawledAt: raw.crawled_at || raw.updated_at || null,
+    elementCount: Number(raw.total_elements ?? 0),
+    pageCount: Number(raw.page_count ?? 0),
+    formCount: Number(raw.total_forms ?? 0),
+    status: raw.status || 'fresh',
+    isLatest: false,
+  };
+}
+
+/** Human-friendly "2h ago" / "3d ago" relative time. */
+function relativeTime(iso: string | null): string {
+  if (!iso) return 'unknown time';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'unknown time';
+  const diff = Date.now() - then;
+  if (diff < 0) return 'just now';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+/** Is a profile considered outdated? (no fresh status, or crawled > 30 days ago) */
+function isOutdated(p: AppProfile): boolean {
+  if (p.status === 'expired') return true;
+  if (!p.crawledAt) return false;
+  const ageDays = (Date.now() - new Date(p.crawledAt).getTime()) / 86400000;
+  return ageDays > 30;
+}
+
+/**
+ * App Profile picker — fetched profiles for the active project, a "Latest" badge
+ * on the freshest crawl, per-profile stats, and graceful loading / empty / error
+ * / crawling states.
+ */
+function AppProfileSelector({
+  profiles, loading, selectedId, onSelect,
+}: {
+  profiles: AppProfile[];
+  loading: boolean;
+  selectedId: string;          // '' === auto-pick latest
+  onSelect: (id: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading application profiles…
+      </div>
+    );
+  }
+
+  if (profiles.length === 0) {
+    return (
+      <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+        <p className="text-xs text-amber-300">
+          No crawled profiles yet. Crawl your application to capture real pages, forms, and
+          locators. <a href="/intelligence" className="underline">Set up a crawl →</a>
+        </p>
+      </div>
+    );
+  }
+
+  // Resolve the effective profile (selected, or the latest when on auto-pick).
+  const latest = profiles.find(p => p.isLatest) || profiles[0];
+  const effective = selectedId ? profiles.find(p => p.id === selectedId) || latest : latest;
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={selectedId}
+        onChange={e => onSelect(e.target.value)}
+        className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-sky-500/50 outline-none"
+      >
+        <option value="">Latest crawl (auto){latest ? ` — ${relativeTime(latest.crawledAt)}` : ''}</option>
+        {profiles.map(p => (
+          <option key={p.id} value={p.id}>
+            {p.isLatest ? '✓ ' : ''}{p.name} — {relativeTime(p.crawledAt)} · {p.elementCount.toLocaleString()} elements · {p.pageCount} pages
+          </option>
+        ))}
+      </select>
+
+      {/* Stats for the effective profile */}
+      {effective && (
+        <div className="rounded-lg bg-slate-900/40 border border-slate-700/40 px-3 py-2.5 space-y-1.5">
+          {effective.status === 'crawling' ? (
+            <p className="text-xs text-sky-300 flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Crawl in progress — stats will update when complete.
+            </p>
+          ) : effective.status === 'error' ? (
+            <p className="text-xs text-rose-300 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5" /> Last crawl failed for this profile. Pick another or re-crawl.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-emerald-400 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                Real DOM data — {effective.elementCount.toLocaleString()} elements discovered
+              </p>
+              <div className="flex items-center gap-4 text-xs text-slate-400">
+                <span className="flex items-center gap-1"><FileStack className="w-3.5 h-3.5 text-sky-400" /> {effective.pageCount} pages crawled</span>
+                <span className="flex items-center gap-1"><Layers className="w-3.5 h-3.5 text-sky-400" /> {effective.formCount} forms</span>
+                <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-slate-500" /> {relativeTime(effective.crawledAt)}</span>
+              </div>
+            </>
+          )}
+          {isOutdated(effective) && effective.status !== 'crawling' && (
+            <p className="text-xs text-amber-400 flex items-center gap-1.5 pt-0.5">
+              <AlertTriangle className="w-3.5 h-3.5" /> This profile is over 30 days old — consider re-crawling for fresh data.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -345,6 +491,14 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [useRepoIntelligence, setUseRepoIntelligence] = useState(false);
   const [selectedRepoId, setSelectedRepoId] = useState('');
   const [includeCoverageGaps, setIncludeCoverageGaps] = useState(true);
+
+  // App Profile — the highest-priority intelligence source (real crawled DOM data).
+  // On by default; '' selectedProfileId means "auto-pick the latest crawl".
+  const [useAppProfile, setUseAppProfile] = useState(true);
+  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [appProfiles, setAppProfiles] = useState<AppProfile[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+
   const [repos, setRepos] = useState<any[]>([]);
   const [repoContexts, setRepoContexts] = useState<any[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -409,6 +563,34 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     () => new Set(repoContexts.map((c: any) => c.repoId || c.repo_id)),
     [repoContexts]
   );
+
+  // Fetch crawled application profiles for the active project. The freshest crawl
+  // (by crawled_at) is flagged `isLatest` so the picker can mark it.
+  useEffect(() => {
+    setSelectedProfileId('');
+    if (!activeProject?.id) { setAppProfiles([]); return; }
+    (async () => {
+      setLoadingProfiles(true);
+      try {
+        const headers: Record<string, string> = { 'x-project-id': String(activeProject.id) };
+        const res = await fetch('/api/intelligence/profiles?limit=50', { headers });
+        if (res.ok) {
+          const json = await res.json();
+          const rows: any[] = json?.data || json?.profiles || [];
+          const mapped = rows.map(mapProfile);
+          // Sort newest-first and flag the latest crawl.
+          mapped.sort((a, b) => new Date(b.crawledAt || 0).getTime() - new Date(a.crawledAt || 0).getTime());
+          if (mapped[0]) mapped[0].isLatest = true;
+          setAppProfiles(mapped);
+        } else {
+          setAppProfiles([]);
+        }
+      } catch {
+        setAppProfiles([]);
+      }
+      setLoadingProfiles(false);
+    })();
+  }, [activeProject?.id]);
 
   // RTM: fetch requirements for the link selector (project-scoped)
   useEffect(() => {
@@ -572,6 +754,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           useRepoIntelligence: useRepoIntelligence && selectedRepoId ? true : undefined,
           repoId: useRepoIntelligence && selectedRepoId ? parseInt(selectedRepoId, 10) : undefined,
           includeCoverageGaps,
+          // App Profile grounding: only send useAppProfile:false when explicitly off
+          // (keeps backend default behaviour). Pin a specific crawl when one is chosen.
+          useAppProfile: useAppProfile ? undefined : false,
+          appProfileId: useAppProfile && selectedProfileId ? selectedProfileId : undefined,
           requirementId: selectedRequirementId || undefined,
           force: force || undefined,
         }),
@@ -650,13 +836,46 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 
   // Number of intelligence sources currently contributing context.
   const activeIntelCount =
+    (useAppProfile && appProfiles.length > 0 ? 1 : 0) +
     (selectedKnowledgeIds.length > 0 ? 1 : 0) +
     (useRepoIntelligence && selectedRepoId ? 1 : 0) +
     (includeCoverageGaps ? 1 : 0);
 
+  // Status label for the App Profile card header.
+  const appProfileStatus = (() => {
+    if (!useAppProfile || appProfiles.length === 0) return undefined;
+    const latest = appProfiles.find(p => p.isLatest) || appProfiles[0];
+    const effective = selectedProfileId ? appProfiles.find(p => p.id === selectedProfileId) || latest : latest;
+    if (!effective) return undefined;
+    return selectedProfileId ? relativeTime(effective.crawledAt) : `latest · ${relativeTime(effective.crawledAt)}`;
+  })();
+
   // Config-driven Intelligence Sources registry. Each entry renders a
   // consistent card; adding/removing a source is just editing this array.
+  // App Profile is first — it is the highest-priority source (real crawled DOM).
   const intelligenceSources: Array<{ id: string; render: () => React.ReactNode }> = [
+    {
+      id: 'app-profile',
+      render: () => (
+        <IntelligenceSourceCard
+          accent="sky"
+          icon={Globe}
+          title="App Profile"
+          badge="Recommended"
+          description="Ground every step in your real app — uses live-crawled pages, forms, fields, and verified locators instead of AI guesses."
+          enabled={useAppProfile}
+          onToggle={() => setUseAppProfile(v => !v)}
+          statusLabel={appProfileStatus}
+        >
+          <AppProfileSelector
+            profiles={appProfiles}
+            loading={loadingProfiles}
+            selectedId={selectedProfileId}
+            onSelect={setSelectedProfileId}
+          />
+        </IntelligenceSourceCard>
+      ),
+    },
     {
       id: 'app-knowledge',
       render: () => (
@@ -753,6 +972,11 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           <span className="flex items-center gap-1.5"><Target className="w-3.5 h-3.5 text-blue-400" /> Creating scenarios</span>
           <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-emerald-400" /> Finding gaps</span>
         </div>
+        {useAppProfile && appProfiles.length > 0 && (
+          <p className="text-xs text-sky-400 mt-3 flex items-center justify-center gap-1">
+            <Globe className="w-3 h-3" /> Grounding steps in your real app profile
+          </p>
+        )}
         {selectedKnowledgeIds.length > 0 && (
           <p className="text-xs text-violet-400 mt-3 flex items-center justify-center gap-1">
             <BookOpen className="w-3 h-3" /> Using {selectedKnowledgeIds.length} knowledge item{selectedKnowledgeIds.length !== 1 ? 's' : ''} for context
