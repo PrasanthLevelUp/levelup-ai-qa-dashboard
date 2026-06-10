@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { backendGet, backendPost } from '@/lib/backend-api';
+import { backendGet, backendPostRaw } from '@/lib/backend-api';
 
 function extractProjectHeaders(req: Request): Record<string, string> {
   const projectId = req.headers.get('x-project-id');
@@ -24,8 +24,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const data = await backendPost('/api/intelligence/profiles', body, extractProjectHeaders(req));
-    return NextResponse.json(data);
+    // Use the raw variant so the backend's HTTP status (e.g. 409 Conflict for a duplicate
+    // profile) and structured error payload are forwarded to the client unchanged, instead
+    // of being collapsed into an opaque 500.
+    const { status, data } = await backendPostRaw(
+      '/api/intelligence/profiles',
+      body,
+      extractProjectHeaders(req),
+    );
+    return NextResponse.json(data, { status });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

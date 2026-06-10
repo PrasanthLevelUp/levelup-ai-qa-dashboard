@@ -247,6 +247,16 @@ export function ProfileEditDialog({
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.success === false) {
+        // The backend returns a 409 with code DUPLICATE_PROFILE when a profile for this
+        // URL already exists. Show the actionable message and keep the dialog open so the
+        // user can adjust the URL or cancel and edit the existing profile instead.
+        if (res.status === 409 || data.code === 'DUPLICATE_PROFILE') {
+          toast.error(
+            data.error ||
+              'An application profile for this URL already exists. Edit or delete the existing profile instead.'
+          );
+          return;
+        }
         toast.error(data.error || `Failed to save profile (${res.status})`);
         return;
       }
