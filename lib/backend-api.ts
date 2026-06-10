@@ -48,6 +48,35 @@ export async function backendPost(path: string, body: any, extraHeaders?: Record
   return res.json();
 }
 
+/**
+ * POST that preserves the backend's HTTP status and parsed body instead of throwing
+ * on non-2xx responses. Use this when the caller needs to forward a meaningful status
+ * code (e.g. 409 Conflict for a duplicate resource) and structured error payload to the
+ * client, rather than collapsing everything into a generic 500.
+ */
+export async function backendPostRaw(
+  path: string,
+  body: any,
+  extraHeaders?: Record<string, string>,
+): Promise<{ status: number; ok: boolean; data: any }> {
+  const url = `${BACKEND_URL}${path}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: buildHeaders(extraHeaders),
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+
+  const text = await res.text().catch(() => '');
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { success: false, error: text || `Backend ${res.status}` };
+  }
+  return { status: res.status, ok: res.ok, data };
+}
+
 export async function backendPut(path: string, body: any, extraHeaders?: Record<string, string>): Promise<any> {
   const url = `${BACKEND_URL}${path}`;
   const res = await fetch(url, {
