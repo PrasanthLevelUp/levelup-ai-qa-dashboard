@@ -29,6 +29,7 @@ import {
   Pencil,
   KeyRound,
   Network,
+  Sparkles,
 } from 'lucide-react';
 import { ProfileEditDialog, type EditableProfile } from './profile-edit-dialog';
 import { ProfileAuthDialog, type AuthDialogProfile } from './profile-auth-dialog';
@@ -70,6 +71,13 @@ interface ApplicationProfile {
   form_fields?: any[] | null;
   screenshots?: any[] | null;
   tags?: string[] | null;
+  /**
+   * How the profile was created:
+   *  - 'manual' → explicitly created by you via the Profiles UI
+   *  - 'auto'   → created automatically by a background flow (opt-in URL script generation)
+   * Used to render an "Auto" badge so it's clear which profiles you didn't create by hand.
+   */
+  source?: 'manual' | 'auto' | string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -283,17 +291,17 @@ export function ProfilesClient() {
           );
         } else if (d.hasProfile && d.status === 'expired') {
           setCrawlMessage(
-            `⚠️ A profile exists but has expired. The next script generation for this URL will automatically re-crawl and refresh the cache.`,
+            `⚠️ A profile exists but has expired. The next script generation for this URL will refresh this existing profile's cached data automatically.`,
           );
         } else {
           setCrawlMessage(
-            `ℹ️ No cached profile for this URL yet. When you generate a test script for this URL, the system will crawl it and create a profile automatically. Future generations will use the cached data for 30× faster performance.`,
+            `ℹ️ No profile exists for this URL yet. Generating a script will NOT create one automatically — use "Create Profile" above to add it explicitly. Once created, future generations reuse its cached data for 30× faster performance.`,
           );
         }
         setCrawlStatus('done');
       } else {
         setCrawlMessage(
-          `ℹ️ No cached profile for this URL. Generate a test script for this URL to create one automatically.`,
+          `ℹ️ No profile exists for this URL. Use "Create Profile" above to add one explicitly — script generation will not create profiles on its own.`,
         );
         setCrawlStatus('done');
       }
@@ -643,6 +651,15 @@ export function ProfilesClient() {
                           <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded border border-amber-500/20">
                             <Shield size={8} />
                             Auth
+                          </span>
+                        )}
+                        {profile.source === 'auto' && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-sky-500/10 text-sky-400 rounded border border-sky-500/20"
+                            title="Created automatically by a background flow (e.g. URL script generation), not added manually."
+                          >
+                            <Sparkles size={8} />
+                            Auto
                           </span>
                         )}
                       </div>
