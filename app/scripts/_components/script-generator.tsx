@@ -690,6 +690,20 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     }
   }, [prefillScenarios, onPrefillConsumed]);
 
+  // Auto-scroll target: the results panel rendered after generation completes.
+  const resultsRef = useRef<HTMLDivElement>(null);
+  // When a generation result (success OR error) lands, smoothly scroll it into
+  // view so the user immediately sees the outcome without manual scrolling.
+  useEffect(() => {
+    if (!generating && result) {
+      // Wait one frame for the results DOM to mount before scrolling.
+      const id = window.setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+      return () => window.clearTimeout(id);
+    }
+  }, [result, generating]);
+
   // Fetch repos for the dropdown (project-scoped)
   const fetchingReposRef = useRef(false);
   const fetchRepos = useCallback(async () => {
@@ -1517,7 +1531,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
 
       {/* Generation Result */}
       {result && (
-        <div className={`bg-[#1a1f2e] border rounded-xl overflow-hidden ${
+        <div ref={resultsRef} className={`scroll-mt-4 bg-[#1a1f2e] border rounded-xl overflow-hidden ${
           result.success ? 'border-emerald-500/20' : 'border-red-500/20'
         }`}>
           {/* Result Header */}
