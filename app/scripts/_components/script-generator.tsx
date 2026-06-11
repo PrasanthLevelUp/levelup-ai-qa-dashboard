@@ -33,6 +33,7 @@ import {
   Target,
   Link2,
   ArrowRight,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
@@ -881,6 +882,17 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     );
   };
 
+  // ── Requirement-based mode detection ──────────────────────────────────────
+  // When generation is grounded in real test cases (a requirement chosen in the
+  // picker, a loaded test case, or a deep link from Test Case Lab), the actual
+  // test cases — not free-form options — drive what is generated. In that mode
+  // we hide "App Knowledge" and the "Advanced Options" (test types / negative
+  // cases) so the UI stays focused on the App Profile + Repo Intelligence flow
+  // that produces real, executable scripts. (Script Gen quality initiative.)
+  const isRequirementBased = Boolean(
+    selectedReqId || testCaseInfo?.id || testCaseId || requirementId,
+  );
+
   const handleGenerate = async () => {
     if (!scenario.trim()) return;
 
@@ -1384,28 +1396,35 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 )}
               </IntelSourceCard>
 
-              {/* App Knowledge */}
-              <IntelSourceCard
-                accent="amber"
-                icon={BookOpen}
-                title="App Knowledge"
-                description="Teach the AI your domain — business rules, workflows & known bug patterns improve generation accuracy."
-                enabled={useAppKnowledge}
-                onToggle={() => setUseAppKnowledge((v) => !v)}
-                disabled={generating}
-                statusLabel={selectedKnowledgeIds.length > 0 ? `${selectedKnowledgeIds.length} item${selectedKnowledgeIds.length !== 1 ? 's' : ''} selected` : undefined}
-              >
-                <KnowledgeSelector
-                  selectedIds={selectedKnowledgeIds}
-                  onChange={setSelectedKnowledgeIds}
-                  contextTitle={scenario}
-                  contextDescription={targetUrl || projectContext.appUrl}
-                />
-              </IntelSourceCard>
+              {/* App Knowledge — hidden in requirement-based mode, where the
+                  real test cases already define the domain behavior to cover. */}
+              {!isRequirementBased && (
+                <IntelSourceCard
+                  accent="amber"
+                  icon={BookOpen}
+                  title="App Knowledge"
+                  description="Teach the AI your domain — business rules, workflows & known bug patterns improve generation accuracy."
+                  enabled={useAppKnowledge}
+                  onToggle={() => setUseAppKnowledge((v) => !v)}
+                  disabled={generating}
+                  statusLabel={selectedKnowledgeIds.length > 0 ? `${selectedKnowledgeIds.length} item${selectedKnowledgeIds.length !== 1 ? 's' : ''} selected` : undefined}
+                >
+                  <KnowledgeSelector
+                    selectedIds={selectedKnowledgeIds}
+                    onChange={setSelectedKnowledgeIds}
+                    contextTitle={scenario}
+                    contextDescription={targetUrl || projectContext.appUrl}
+                  />
+                </IntelSourceCard>
+              )}
             </div>
           </div>
 
-          {/* Advanced Options — test types & negative cases only */}
+          {/* Advanced Options — test types & negative cases. Hidden in
+              requirement-based mode: the selected test cases already define
+              exactly what to generate (1:1 coverage), so free-form test-type
+              toggles don't apply. */}
+          {!isRequirementBased && (
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
               <SlidersHorizontal size={12} />
@@ -1446,6 +1465,21 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
               </label>
             </div>
           </div>
+          )}
+
+          {/* Requirement-based mode hint — clarifies that the chosen test cases
+              drive generation, replacing the hidden free-form options. */}
+          {isRequirementBased && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-violet-500/5 border border-violet-500/20 text-[11px] text-slate-400">
+              <ListChecks size={13} className="text-violet-300 mt-0.5 shrink-0" />
+              <span>
+                Generating directly from your selected test cases for{' '}
+                <span className="text-violet-300 font-medium">1:1 coverage</span> — each test case
+                becomes one runnable test, grounded in the App Profile&apos;s real URLs, credentials &amp;
+                locators. Test-type options aren&apos;t needed here.
+              </span>
+            </div>
+          )}
 
           {/* Generate Button */}
           <button
@@ -1810,6 +1844,60 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   color="text-amber-400"
                 />
               </div>
+
+              {/* ── Generation Quality — at-a-glance proof scripts are grounded
+                  in real data (real locators, real assertions) rather than AI
+                  guesses. Surfaces the exact signals the Script Gen review
+                  flagged: real locators, assertions, and grounding source. ── */}
+              {(() => {
+                const lr = result.data.locatorReport;
+                const totalLoc = lr?.totalLocators ?? 0;
+                const validated = lr?.validatedCount ?? 0;
+                const realLocPct = totalLoc > 0 ? Math.round((validated / totalLoc) * 100) : null;
+                const assertions = result.data.stats.totalAssertions ?? 0;
+                const grounded = Boolean(result.data.intelligence?.crawlStrategy);
+                const qualityTone = (pct: number | null) =>
+                  pct == null ? 'text-slate-300'
+                    : pct >= 80 ? 'text-emerald-400'
+                      : pct >= 50 ? 'text-amber-400' : 'text-red-400';
+                return (
+                  <div className="rounded-lg bg-gradient-to-br from-emerald-500/8 to-violet-500/5 border border-emerald-500/20 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ShieldCheck size={14} className="text-emerald-400" />
+                      <span className="text-xs font-semibold text-white">Generation Quality</span>
+                      <span className="text-[10px] text-slate-500">— grounded in your real application</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="bg-[#0c1222] rounded-lg p-3">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Real Locators</p>
+                        <p className={`text-lg font-bold ${qualityTone(realLocPct)}`}>
+                          {realLocPct != null ? `${realLocPct}%` : '—'}
+                        </p>
+                        <p className="text-[10px] text-slate-500">{validated}/{totalLoc} validated</p>
+                      </div>
+                      <div className="bg-[#0c1222] rounded-lg p-3">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Assertions</p>
+                        <p className={`text-lg font-bold ${assertions > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{assertions}</p>
+                        <p className="text-[10px] text-slate-500">expect() checks</p>
+                      </div>
+                      <div className="bg-[#0c1222] rounded-lg p-3">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Tests</p>
+                        <p className="text-lg font-bold text-violet-300">{result.data.stats.totalTests}</p>
+                        <p className="text-[10px] text-slate-500">in {result.data.filesGenerated} file{result.data.filesGenerated !== 1 ? 's' : ''}</p>
+                      </div>
+                      <div className="bg-[#0c1222] rounded-lg p-3">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Grounding</p>
+                        <p className={`text-sm font-bold ${grounded ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          {grounded ? 'App Profile' : 'AI only'}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {grounded ? 'real URLs & DOM' : 'no profile used'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── Sprint 4: RTM auto-update — coverage delta + traceability link ── */}
               {result.data.rtmUpdate && (
