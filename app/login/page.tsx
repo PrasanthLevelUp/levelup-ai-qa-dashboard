@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Lock, User, AlertCircle, Loader2, Eye, EyeOff, Shield } from 'lucide-react';
+import ProductCarousel from './_components/product-carousel';
+import ContactSection from './_components/contact-section';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -47,18 +49,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
-      {/* Background gradient effects */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl" />
+    <div className="min-h-screen bg-[#0f172a] lg:grid lg:grid-cols-[60%_40%]">
+      {/* ─── Left panel: product carousel (hidden on small screens) ─── */}
+      <div className="hidden lg:block relative bg-gradient-to-br from-[#111a2e] via-[#0f172a] to-[#0b1220] border-r border-[#1e293b]">
+        <ProductCarousel />
       </div>
 
-      <div className="relative w-full max-w-md">
+      {/* ─── Right panel: existing login form + contact ─── */}
+      <div className="relative flex items-center justify-center p-4 sm:p-8 min-h-screen">
+        {/* Background gradient effects */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl" />
+        </div>
+
+        <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="relative w-32 h-32 mx-auto mb-4">
-            <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" sizes="128px" priority />
+          <div className="relative w-24 h-24 sm:w-28 sm:h-28 mx-auto mb-4">
+            <Image src="/logo-192.png" alt="LevelUp AI QA" fill className="object-contain" sizes="112px" priority />
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">LevelUp AI</h1>
           <p className="text-sm text-slate-500 mt-1">QA Reliability Platform</p>
@@ -148,12 +157,16 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          {/* Contact / request access */}
+          <ContactSection />
         </div>
 
         {/* Security badge */}
         <div className="flex items-center justify-center gap-2 mt-6 text-slate-500">
           <Shield size={14} />
           <span className="text-xs">Secured with enterprise-grade encryption</span>
+        </div>
         </div>
       </div>
     </div>
