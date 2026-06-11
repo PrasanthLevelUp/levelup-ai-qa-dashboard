@@ -144,18 +144,54 @@ const HL_KEYWORDS = [
   'def', 'self', 'None', 'True', 'False', 'and', 'or', 'not', 'in', 'is', 'with', 'as',
   'public', 'private', 'protected', 'static', 'void', 'package', 'true', 'false', 'null', 'undefined',
 ];
+const HL_KEYWORD_SET = new Set(HL_KEYWORDS);
+/**
+ * Single-pass tokeniser. A combined, ordered alternation is matched left→right
+ * and each matched token is wrapped exactly once. This is critical: the previous
+ * implementation chained multiple `.replace()` passes over the same string, so
+ * later passes (numbers, the `class` keyword) re-matched text *inside* the
+ * `<span class="...">` markup injected by earlier passes — corrupting the output
+ * into things like `class=class="text-emerald-class="text-amber-300">300">`.
+ * By consuming the input in a single regex pass, injected markup is never
+ * re-examined, so no nesting/duplication can occur.
+ */
+const HL_TOKEN_RE = new RegExp(
+  [
+    '(\\/\\/[^\\n]*|#[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/)', // 1: comments
+    '("(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'|`(?:\\\\.|[^`\\\\])*`)', // 2: strings
+    '\\b(\\d+(?:\\.\\d+)?)\\b', // 3: numbers
+    `\\b(${HL_KEYWORDS.join('|')})\\b`, // 4: keywords
+  ].join('|'),
+  'g',
+);
 function highlightCode(code: string): string {
-  const escaped = escapeHtml(code ?? '');
-  // Order matters: comments → strings → numbers → keywords (over plain text only).
-  return escaped
-    // line comments (// ... and # ...) and block comments
-    .replace(/(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)/g, '<span class="text-slate-500 italic">$1</span>')
-    // strings: single, double, backtick
-    .replace(/(&quot;[^&]*?&quot;|&#39;[^&]*?&#39;|`[^`]*?`|"[^"]*?"|'[^']*?')/g, '<span class="text-emerald-300">$1</span>')
-    // numbers
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="text-amber-300">$1</span>')
-    // keywords
-    .replace(new RegExp(`\\b(${HL_KEYWORDS.join('|')})\\b`, 'g'), '<span class="text-violet-300 font-medium">$1</span>');
+  const src = code ?? '';
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  HL_TOKEN_RE.lastIndex = 0;
+  while ((m = HL_TOKEN_RE.exec(src)) !== null) {
+    // Append (escaped) plain text since the previous token.
+    out += escapeHtml(src.slice(last, m.index));
+    const [full, comment, str, num, kw] = m;
+    if (comment !== undefined) {
+      out += `<span class="text-slate-500 italic">${escapeHtml(comment)}</span>`;
+    } else if (str !== undefined) {
+      out += `<span class="text-emerald-300">${escapeHtml(str)}</span>`;
+    } else if (num !== undefined) {
+      out += `<span class="text-amber-300">${escapeHtml(num)}</span>`;
+    } else if (kw !== undefined && HL_KEYWORD_SET.has(kw)) {
+      out += `<span class="text-violet-300 font-medium">${escapeHtml(kw)}</span>`;
+    } else {
+      out += escapeHtml(full);
+    }
+    last = m.index + full.length;
+    // Guard against zero-length matches (shouldn't happen, but stay safe).
+    if (full.length === 0) HL_TOKEN_RE.lastIndex++;
+  }
+  // Append remaining trailing plain text.
+  out += escapeHtml(src.slice(last));
+  return out;
 }
 
 /** Sprint 4 — derive a language label from a file path/extension. */
