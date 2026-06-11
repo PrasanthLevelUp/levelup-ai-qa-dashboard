@@ -27,7 +27,19 @@ export async function POST(req: NextRequest) {
     let enrichedInstructions = scenario;
     let credentials: { username?: string; password?: string } | undefined;
 
-    if (projectContextId) {
+    // ── Prevent cross-project contamination ──────────────────────────────
+    // Requirement-based and test-case-based generations run the backend's
+    // DETERMINISTIC path, which derives URLs, selectors and credentials purely
+    // from each test case's own data. Injecting an unrelated project context
+    // (e.g. OrangeHRM's `Admin`/`admin123`) into those flows previously leaked
+    // wrong credentials and instructions into SauceDemo scripts. So only enrich
+    // from project context for plain-English / URL generations.
+    const isDeterministicFlow = !!requirementId || testCaseId != null;
+    if (projectContextId && isDeterministicFlow) {
+      console.log('[ScriptGen] Skipping project-context enrichment for deterministic flow (requirement/test-case) to avoid contamination');
+    }
+
+    if (projectContextId && !isDeterministicFlow) {
       try {
         const ctxRes = await backendGet(`/api/dashboard/project-context/${projectContextId}`);
         const ctx = ctxRes?.data;
