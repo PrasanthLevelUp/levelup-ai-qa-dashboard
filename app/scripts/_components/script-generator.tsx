@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
 import { useWorkspaceHeaders, useProjectEnvironments } from '@/lib/workspace-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
@@ -245,6 +245,113 @@ function buildScenarioFromRequirement(req: RequirementInfo): string {
 /*  toggle AND its configuration live together (no duplicate "select in two    */
 /*  places"). The configurator (children) is revealed inline when enabled.     */
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/*  Application Profile — detection & matching                                 */
+/*  Mirrors the Test Case Lab pattern (test-coverage-client.tsx): we fetch the */
+/*  project's crawled profiles via the LIST endpoint and match one to the      */
+/*  target URL, rather than relying on the status endpoint (whose response     */
+/*  shape differs from what the old code parsed — the source of the            */
+/*  "No profile yet" bug).                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Normalised shape used by the UI (mapped from the backend ApplicationProfile row). */
+interface AppProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  crawledAt: string | null;
+  elementCount: number;
+  pageCount: number;
+  formCount: number;
+  status: string;
+  source?: string;
+  isLatest: boolean;
+}
+
+/** Map a raw backend profile row → the normalised UI shape. */
+function mapProfile(raw: any): AppProfile {
+  return {
+    id: String(raw.id),
+    name: raw.name || raw.base_url || 'Crawled profile',
+    baseUrl: raw.base_url || '',
+    crawledAt: raw.crawled_at || raw.updated_at || null,
+    elementCount: Number(raw.total_elements ?? 0),
+    pageCount: Number(raw.page_count ?? 0),
+    formCount: Number(raw.total_forms ?? 0),
+    status: raw.status || 'fresh',
+    source: raw.source,
+    isLatest: false,
+  };
+}
+
+/** Human-friendly "2h ago" / "3d ago" relative time. */
+function relativeTime(iso: string | null): string {
+  if (!iso) return 'unknown time';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'unknown time';
+  const diff = Date.now() - then;
+  if (diff < 0) return 'just now';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+/** Is a profile considered outdated? (expired status, or crawled > 30 days ago) */
+function isProfileOutdated(p: AppProfile): boolean {
+  if (p.status === 'expired') return true;
+  if (!p.crawledAt) return false;
+  const ageDays = (Date.now() - new Date(p.crawledAt).getTime()) / 86400000;
+  return ageDays > 30;
+}
+
+/**
+ * Normalise a URL for matching — mirrors the backend `normalizeUrl`
+ * (profile-service.ts): `${protocol}//${hostname}` + pathname with trailing
+ * slashes stripped (or '/'), lowercased, default ports removed. Used to match a
+ * crawled profile to the target URL exactly the way the backend resolves it.
+ */
+function normalizeUrlForMatch(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let value = raw.trim();
+  if (!value) return null;
+  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+  try {
+    const u = new URL(value);
+    const protocol = u.protocol.toLowerCase();
+    const hostname = u.hostname.toLowerCase();
+    // Drop default ports (80 for http, 443 for https).
+    const isDefaultPort =
+      !u.port || (protocol === 'http:' && u.port === '80') || (protocol === 'https:' && u.port === '443');
+    const portPart = isDefaultPort ? '' : `:${u.port}`;
+    let path = u.pathname || '/';
+    path = path.replace(/\/+$/, '');
+    if (!path) path = '/';
+    return `${protocol}//${hostname}${portPart}${path}`.toLowerCase();
+  } catch {
+    return value.replace(/\/+$/, '').toLowerCase() || null;
+  }
+}
+
+/** Same-origin (protocol + host) comparison for fallback matching/display. */
+function sameOrigin(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    const ua = new URL(a.startsWith('http') ? a : `https://${a}`);
+    const ub = new URL(b.startsWith('http') ? b : `https://${b}`);
+    return ua.protocol.toLowerCase() === ub.protocol.toLowerCase() && ua.host.toLowerCase() === ub.host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 const INTEL_ACCENTS = {
   emerald: { border: 'border-emerald-500/30', box: 'bg-emerald-500/10', icon: 'text-emerald-400', toggle: 'bg-emerald-500 border-emerald-500' },
   violet: { border: 'border-violet-500/30', box: 'bg-violet-500/10', icon: 'text-violet-400', toggle: 'bg-violet-500 border-violet-500' },
@@ -346,14 +453,13 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   // App Knowledge state
   const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<number[]>([]);
 
-  // Application Intelligence state
-  const [profileStatus, setProfileStatus] = useState<{
-    exists: boolean;
-    status?: string;
-    lastCrawledAt?: string;
-    pageCount?: number;
-  } | null>(null);
+  // Application Intelligence state — fetched from the LIST endpoint (same as the
+  // Test Case Lab) and matched to the target URL. The old code read the status
+  // endpoint with the wrong response shape, so a profile was never detected.
+  const [appProfiles, setAppProfiles] = useState<AppProfile[]>([]);
   const [profileChecking, setProfileChecking] = useState(false);
+  // When multiple same-origin profiles exist, the user can pick one ('' = auto).
+  const [selectedProfileId, setSelectedProfileId] = useState('');
 
   // ── Sprint 4: Requirement → Test Case context (deep link from Test Case Lab) ──
   const [requirementInfo, setRequirementInfo] = useState<RequirementInfo | null>(null);
@@ -365,6 +471,43 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [useRepoIntelligence, setUseRepoIntelligence] = useState(true);
   const [useAppProfile, setUseAppProfile] = useState(true);
   const [useAppKnowledge, setUseAppKnowledge] = useState(true);
+
+  // ── Application Profile matching ──
+  // The URL we generate against (explicit override, else environment/project URL).
+  const resolvedTargetUrl = targetUrl || projectContext.appUrl || '';
+
+  // Profiles whose origin matches the target URL — candidates for this run. The
+  // backend resolves the profile by URL (decideCrawlStrategy), so we surface the
+  // same set here. Sorted newest-first; the freshest is flagged isLatest.
+  const originMatches = useMemo(() => {
+    const normTarget = normalizeUrlForMatch(resolvedTargetUrl);
+    if (!normTarget) return [] as AppProfile[];
+    const matches = appProfiles.filter((p) => sameOrigin(p.baseUrl, resolvedTargetUrl));
+    return matches;
+  }, [appProfiles, resolvedTargetUrl]);
+
+  // The profile that will actually be used: exact normalized-URL match preferred
+  // (this is what the backend would reuse), else the user's explicit pick, else
+  // the freshest same-origin profile.
+  const matchedProfile = useMemo<AppProfile | null>(() => {
+    if (originMatches.length === 0) return null;
+    const normTarget = normalizeUrlForMatch(resolvedTargetUrl);
+    if (selectedProfileId) {
+      const picked = originMatches.find((p) => p.id === selectedProfileId);
+      if (picked) return picked;
+    }
+    // Prefer an exact normalized-URL (origin + path) match — what the backend uses.
+    const exact = originMatches.find((p) => normalizeUrlForMatch(p.baseUrl) === normTarget);
+    if (exact) return exact;
+    // Otherwise fall back to the freshest same-origin profile.
+    return originMatches.find((p) => p.isLatest) || originMatches[0];
+  }, [originMatches, resolvedTargetUrl, selectedProfileId]);
+
+  // Whether the matched profile is an exact URL match (vs. same-origin fallback).
+  const matchedIsExact = useMemo(() => {
+    if (!matchedProfile) return false;
+    return normalizeUrlForMatch(matchedProfile.baseUrl) === normalizeUrlForMatch(resolvedTargetUrl);
+  }, [matchedProfile, resolvedTargetUrl]);
 
   // ── Sprint 4: Requirement picker (drives validation + test-case loading) ──
   const [requirements, setRequirements] = useState<RequirementOption[]>([]);
@@ -593,35 +736,39 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     })();
   }, []);
 
-  // Check application profile status when URL changes (debounced)
+  // Fetch the project's crawled application profiles (same LIST endpoint as the
+  // Test Case Lab) and keep them in state. We match one to the target URL with a
+  // useMemo (matchedProfile). This replaces the old status-endpoint fetch whose
+  // response shape was mis-parsed (`data.exists` / `data.profile` never existed),
+  // which is why an existing profile always showed as "No profile yet".
   useEffect(() => {
-    const resolvedUrl = targetUrl || projectContext.appUrl;
-    if (!resolvedUrl) {
-      setProfileStatus(null);
-      return;
-    }
-    setProfileChecking(true);
-    const timer = setTimeout(async () => {
+    setSelectedProfileId('');
+    if (!activeProject?.id) { setAppProfiles([]); return; }
+    let cancelled = false;
+    (async () => {
+      setProfileChecking(true);
       try {
-        const res = await fetch(`/api/intelligence/profiles/status?url=${encodeURIComponent(resolvedUrl)}`, {
-          headers: { ...projectHeaders },
-        });
-        if (!res.ok) { setProfileStatus(null); setProfileChecking(false); return; }
-        const data = await res.json();
-        setProfileStatus(data.exists ? {
-          exists: true,
-          status: data.profile?.status,
-          lastCrawledAt: data.profile?.last_crawled_at,
-          pageCount: data.profile?.page_count,
-        } : { exists: false });
+        const headers: Record<string, string> = { 'x-project-id': String(activeProject.id) };
+        const res = await fetch('/api/intelligence/profiles?limit=50', { headers });
+        if (res.ok) {
+          const json = await res.json();
+          const rows: any[] = json?.data || json?.profiles || [];
+          const mapped = rows.map(mapProfile);
+          // Sort newest-first and flag the freshest crawl.
+          mapped.sort((a, b) => new Date(b.crawledAt || 0).getTime() - new Date(a.crawledAt || 0).getTime());
+          if (mapped[0]) mapped[0].isLatest = true;
+          if (!cancelled) setAppProfiles(mapped);
+        } else if (!cancelled) {
+          setAppProfiles([]);
+        }
       } catch {
-        setProfileStatus(null);
+        if (!cancelled) setAppProfiles([]);
       } finally {
-        setProfileChecking(false);
+        if (!cancelled) setProfileChecking(false);
       }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [targetUrl, projectContext.appUrl]);
+    })();
+    return () => { cancelled = true; };
+  }, [activeProject?.id]);
 
   // Fetch GitHub repos when PR modal opens
   const fetchGhRepos = useCallback(async () => {
@@ -1073,34 +1220,32 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             </p>
 
             {/* Application Intelligence Profile Badge */}
-            {(profileStatus || profileChecking) && (
+            {resolvedTargetUrl && (
               <div className="mt-1.5 flex items-center gap-2">
                 {profileChecking ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-500/10 border border-slate-500/20 text-[10px] text-slate-400">
                     <Loader2 size={10} className="animate-spin" /> Checking profile…
                   </span>
-                ) : profileStatus?.exists && profileStatus.status === 'ready' ? (
+                ) : matchedProfile && !isProfileOutdated(matchedProfile) ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400">
                     <Database size={10} />
-                    Profile cached — {profileStatus.pageCount || 0} pages
-                    {profileStatus.lastCrawledAt && (
-                      <span className="text-emerald-500/60 ml-1">
-                        · crawled {new Date(profileStatus.lastCrawledAt).toLocaleDateString()}
-                      </span>
+                    Profile found — {matchedProfile.pageCount || 0} pages · {matchedProfile.elementCount || 0} elements
+                    {matchedProfile.crawledAt && (
+                      <span className="text-emerald-500/60 ml-1">· crawled {relativeTime(matchedProfile.crawledAt)}</span>
                     )}
-                    <span title="Fast path: ~1s generation"><Zap size={9} className="ml-0.5 inline" /></span>
+                    <span title="Fast path: reuses the cached profile"><Zap size={9} className="ml-0.5 inline" /></span>
                   </span>
-                ) : profileStatus?.exists && profileStatus.status === 'expired' ? (
+                ) : matchedProfile && isProfileOutdated(matchedProfile) ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400">
                     <Database size={10} />
-                    Profile expired — will re-crawl
+                    Profile outdated ({relativeTime(matchedProfile.crawledAt)}) — will re-crawl
                   </span>
-                ) : !profileStatus?.exists ? (
+                ) : (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-500/10 border border-slate-500/20 text-[10px] text-slate-500">
                     <Fingerprint size={10} />
-                    New app — will create profile on first generation
+                    No profile for this URL yet — crawled on first generation
                   </span>
-                ) : null}
+                )}
               </div>
             )}
           </div>
@@ -1125,25 +1270,72 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 onToggle={() => setUseAppProfile((v) => !v)}
                 disabled={generating}
                 statusLabel={
-                  profileStatus?.exists
-                    ? (profileStatus.status === 'ready' ? `cached · ${profileStatus.pageCount || 0} pages` : 'expired — will re-crawl')
+                  matchedProfile
+                    ? (isProfileOutdated(matchedProfile)
+                        ? 'outdated — will re-crawl'
+                        : `${matchedProfile.pageCount || 0} pages · ${matchedProfile.elementCount || 0} elements`)
                     : undefined
                 }
               >
-                <div className="text-[11px] text-slate-400">
-                  {profileChecking ? (
-                    <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Checking profile…</span>
-                  ) : profileStatus?.exists && profileStatus.status === 'ready' ? (
-                    <span className="inline-flex items-center gap-1.5 text-emerald-400">
-                      <Zap size={11} /> Cached profile will be reused for fast (~1s) generation{profileStatus.lastCrawledAt ? ` · crawled ${new Date(profileStatus.lastCrawledAt).toLocaleDateString()}` : ''}.
-                    </span>
-                  ) : profileStatus?.exists && profileStatus.status === 'expired' ? (
-                    <span className="inline-flex items-center gap-1.5 text-amber-400"><RefreshCw size={11} /> Cached profile expired — a fresh crawl runs automatically on generation.</span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 text-slate-500"><Fingerprint size={11} /> No profile yet — the app is crawled on demand during generation.</span>
+                <div className="space-y-2">
+                  {/* Matched-profile summary / status */}
+                  <div className="text-[11px] text-slate-400">
+                    {profileChecking ? (
+                      <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Loading application profiles…</span>
+                    ) : matchedProfile ? (
+                      <div className="rounded-lg bg-[#0c1222] border border-emerald-500/20 p-2.5 space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {isProfileOutdated(matchedProfile) ? (
+                            <span className="inline-flex items-center gap-1 text-amber-400 font-medium"><RefreshCw size={11} /> Profile outdated</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-emerald-400 font-medium"><CheckCircle2 size={11} /> Profile found{matchedIsExact ? '' : ' (same site)'}</span>
+                          )}
+                          {matchedProfile.isLatest && (
+                            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">latest</span>
+                          )}
+                          {matchedProfile.source && (
+                            <span className="text-[9px] bg-slate-500/20 text-slate-400 px-1.5 py-0.5 rounded">{matchedProfile.source}</span>
+                          )}
+                        </div>
+                        <div className="text-slate-500 truncate" title={matchedProfile.baseUrl}>{matchedProfile.baseUrl}</div>
+                        <div className="flex items-center gap-3 text-slate-400">
+                          <span>{matchedProfile.pageCount || 0} pages</span>
+                          <span>{matchedProfile.elementCount || 0} elements</span>
+                          <span>{matchedProfile.formCount || 0} forms</span>
+                        </div>
+                        <div className="text-slate-500">
+                          {matchedProfile.crawledAt ? `Crawled ${relativeTime(matchedProfile.crawledAt)}` : 'Crawl time unknown'}
+                          {isProfileOutdated(matchedProfile)
+                            ? ' · a fresh crawl runs automatically on generation.'
+                            : ' · this cached profile is reused for fast, grounded generation.'}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-slate-500"><Fingerprint size={11} /> No profile for this URL yet — the app is crawled on demand during generation.</span>
+                    )}
+                  </div>
+
+                  {/* Multiple same-origin profiles → let the user choose which to use. */}
+                  {originMatches.length > 1 && (
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-1">Multiple profiles found for this site — choose one:</label>
+                      <select
+                        value={selectedProfileId || (matchedProfile?.id ?? '')}
+                        onChange={(e) => setSelectedProfileId(e.target.value)}
+                        disabled={generating}
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-[#1a1f2e] border border-[#334155] text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none"
+                      >
+                        {originMatches.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.baseUrl} — {p.pageCount || 0} pages{p.isLatest ? ' (latest)' : ''}{p.crawledAt ? ` · ${relativeTime(p.crawledAt)}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
+
+                  <p className="text-[10px] text-slate-600">Turn this off to force a fresh crawl instead of reusing the cached profile.</p>
                 </div>
-                <p className="text-[10px] text-slate-600 mt-1.5">Turn this off to force a fresh crawl instead of reusing the cached profile.</p>
               </IntelSourceCard>
 
               {/* Repository Intelligence */}
