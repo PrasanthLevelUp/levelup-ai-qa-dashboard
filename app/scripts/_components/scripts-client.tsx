@@ -30,6 +30,7 @@ import {
   BookOpen,
   GitBranch,
   GitMerge,
+  Download,
 } from 'lucide-react';
 
 export interface ProjectContext {
@@ -181,13 +182,28 @@ export function ScriptsClient() {
             Before generating test scripts, tell us about your application. This context
             helps the AI create scripts that match your framework, selectors, and patterns.
           </p>
-          <button
-            onClick={() => setShowSetup(true)}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white font-medium transition-all shadow-lg shadow-violet-500/20"
-          >
-            <Plus size={18} />
-            Set Up Project
-          </button>
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button
+              onClick={() => setShowSetup(true)}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white font-medium transition-all shadow-lg shadow-violet-500/20"
+            >
+              <Plus size={18} />
+              Set Up Project
+            </button>
+            <a
+              href="/levelup-playwright-framework.zip"
+              download
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] font-medium transition-colors"
+              title="Download a ready-to-use Playwright + TypeScript starter framework (Page Object Model, helpers, fixtures, config & README) to base your project on."
+            >
+              <Download size={18} />
+              Download Framework
+            </a>
+          </div>
+          <p className="text-xs text-slate-500 text-center mt-4 max-w-md">
+            New to automation? Download the starter Playwright framework, push it to GitHub,
+            and connect it via Repo Intelligence so generated scripts match its patterns.
+          </p>
         </div>
       </div>
     );
@@ -244,9 +260,19 @@ export function ScriptsClient() {
             <ShieldCheck size={12} />
             Verify Intelligence
           </button>
+          <a
+            href="/levelup-playwright-framework.zip"
+            download
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-xs"
+            title="Download a ready-to-use Playwright + TypeScript starter framework (Page Object Model, helpers, fixtures, config & README). Push it to GitHub and connect it to Repo Intelligence so generated scripts match your patterns."
+          >
+            <Download size={12} />
+            Download Framework
+          </a>
           <button
             onClick={() => setShowSetup(true)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1e293b] border border-[#334155] text-slate-300 hover:text-white hover:bg-[#334155] transition-colors text-xs"
+            title="Set up a new project context (target app URL, framework, selectors) to generate scripts against. Switch between projects from the project selector when you have more than one."
           >
             <Plus size={12} />
             New Project
