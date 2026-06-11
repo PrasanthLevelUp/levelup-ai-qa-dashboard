@@ -24,10 +24,6 @@ import {
   Brain,
   BookOpen,
   X,
-  Shield,
-  Lock,
-  Eye,
-  EyeOff,
   Fingerprint,
   Database,
   RefreshCw,
@@ -37,6 +33,7 @@ import {
   Target,
   Link2,
   ArrowRight,
+  type LucideIcon,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
@@ -242,6 +239,66 @@ function buildScenarioFromRequirement(req: RequirementInfo): string {
   return lines.join('\n').trim();
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Intelligence Source card — one consistent, toggleable card per source.     */
+/*  Mirrors the Test Case Lab pattern: a single section where each source's    */
+/*  toggle AND its configuration live together (no duplicate "select in two    */
+/*  places"). The configurator (children) is revealed inline when enabled.     */
+/* -------------------------------------------------------------------------- */
+const INTEL_ACCENTS = {
+  emerald: { border: 'border-emerald-500/30', box: 'bg-emerald-500/10', icon: 'text-emerald-400', toggle: 'bg-emerald-500 border-emerald-500' },
+  violet: { border: 'border-violet-500/30', box: 'bg-violet-500/10', icon: 'text-violet-400', toggle: 'bg-violet-500 border-violet-500' },
+  amber: { border: 'border-amber-500/30', box: 'bg-amber-500/10', icon: 'text-amber-400', toggle: 'bg-amber-500 border-amber-500' },
+} as const;
+
+function IntelSourceCard({
+  accent, icon: Icon, title, description, badge, enabled, onToggle, statusLabel, disabled, children,
+}: {
+  accent: keyof typeof INTEL_ACCENTS;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  badge?: string;
+  enabled: boolean;
+  onToggle: () => void;
+  statusLabel?: string;
+  disabled?: boolean;
+  children?: React.ReactNode;
+}) {
+  const a = INTEL_ACCENTS[accent];
+  return (
+    <div className={`rounded-xl border transition-all ${enabled ? `bg-[#1a1f2e] ${a.border}` : 'bg-[#0c1222] border-[#1e293b]'} ${disabled ? 'opacity-60' : ''}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={disabled}
+        aria-pressed={enabled}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left disabled:cursor-not-allowed"
+      >
+        <span className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-all ${enabled ? a.toggle : 'border-slate-600 bg-slate-800'}`}>
+          {enabled && <CheckCircle2 size={13} className="text-white" />}
+        </span>
+        <span className={`w-8 h-8 rounded-lg ${a.box} flex items-center justify-center flex-shrink-0`}>
+          <Icon size={16} className={a.icon} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-slate-200">{title}</span>
+            {badge && <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">{badge}</span>}
+            {enabled && statusLabel && (
+              <span className="text-[10px] inline-flex items-center gap-1 text-emerald-400">
+                <CheckCircle2 size={11} /> {statusLabel}
+              </span>
+            )}
+          </span>
+          <span className="block text-xs text-slate-500 mt-0.5 leading-snug">{description}</span>
+        </span>
+      </button>
+      {enabled && children && <div className="px-4 pb-3 pt-1">{children}</div>}
+    </div>
+  );
+}
+
 export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed, requirementId, testCaseId }: ScriptGeneratorProps) {
   const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
@@ -289,15 +346,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   // App Knowledge state
   const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<number[]>([]);
 
-  // Authentication state (for crawling behind login walls)
-  const [authEnabled, setAuthEnabled] = useState(false);
-  const [authLoginUrl, setAuthLoginUrl] = useState('');
-  const [authUsername, setAuthUsername] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [showAuthPassword, setShowAuthPassword] = useState(false);
-
   // Application Intelligence state
-  const [forceFreshCrawl, setForceFreshCrawl] = useState(false);
   const [profileStatus, setProfileStatus] = useState<{
     exists: boolean;
     status?: string;
@@ -712,9 +761,10 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           scenario: scenario.trim(),
           testTypes,
           includeNegativeTests: includeNegative,
-          // Intelligence sources are gated by the IntelligenceSelector toggles.
-          // App Profile OFF (or the manual override) forces a fresh crawl.
-          ...((forceFreshCrawl || !useAppProfile) ? { forceFreshCrawl: true } : {}),
+          // Intelligence sources are gated by the App Profile / Repo / Knowledge
+          // toggles in the consolidated Intelligence Sources section. Turning the
+          // App Profile source OFF forces a fresh crawl instead of reusing cache.
+          ...(!useAppProfile ? { forceFreshCrawl: true } : {}),
           ...(useRepoIntelligence && selectedRepoId ? { repoId: selectedRepoId } : {}),
           ...(useAppKnowledge && selectedKnowledgeIds.length > 0 ? { knowledgeItemIds: selectedKnowledgeIds } : {}),
           // ── Sprint 4: Requirement → Test Case → Script context ──
@@ -725,13 +775,6 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           generationSource: effectiveTestCaseId != null
             ? 'test_case_based'
             : (selectedReqId ? 'requirement_based' : 'url_based'),
-          ...(authEnabled && authUsername && authPassword ? {
-            authConfig: {
-              loginUrl: authLoginUrl || undefined,
-              username: authUsername,
-              password: authPassword,
-            },
-          } : {}),
         }),
       });
 
@@ -1062,104 +1105,115 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             )}
           </div>
 
-          {/* ── Sprint 4: Intelligence Sources — choose which signals fuse into generation ── */}
+          {/* ── Intelligence Sources — one consolidated section (matches Test Case Lab) ── */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Cpu size={14} className="text-violet-400" />
               <span className="text-xs font-medium text-slate-300">Intelligence Sources</span>
-              <span className="text-[10px] text-slate-500">— fused into generation</span>
+              <span className="text-[10px] text-slate-500">(optional — improves accuracy)</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {/* Repo Intelligence */}
-              <button
-                type="button"
-                onClick={() => setUseRepoIntelligence((v) => !v)}
-                disabled={generating}
-                className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                  useRepoIntelligence
-                    ? 'bg-violet-500/10 border-violet-500/30'
-                    : 'bg-[#0c1222] border-[#1e293b] hover:border-[#334155]'
-                }`}
-              >
-                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
-                  useRepoIntelligence ? 'bg-violet-500 border-violet-500' : 'border-slate-600'
-                }`}>
-                  {useRepoIntelligence && <CheckCircle2 size={12} className="text-white" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
-                    <Brain size={12} className="text-violet-400" /> Repo Intelligence
-                  </span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5">
-                    {selectedRepoId
-                      ? (repoContextLoaded ? 'Context loaded' : 'Repo selected')
-                      : 'No repo selected'}
-                  </span>
-                </span>
-              </button>
 
-              {/* App Profile */}
-              <button
-                type="button"
-                onClick={() => setUseAppProfile((v) => !v)}
+            <div className="space-y-2">
+              {/* App Profile — highest-priority source (real crawled DOM) */}
+              <IntelSourceCard
+                accent="emerald"
+                icon={Database}
+                title="App Profile"
+                badge="Recommended"
+                description="Ground every step in your real app — uses live-crawled pages, forms & verified locators instead of AI guesses."
+                enabled={useAppProfile}
+                onToggle={() => setUseAppProfile((v) => !v)}
                 disabled={generating}
-                className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                  useAppProfile
-                    ? 'bg-violet-500/10 border-violet-500/30'
-                    : 'bg-[#0c1222] border-[#1e293b] hover:border-[#334155]'
-                }`}
+                statusLabel={
+                  profileStatus?.exists
+                    ? (profileStatus.status === 'ready' ? `cached · ${profileStatus.pageCount || 0} pages` : 'expired — will re-crawl')
+                    : undefined
+                }
               >
-                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
-                  useAppProfile ? 'bg-violet-500 border-violet-500' : 'border-slate-600'
-                }`}>
-                  {useAppProfile && <CheckCircle2 size={12} className="text-white" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
-                    <Database size={12} className="text-emerald-400" /> App Profile
-                  </span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5">
-                    {profileStatus?.exists
-                      ? (profileStatus.status === 'ready' ? `Cached · ${profileStatus.pageCount || 0} pages` : 'Expired — re-crawl')
-                      : 'Will crawl on demand'}
-                  </span>
-                </span>
-              </button>
+                <div className="text-[11px] text-slate-400">
+                  {profileChecking ? (
+                    <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Checking profile…</span>
+                  ) : profileStatus?.exists && profileStatus.status === 'ready' ? (
+                    <span className="inline-flex items-center gap-1.5 text-emerald-400">
+                      <Zap size={11} /> Cached profile will be reused for fast (~1s) generation{profileStatus.lastCrawledAt ? ` · crawled ${new Date(profileStatus.lastCrawledAt).toLocaleDateString()}` : ''}.
+                    </span>
+                  ) : profileStatus?.exists && profileStatus.status === 'expired' ? (
+                    <span className="inline-flex items-center gap-1.5 text-amber-400"><RefreshCw size={11} /> Cached profile expired — a fresh crawl runs automatically on generation.</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-slate-500"><Fingerprint size={11} /> No profile yet — the app is crawled on demand during generation.</span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-600 mt-1.5">Turn this off to force a fresh crawl instead of reusing the cached profile.</p>
+              </IntelSourceCard>
+
+              {/* Repository Intelligence */}
+              <IntelSourceCard
+                accent="violet"
+                icon={Brain}
+                title="Repository Intelligence"
+                description="Ground tests in your real code — uses architecture, patterns, helpers & page objects from an analyzed repository."
+                enabled={useRepoIntelligence}
+                onToggle={() => setUseRepoIntelligence((v) => !v)}
+                disabled={generating}
+                statusLabel={repoContextLoaded ? 'context loaded' : (selectedRepoId ? 'repo selected' : undefined)}
+              >
+                {repos.length === 0 ? (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5">
+                    <p className="text-[11px] text-amber-300">No repositories found. Add one in the Projects page to enable pattern-aware generation.</p>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value={selectedRepoId}
+                      onChange={(e) => setSelectedRepoId(e.target.value)}
+                      disabled={generating}
+                      className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white focus:outline-none focus:ring-1 focus:ring-violet-500 appearance-none"
+                    >
+                      <option value="">Select a repository…</option>
+                      {repos.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name} — {r.branch || 'main'}</option>
+                      ))}
+                    </select>
+                    {repoContextSummary && (
+                      <div className="bg-[#0c1222] rounded-lg p-3 border border-[#1e293b] space-y-2 mt-2">
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div><span className="text-slate-500">Framework</span><p className="text-violet-300 font-medium">{repoContextSummary.framework || '—'}</p></div>
+                          <div><span className="text-slate-500">Pattern</span><p className="text-blue-300 font-medium">{repoContextSummary.testPattern || '—'}</p></div>
+                          <div><span className="text-slate-500">Locators</span><p className="text-emerald-300 font-medium">{repoContextSummary.locatorStrategy || '—'}</p></div>
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1 border-t border-[#1e293b]">
+                          <span>{repoContextSummary.helpers || 0} helpers</span>
+                          <span>{repoContextSummary.pageObjects || 0} page objects</span>
+                          <span>{repoContextSummary.flows || 0} flows</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </IntelSourceCard>
 
               {/* App Knowledge */}
-              <button
-                type="button"
-                onClick={() => setUseAppKnowledge((v) => !v)}
+              <IntelSourceCard
+                accent="amber"
+                icon={BookOpen}
+                title="App Knowledge"
+                description="Teach the AI your domain — business rules, workflows & known bug patterns improve generation accuracy."
+                enabled={useAppKnowledge}
+                onToggle={() => setUseAppKnowledge((v) => !v)}
                 disabled={generating}
-                className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                  useAppKnowledge
-                    ? 'bg-violet-500/10 border-violet-500/30'
-                    : 'bg-[#0c1222] border-[#1e293b] hover:border-[#334155]'
-                }`}
+                statusLabel={selectedKnowledgeIds.length > 0 ? `${selectedKnowledgeIds.length} item${selectedKnowledgeIds.length !== 1 ? 's' : ''} selected` : undefined}
               >
-                <span className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border ${
-                  useAppKnowledge ? 'bg-violet-500 border-violet-500' : 'border-slate-600'
-                }`}>
-                  {useAppKnowledge && <CheckCircle2 size={12} className="text-white" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-slate-200">
-                    <BookOpen size={12} className="text-amber-400" /> App Knowledge
-                  </span>
-                  <span className="block text-[10px] text-slate-500 mt-0.5">
-                    {selectedKnowledgeIds.length > 0
-                      ? `${selectedKnowledgeIds.length} item${selectedKnowledgeIds.length !== 1 ? 's' : ''} selected`
-                      : 'None selected'}
-                  </span>
-                </span>
-              </button>
+                <KnowledgeSelector
+                  selectedIds={selectedKnowledgeIds}
+                  onChange={setSelectedKnowledgeIds}
+                  contextTitle={scenario}
+                  contextDescription={targetUrl || projectContext.appUrl}
+                />
+              </IntelSourceCard>
             </div>
-            <p className="text-[10px] text-slate-600">
-              Toggle off App Profile to force a fresh crawl. Configure repo &amp; knowledge selections in Advanced Options.
-            </p>
           </div>
 
-          {/* Advanced Options — always visible (Sprint 4) */}
+          {/* Advanced Options — test types & negative cases only */}
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
               <SlidersHorizontal size={12} />
@@ -1198,178 +1252,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 />
                 <span className="text-xs text-slate-400">Include negative test cases</span>
               </label>
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={forceFreshCrawl}
-                  onChange={(e) => setForceFreshCrawl(e.target.checked)}
-                  disabled={generating}
-                  className="w-3.5 h-3.5 rounded border-[#334155] bg-[#1a1f2e] text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
-                />
-                <RefreshCw size={12} className="text-amber-400" />
-                <span className="text-xs text-slate-400">Force fresh crawl</span>
-                <span className="text-[10px] text-slate-600">(bypass cached profile)</span>
-              </label>
             </div>
-          </div>
-
-          {/* Authentication for Login-Protected Pages */}
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={authEnabled}
-                onChange={(e) => setAuthEnabled(e.target.checked)}
-                disabled={generating}
-                className="w-3.5 h-3.5 rounded border-[#334155] bg-[#1a1f2e] text-violet-500 focus:ring-violet-500 focus:ring-offset-0"
-              />
-              <Shield size={14} className="text-amber-400" />
-              <span className="text-xs font-medium text-slate-300">Authenticate before crawling</span>
-              <span className="text-[10px] text-slate-500 ml-1">(login-protected pages)</span>
-            </label>
-
-            {authEnabled && (
-              <div className="bg-[#0c1222] rounded-lg p-4 border border-amber-500/20 space-y-3">
-                <div className="flex items-start gap-2 text-[10px] text-amber-400/80 bg-amber-500/5 rounded-md p-2 border border-amber-500/10">
-                  <Lock size={12} className="mt-0.5 shrink-0" />
-                  <span>Credentials are sent securely to the backend and never logged or stored. Only used for a single browser session during crawling.</span>
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Login Page URL <span className="text-slate-600">(optional — auto-detects if blank)</span></label>
-                  <input
-                    type="url"
-                    value={authLoginUrl}
-                    onChange={(e) => setAuthLoginUrl(e.target.value)}
-                    placeholder="https://app.example.com/login"
-                    disabled={generating}
-                    className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Username / Email</label>
-                    <input
-                      type="text"
-                      value={authUsername}
-                      onChange={(e) => setAuthUsername(e.target.value)}
-                      placeholder="admin@company.com"
-                      disabled={generating}
-                      autoComplete="off"
-                      className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Password</label>
-                    <div className="relative">
-                      <input
-                        type={showAuthPassword ? 'text' : 'password'}
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        placeholder="••••••••"
-                        disabled={generating}
-                        autoComplete="off"
-                        className="w-full px-3 py-2 pr-9 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAuthPassword(!showAuthPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                        tabIndex={-1}
-                      >
-                        {showAuthPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {authEnabled && (!authUsername || !authPassword) && (
-                  <p className="text-[10px] text-amber-500/70 flex items-center gap-1">
-                    <AlertTriangle size={10} />
-                    Both username and password are required for authentication
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Repository Intelligence */}
-          {repos.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Brain size={14} className="text-violet-400" />
-                <span className="text-xs font-medium text-slate-300">Repository Intelligence</span>
-                {repoContextLoaded && (
-                  <span className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400">
-                    <CheckCircle2 size={10} /> Context loaded
-                  </span>
-                )}
-              </div>
-              <select
-                value={selectedRepoId}
-                onChange={(e) => setSelectedRepoId(e.target.value)}
-                disabled={generating}
-                className="w-full px-3 py-2 rounded-lg bg-[#1a1f2e] border border-[#334155] text-sm text-white focus:outline-none focus:ring-1 focus:ring-violet-500 appearance-none"
-              >
-                <option value="">No repo context (generic generation)</option>
-                {repos.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name} — {r.branch || 'main'}</option>
-                ))}
-              </select>
-              {repoContextSummary && (
-                <div className="bg-[#0c1222] rounded-lg p-3 border border-[#1e293b] space-y-2">
-                  <div className="grid grid-cols-3 gap-2 text-[11px]">
-                    <div>
-                      <span className="text-slate-500">Framework</span>
-                      <p className="text-violet-300 font-medium">{repoContextSummary.framework || '—'}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Pattern</span>
-                      <p className="text-blue-300 font-medium">{repoContextSummary.testPattern || '—'}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Locators</span>
-                      <p className="text-emerald-300 font-medium">{repoContextSummary.locatorStrategy || '—'}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-[10px] text-slate-500 pt-1 border-t border-[#1e293b]">
-                    <span>{repoContextSummary.helpers || 0} helpers</span>
-                    <span>{repoContextSummary.pageObjects || 0} page objects</span>
-                    <span>{repoContextSummary.flows || 0} flows</span>
-                  </div>
-                  <p className="text-[10px] text-slate-600">
-                    AI will use your repo&apos;s patterns, helpers &amp; page objects for contextual generation
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* App Knowledge Selector — always visible, handles its own loading/empty states */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 mb-1">
-              <BookOpen size={14} className="text-amber-400" />
-              <span className="text-xs font-medium text-slate-300">App Knowledge</span>
-              <span className="text-[10px] text-slate-500">(optional)</span>
-              {selectedKnowledgeIds.length > 0 && (
-                <span className="ml-auto text-[10px] text-amber-400">
-                  {selectedKnowledgeIds.length} item{selectedKnowledgeIds.length !== 1 ? 's' : ''} selected
-                </span>
-              )}
-            </div>
-            <KnowledgeSelector
-              selectedIds={selectedKnowledgeIds}
-              onChange={setSelectedKnowledgeIds}
-              contextTitle={scenario}
-              contextDescription={targetUrl || projectContext.appUrl}
-            />
-            {selectedKnowledgeIds.length > 0 && (
-              <p className="text-[10px] text-slate-600">
-                Business rules, workflows &amp; bug patterns will be incorporated into generated scripts
-              </p>
-            )}
           </div>
 
           {/* Generate Button */}
