@@ -1,0 +1,31 @@
+{
+  "name": "levelup-playwright-framework",
+  "version": "1.0.0",
+  "description": "Production-ready Playwright + TypeScript test automation starter framework with Page Object Model, helpers, fixtures and config. Designed to pair with LevelUp AI QA for AI-generated test scripts.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:chromium": "playwright test --project=chromium",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "install:browsers": "playwright install"
+  },
+  "keywords": [
+    "playwright",
+    "typescript",
+    "test-automation",
+    "page-object-model",
+    "e2e",
+    "levelup-ai"
+  ],
+  "author": "LevelUp AI QA",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
