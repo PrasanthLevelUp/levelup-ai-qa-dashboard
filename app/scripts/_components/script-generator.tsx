@@ -894,11 +894,24 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   );
 
   const handleGenerate = async () => {
-    if (!scenario.trim()) return;
-
     // Effective test-case id: an explicitly loaded test case (from the picker)
     // wins, then the deep-link prop. Drives generationSource + auto-marking.
     const effectiveTestCaseId = testCaseInfo?.id ?? testCaseId ?? null;
+
+    // Requirement-based generation derives everything from the requirement's
+    // linked test cases (deterministic backend path), so a free-text scenario is
+    // optional. Only block when there's nothing to generate from at all.
+    if (!scenario.trim() && !selectedReqId && effectiveTestCaseId == null) return;
+
+    // The backend requires a non-empty `scenario` field. For requirement-based
+    // generation (where the textarea may be empty) fall back to a concise label
+    // derived from the selected requirement — the deterministic engine ignores
+    // this text and uses each test case's own steps/data.
+    const selectedReq = requirements.find((r) => r.id === selectedReqId);
+    const effectiveScenario = scenario.trim()
+      || (selectedReqId
+        ? `Automate requirement ${selectedReq?.requirement_id || selectedReqId}${selectedReq?.title ? `: ${selectedReq.title}` : ''}`
+        : '');
 
     // Resolve the target URL: explicit input → project appUrl → active
     // environment base_url. The backend can also auto-resolve from the
@@ -917,7 +930,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           projectContextId: projectContext.id,
           // Omit when empty so the backend resolves from the active environment.
           ...(resolvedUrl ? { url: resolvedUrl } : {}),
-          scenario: scenario.trim(),
+          scenario: effectiveScenario,
           testTypes,
           includeNegativeTests: includeNegative,
           // Intelligence sources are gated by the App Profile / Repo / Knowledge
@@ -1484,7 +1497,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
-            disabled={generating || !scenario.trim() || (!(targetUrl || projectContext.appUrl || activeEnvironment?.base_url))}
+            disabled={generating || (!scenario.trim() && !selectedReqId && testCaseInfo?.id == null && testCaseId == null) || (!(targetUrl || projectContext.appUrl || activeEnvironment?.base_url))}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-all shadow-lg shadow-violet-500/20"
           >
             {generating ? (
