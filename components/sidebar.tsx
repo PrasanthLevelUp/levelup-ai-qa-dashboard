@@ -9,7 +9,7 @@ import {
   Play, LogOut, User, FileCode, Plug, Bug, Database, Brain, Building2,
   Fingerprint, FileText, CreditCard, BarChart3, Users, ScrollText, Key, Upload,
   Cpu, TestTubeDiagonal, FolderKanban, Webhook, UserCog, GitBranch, Server,
-  Rocket, HeartPulse, SlidersHorizontal, Gauge, Tag, Sparkles,
+  Rocket, HeartPulse, SlidersHorizontal, Gauge, Tag, Sparkles, Network,
 } from 'lucide-react';
 import { ProjectSelector } from './project-selector';
 
@@ -100,6 +100,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: '/patterns', label: 'Learned Patterns', icon: Tag },
       { href: '/knowledge', label: 'App Knowledge', icon: BookOpen },
       { href: '/repo-intelligence', label: 'Repo Intelligence', icon: Cpu },
+      { href: '/repo-intelligence-3c', label: 'Health · Impact · Graph', icon: Network },
     ],
   },
   {
