@@ -1,6 +1,21 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { usePathname } from 'next/navigation';
+
+/**
+ * Page routes that do NOT require authentication. Keep in sync with the page
+ * (non-API) public paths in `middleware.ts`. On these routes the user is not
+ * authenticated yet, so we must NOT call authenticated APIs like /api/projects
+ * — doing so fires a request that 401s on the login screen (info leak + noisy
+ * console errors + poor UX).
+ */
+const PUBLIC_PREFIXES = ['/login', '/pricing', '/demo-video', '/reels'];
+
+function isPublicRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'));
+}
 
 export interface Project {
   id: number;
@@ -59,6 +74,9 @@ export function getStoredProjectId(): string | null {
 const STORAGE_KEY = 'levelup_active_project_id';
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const onPublicRoute = isPublicRoute(pathname);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProjectState] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,8 +121,19 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // Skip authenticated data fetching on public routes (e.g. the login page).
+    // The user has no session yet, so /api/projects would 401. Once the user
+    // logs in and is redirected to an authenticated route, `pathname` changes,
+    // `onPublicRoute` flips to false, and this effect re-runs to load projects.
+    if (onPublicRoute) {
+      setProjects([]);
+      setActiveProjectState(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     fetchProjects();
-  }, [fetchProjects]);
+  }, [onPublicRoute, fetchProjects]);
 
   const setActiveProject = useCallback((project: Project) => {
     setActiveProjectState(project);
