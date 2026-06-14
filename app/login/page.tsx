@@ -1,24 +1,46 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { Lock, User, AlertCircle, Loader2, Eye, EyeOff, Shield } from 'lucide-react';
 import ProductCarousel from './_components/product-carousel';
 import ContactSection from './_components/contact-section';
 
+/**
+ * Resolve a safe post-login redirect target from the `?from=` query param that
+ * middleware adds when bouncing an unauthenticated user. Only internal,
+ * single-slash absolute paths are allowed (never protocol-relative `//host`,
+ * external URLs, or back to /login) to prevent open-redirect abuse.
+ */
+function getSafeRedirect(): string {
+  if (typeof window === 'undefined') return '/';
+  const from = new URLSearchParams(window.location.search).get('from');
+  if (from && from.startsWith('/') && !from.startsWith('//') && !from.startsWith('/login')) {
+    return from;
+  }
+  return '/';
+}
+
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Synchronous guard against duplicate submissions. The disabled button stops
+  // most double-clicks, but rapid Enter presses / re-fired events can call this
+  // before React re-renders the disabled state — the ref blocks those instantly.
+  const submittingRef = useRef(false);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return; // prevent duplicate login requests
+    submittingRef.current = true;
     setError('');
     setLoading(true);
+
+    const reset = () => { setLoading(false); submittingRef.current = false; };
 
     try {
       const res = await fetch('/api/auth/login', {
@@ -27,7 +49,7 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         if (res.status === 429) {
@@ -35,16 +57,34 @@ export default function LoginPage() {
         } else {
           setError(data.error || 'Invalid credentials');
         }
-        setLoading(false);
+        reset();
         return;
       }
 
-      // Success — redirect to dashboard
-      router.push('/');
-      router.refresh();
+      // The login POST succeeded and a session cookie should now be set. Before
+      // navigating, verify the cookie is actually accepted by calling /me. This
+      // turns a silent redirect-bounce (e.g. a JWT_SECRET mismatch between the
+      // dashboard and the backend, or a cookie that never reached the browser)
+      // into a clear, actionable error instead of an infinite "Signing in…"
+      // spinner with no feedback.
+      const meRes = await fetch('/api/auth/me', { cache: 'no-store' });
+      if (!meRes.ok) {
+        setError(
+          'Signed in, but your session could not be established. This usually means the ' +
+          'server session secret is misconfigured. Please contact support.',
+        );
+        reset();
+        return;
+      }
+
+      // Verified. Use a hard navigation so the browser re-requests with the new
+      // cookie and the server renders fresh — avoids stale Next.js router/RSC
+      // cache that can otherwise bounce the user straight back to /login.
+      // Intentionally leave loading=true; the page is unloading.
+      window.location.assign(getSafeRedirect());
     } catch (err) {
       setError('Unable to connect. Please try again.');
-      setLoading(false);
+      reset();
     }
   }
 
