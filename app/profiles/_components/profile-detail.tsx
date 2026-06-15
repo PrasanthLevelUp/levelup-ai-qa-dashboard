@@ -7,7 +7,7 @@
 /*  intelligence that powers 30× faster, grounded script generation.         */
 /* -------------------------------------------------------------------------- */
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState, useCallback } from 'react';
 import {
   Network,
   Loader2,
@@ -31,6 +31,13 @@ import {
   Layers,
   ShieldCheck,
   ShieldAlert,
+  History,
+  GitCompare,
+  Gauge,
+  PlusCircle,
+  MinusCircle,
+  RefreshCw,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -60,9 +67,77 @@ interface ProfileLike {
   updated_at: string;
 }
 
+/* -- App Profile versioning & change-engine shapes (from new API endpoints) -- */
+
+interface CoverageData {
+  version: number;
+  coveragePct: number;
+  crawledPages: number;
+  discoveredPages: number;
+  elementCount: number;
+  formCount: number;
+  selectorCount: number;
+  capturedAt: string | null;
+}
+
+interface VersionRow {
+  version: number;
+  coveragePct: number;
+  pageCount: number;
+  discoveredPages: number;
+  elementCount: number;
+  formCount: number;
+  selectorCount: number;
+  createdAt: string;
+}
+
+type ChangeType =
+  | 'PAGE_ADDED' | 'PAGE_REMOVED'
+  | 'ELEMENT_ADDED' | 'ELEMENT_REMOVED'
+  | 'LOCATOR_CHANGED' | 'TEXT_CHANGED'
+  | 'FORM_ADDED' | 'FORM_REMOVED'
+  | 'NAVIGATION_CHANGED';
+
+interface ChangeRow {
+  id: number;
+  versionFrom: number;
+  versionTo: number;
+  type: ChangeType;
+  page: string | null;
+  oldValue: string | null;
+  newValue: string | null;
+  detail: string | null;
+  severity: 'low' | 'medium' | 'high' | null;
+  createdAt: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
+
+const CHANGE_META: Record<ChangeType, { label: string; icon: any; color: string; chip: string }> = {
+  PAGE_ADDED:        { label: 'Page added',     icon: PlusCircle,     color: 'text-emerald-300', chip: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  PAGE_REMOVED:      { label: 'Page removed',   icon: MinusCircle,    color: 'text-red-300',     chip: 'bg-red-500/10 text-red-300 border-red-500/20' },
+  ELEMENT_ADDED:     { label: 'Element added',  icon: PlusCircle,     color: 'text-emerald-300', chip: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  ELEMENT_REMOVED:   { label: 'Element removed',icon: MinusCircle,    color: 'text-orange-300',  chip: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
+  LOCATOR_CHANGED:   { label: 'Locator changed',icon: ArrowRightLeft, color: 'text-violet-300',  chip: 'bg-violet-500/10 text-violet-300 border-violet-500/20' },
+  TEXT_CHANGED:      { label: 'Text changed',   icon: TypeIcon,       color: 'text-sky-300',     chip: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
+  FORM_ADDED:        { label: 'Form added',     icon: PlusCircle,     color: 'text-emerald-300', chip: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  FORM_REMOVED:      { label: 'Form removed',   icon: MinusCircle,    color: 'text-red-300',     chip: 'bg-red-500/10 text-red-300 border-red-500/20' },
+  NAVIGATION_CHANGED:{ label: 'Navigation changed', icon: LinkIcon,   color: 'text-amber-300',   chip: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+};
+
+function coverageColor(pct: number): string {
+  if (pct >= 70) return 'text-emerald-300';
+  if (pct >= 40) return 'text-amber-300';
+  return 'text-red-300';
+}
+
+function coverageBar(pct: number): string {
+  if (pct >= 70) return 'bg-emerald-500';
+  if (pct >= 40) return 'bg-amber-500';
+  return 'bg-red-500';
+}
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -275,12 +350,57 @@ export function ProfileDetail({
   onCrawlNow,
   onConfigureAuth,
   crawlBusy,
+  getHeaders,
 }: {
   profile: ProfileLike;
   onCrawlNow: () => void;
   onConfigureAuth: () => void;
   crawlBusy: boolean;
+  /** Provides project-scoping headers (e.g. x-project-id) for API calls. */
+  getHeaders?: () => Record<string, string>;
 }) {
+  /* ── App Profile versioning & change engine (System of Record) ──────────
+   * Lazily loaded the moment this detail panel mounts (it only mounts when the
+   * row is expanded), so we never pay for it on the list view. All three calls
+   * are best-effort: any failure leaves the panel rendering exactly as before. */
+  const [coverage, setCoverage] = useState<CoverageData | null>(null);
+  const [versions, setVersions] = useState<VersionRow[]>([]);
+  const [changes, setChanges] = useState<ChangeRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const headers = getHeaders ? getHeaders() : {};
+      const [covRes, verRes, chgRes] = await Promise.all([
+        fetch(`/api/intelligence/profiles/${profile.id}/coverage`, { headers }),
+        fetch(`/api/intelligence/profiles/${profile.id}/versions`, { headers }),
+        fetch(`/api/intelligence/profiles/${profile.id}/changes?limit=100`, { headers }),
+      ]);
+      const [cov, ver, chg] = await Promise.all([covRes.json(), verRes.json(), chgRes.json()]);
+      if (cov?.success) setCoverage(cov.data as CoverageData);
+      if (ver?.success) setVersions((ver.data || []) as VersionRow[]);
+      if (chg?.success) setChanges((chg.data || []) as ChangeRow[]);
+    } catch {
+      /* non-blocking — the rest of the profile detail still renders */
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [profile.id, getHeaders]);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  /* Group changes by version transition (vFrom → vTo), newest first. */
+  const changeGroups = useMemo(() => {
+    const groups = new Map<string, { from: number; to: number; rows: ChangeRow[] }>();
+    for (const c of changes) {
+      const key = `${c.versionFrom}->${c.versionTo}`;
+      if (!groups.has(key)) groups.set(key, { from: c.versionFrom, to: c.versionTo, rows: [] });
+      groups.get(key)!.rows.push(c);
+    }
+    return Array.from(groups.values()).sort((a, b) => b.to - a.to);
+  }, [changes]);
+
   const crawlData = useMemo(() => {
     const cd = profile.crawl_data;
     if (!cd) return null;
@@ -449,6 +569,32 @@ export function ProfileDetail({
         )}
       </div>
 
+      {/* Crawl coverage — how much of the app the profile actually knows. */}
+      {coverage && coverage.discoveredPages > 0 && (
+        <div className="bg-[#141a28] border border-[#2a3040] rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <SectionHeader icon={Gauge} title="Crawl Coverage" accent="text-violet-400" />
+            <span className={`text-sm font-semibold ${coverageColor(coverage.coveragePct)}`}>
+              {coverage.coveragePct}%
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-[#0f172a] overflow-hidden mb-2">
+            <div
+              className={`h-full rounded-full ${coverageBar(coverage.coveragePct)} transition-all`}
+              style={{ width: `${Math.min(100, coverage.coveragePct)}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Crawled <span className="font-semibold text-slate-200">{coverage.crawledPages.toLocaleString()}</span> of{' '}
+            <span className="font-semibold text-slate-200">{coverage.discoveredPages.toLocaleString()}</span> discovered page{coverage.discoveredPages !== 1 ? 's' : ''}
+            {coverage.version > 0 && <> · current snapshot <span className="font-mono text-violet-300">v{coverage.version}</span></>}.
+            {coverage.coveragePct < 70 && (
+              <span className="text-amber-300/80"> Re-crawl to capture discovered-but-unvisited pages and raise coverage.</span>
+            )}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Element type breakdown */}
         {typeBreakdown.length > 0 && (
@@ -576,6 +722,101 @@ export function ProfileDetail({
           {forms.length > 12 && (
             <p className="text-[10px] text-slate-500 mt-2">+ {forms.length - 12} more form{forms.length - 12 !== 1 ? 's' : ''}</p>
           )}
+        </div>
+      )}
+
+      {/* Version history + change engine — the App Profile as System of Record. */}
+      {(versions.length > 0 || changeGroups.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Version history */}
+          {versions.length > 0 && (
+            <div className="bg-[#141a28] border border-[#2a3040] rounded-xl p-4">
+              <SectionHeader icon={History} title="Version History" accent="text-violet-400" count={versions.length} />
+              <div className="space-y-1.5 max-h-72 overflow-auto pr-1">
+                {versions.map((v, i) => (
+                  <div key={v.version} className="flex items-center gap-3 text-xs bg-[#0f172a] rounded-lg px-3 py-2">
+                    <span className={`font-mono text-[11px] px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                      i === 0 ? 'bg-violet-500/10 text-violet-300 border-violet-500/20' : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                    }`}>
+                      v{v.version}{i === 0 ? ' · current' : ''}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-slate-300">
+                        {v.pageCount} page{v.pageCount !== 1 ? 's' : ''} · {v.elementCount.toLocaleString()} el · {v.formCount} form{v.formCount !== 1 ? 's' : ''}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{timeAgo(v.createdAt)}</p>
+                    </div>
+                    <span className={`text-[11px] font-medium flex-shrink-0 ${coverageColor(v.coveragePct)}`}>
+                      {v.coveragePct}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Change engine — structured diffs between versions */}
+          {changeGroups.length > 0 && (
+            <div className="bg-[#141a28] border border-[#2a3040] rounded-xl p-4">
+              <SectionHeader icon={GitCompare} title="Detected Changes" accent="text-emerald-400" count={changes.length} />
+              <div className="space-y-3 max-h-72 overflow-auto pr-1">
+                {changeGroups.map((g) => (
+                  <div key={`${g.from}->${g.to}`}>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mb-1.5">
+                      <RefreshCw size={10} />
+                      <span className="font-mono">v{g.from}</span>
+                      <ArrowRightLeft size={9} />
+                      <span className="font-mono text-slate-400">v{g.to}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {g.rows.slice(0, 25).map((c) => {
+                        const meta = CHANGE_META[c.type];
+                        const Icon = meta?.icon || GitCompare;
+                        return (
+                          <div key={c.id} className="flex items-start gap-2 text-xs bg-[#0f172a] rounded-lg px-2.5 py-2">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded border flex-shrink-0 flex items-center gap-1 ${meta?.chip || 'bg-slate-500/10 text-slate-300 border-slate-500/20'}`}>
+                              <Icon size={9} />
+                              {meta?.label || c.type}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              {c.page && <p className="text-[10px] text-slate-500 font-mono truncate">{c.page}</p>}
+                              {c.type === 'LOCATOR_CHANGED' && c.oldValue && c.newValue ? (
+                                <p className="text-slate-300 truncate font-mono text-[10px]" title={`${c.oldValue} → ${c.newValue}`}>
+                                  <span className="text-red-300/80 line-through">{c.oldValue}</span>
+                                  <span className="text-slate-500"> → </span>
+                                  <span className="text-emerald-300">{c.newValue}</span>
+                                </p>
+                              ) : (
+                                <p className="text-slate-300 truncate" title={c.detail || ''}>{c.detail || meta?.label || c.type}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {g.rows.length > 25 && (
+                        <p className="text-[10px] text-slate-500">+ {g.rows.length - 25} more change{g.rows.length - 25 !== 1 ? 's' : ''}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+                Detected automatically between crawls. <span className="text-violet-300">Locator changes</span> feed the
+                self-healing engine — broken selectors are auto-fixed from these diffs with no AI cost.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Versioning empty-state hint — only once we know history loaded & is empty. */}
+      {!historyLoading && versions.length === 0 && coverage && coverage.version <= 1 && (
+        <div className="flex items-start gap-2.5 p-3 rounded-lg bg-[#0f172a] border border-[#2a3040]">
+          <History size={14} className="text-slate-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Version history &amp; change tracking begin from the next crawl. Each re-crawl is captured as a new version, and
+            differences (pages, elements, locators, forms, navigation) are recorded here automatically.
+          </p>
         </div>
       )}
 
