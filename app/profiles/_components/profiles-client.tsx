@@ -735,6 +735,7 @@ export function ProfilesClient() {
                       crawlBusy={!!actionLoading[profile.id]}
                       onCrawlNow={() => handleCrawlNow(profile)}
                       onConfigureAuth={() => { setAuthProfile(profile as AuthDialogProfile); setAuthDialogOpen(true); }}
+                      getHeaders={getHeaders}
                     />
                   )}
                 </div>
