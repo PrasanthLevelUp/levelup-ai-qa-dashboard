@@ -1,14 +1,14 @@
 export const dynamic = 'force-dynamic';
 
-import { NextResponse } from 'next/server';
-import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
+import { NextRequest, NextResponse } from 'next/server';
+import { backendUrl, proxyHeaders, extractProjectHeaders } from '@/lib/backend-proxy';
 
 /** GET /api/similarity — Stats (proxy to backend /api/similarity/stats) */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const res = await fetch(backendUrl('/api/similarity/stats'), { headers: proxyHeaders() });
+    const res = await fetch(backendUrl('/api/similarity/stats'), { headers: proxyHeaders(extractProjectHeaders(req)) });
     const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error('[Similarity stats proxy]', error);
     return NextResponse.json({ success: false, error: 'Failed to reach backend' }, { status: 502 });

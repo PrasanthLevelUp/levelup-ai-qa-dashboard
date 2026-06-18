@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useProjectHeaders } from '@/lib/project-context';
 import {
   RefreshCw, Brain, Zap, Target, TrendingUp,
   Award, Clock, CheckCircle2, AlertTriangle, Search,
@@ -103,16 +104,22 @@ export function LearningClient() {
   const [search, setSearch] = useState('');
   const [strategyFilter, setStrategyFilter] = useState<string>('all');
 
+  // SECURITY (multi-tenant isolation): scope every learning request to the
+  // active project. useProjectHeaders() yields { 'x-project-id': <id> } which
+  // the proxy forwards so the backend filters by BOTH company AND project.
+  const projectHeaders = useProjectHeaders();
+
   /* Fetch all data */
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const opts = { headers: projectHeaders };
       const [sRes, pRes, tRes, strRes, vRes] = await Promise.allSettled([
-        fetch('/api/learning'),
-        fetch('/api/learning/patterns?limit=200'),
-        fetch('/api/learning/top?limit=10'),
-        fetch('/api/learning/strategies'),
-        fetch('/api/learning/velocity?days=30'),
+        fetch('/api/learning', opts),
+        fetch('/api/learning/patterns?limit=200', opts),
+        fetch('/api/learning/top?limit=10', opts),
+        fetch('/api/learning/strategies', opts),
+        fetch('/api/learning/velocity?days=30', opts),
       ]);
 
       if (sRes.status === 'fulfilled') {
@@ -140,7 +147,7 @@ export function LearningClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectHeaders]);
 
   useEffect(() => { load(); }, [load]);
 

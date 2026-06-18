@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useProjectHeaders } from '@/lib/project-context';
 import {
   RefreshCw, Database, Layers, GitCompare, Code2, Eye,
   ArrowRight, Shield, Clock, BarChart3, Target,
@@ -134,12 +135,18 @@ export function DomMemoryClient() {
   const [distribution, setDistribution] = useState<DistEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // SECURITY (multi-tenant isolation): scope every DOM-memory request to the
+  // active project via the x-project-id header (forwarded by the proxy) so the
+  // backend filters by BOTH company AND project.
+  const projectHeaders = useProjectHeaders();
+
   const fetchData = useCallback(async () => {
     try {
+      const opts = { headers: projectHeaders };
       const [statsRes, trendRes, distRes] = await Promise.all([
-        fetch('/api/dom-memory'),
-        fetch('/api/dom-memory/trend?days=30'),
-        fetch('/api/dom-memory/selectors/distribution'),
+        fetch('/api/dom-memory', opts),
+        fetch('/api/dom-memory/trend?days=30', opts),
+        fetch('/api/dom-memory/selectors/distribution', opts),
       ]);
       const statsData = await statsRes.json();
       const trendData = await trendRes.json();
@@ -151,37 +158,46 @@ export function DomMemoryClient() {
     } catch (err) {
       console.error('Failed to fetch DOM memory data:', err);
     }
-  }, []);
+  }, [projectHeaders]);
 
   const fetchSnapshots = useCallback(async () => {
     try {
-      const res = await fetch('/api/dom-memory/snapshots?limit=50');
+      const res = await fetch('/api/dom-memory/snapshots?limit=50', { headers: projectHeaders });
       const data = await res.json();
       if (data.success) setSnapshots(data.data || []);
     } catch (err) {
       console.error('Failed to fetch snapshots:', err);
     }
-  }, []);
+  }, [projectHeaders]);
 
   const fetchSelectors = useCallback(async () => {
     try {
-      const res = await fetch('/api/dom-memory/selectors?limit=100');
+      const res = await fetch('/api/dom-memory/selectors?limit=100', { headers: projectHeaders });
       const data = await res.json();
       if (data.success) setSelectors(data.data || []);
     } catch (err) {
       console.error('Failed to fetch selectors:', err);
     }
-  }, []);
+  }, [projectHeaders]);
 
   const fetchLocators = useCallback(async () => {
     try {
-      const res = await fetch('/api/dom-memory/locators?limit=50');
+      const res = await fetch('/api/dom-memory/locators?limit=50', { headers: projectHeaders });
       const data = await res.json();
       if (data.success) setLocators(data.data || []);
     } catch (err) {
       console.error('Failed to fetch locators:', err);
     }
-  }, []);
+  }, [projectHeaders]);
+
+  // When the active project changes, clear the per-tab caches so the lazy
+  // tab loaders re-fetch scoped data instead of showing the previous project's
+  // snapshots/selectors/locators (multi-tenant isolation).
+  useEffect(() => {
+    setSnapshots([]);
+    setSelectors([]);
+    setLocators([]);
+  }, [projectHeaders]);
 
   useEffect(() => {
     fetchData().finally(() => setLoading(false));

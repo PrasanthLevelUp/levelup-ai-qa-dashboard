@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useProjectHeaders } from '@/lib/project-context';
 import {
   RefreshCw, Fingerprint, Target, TrendingUp, Sparkles,
   BarChart3, Search, ArrowRight, CheckCircle2, XCircle,
@@ -183,16 +184,22 @@ export function SimilarityClient() {
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [comparing, setComparing] = useState(false);
 
+  // SECURITY (multi-tenant isolation): scope every similarity request to the
+  // active project via the x-project-id header (forwarded by the proxy) so the
+  // backend filters by BOTH company AND project.
+  const projectHeaders = useProjectHeaders();
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      const opts = { headers: projectHeaders };
       const [statsRes, distRes, trendRes, matchRes, pairRes, typeRes] = await Promise.all([
-        fetch('/api/similarity').then(r => r.json()),
-        fetch('/api/similarity/distribution').then(r => r.json()),
-        fetch('/api/similarity/trend?days=30').then(r => r.json()),
-        fetch('/api/similarity/top-matches?limit=20').then(r => r.json()),
-        fetch('/api/similarity/pairs?limit=20').then(r => r.json()),
-        fetch('/api/similarity/locator-types').then(r => r.json()),
+        fetch('/api/similarity', opts).then(r => r.json()),
+        fetch('/api/similarity/distribution', opts).then(r => r.json()),
+        fetch('/api/similarity/trend?days=30', opts).then(r => r.json()),
+        fetch('/api/similarity/top-matches?limit=20', opts).then(r => r.json()),
+        fetch('/api/similarity/pairs?limit=20', opts).then(r => r.json()),
+        fetch('/api/similarity/locator-types', opts).then(r => r.json()),
       ]);
       if (!statsRes.error) setStats(statsRes);
       if (Array.isArray(distRes)) setDistribution(distRes);
@@ -205,7 +212,7 @@ export function SimilarityClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectHeaders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -215,7 +222,7 @@ export function SimilarityClient() {
     try {
       const res = await fetch('/api/similarity/compare', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...projectHeaders },
         body: JSON.stringify({ failedValue: failedVal.trim(), candidateValue: candidateVal.trim() }),
       });
       const data = await res.json();
