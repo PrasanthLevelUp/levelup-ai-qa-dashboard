@@ -49,6 +49,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/requirements', label: 'Requirements', icon: FileText },
       { href: '/test-coverage', label: 'Test Case Lab', icon: TestTubeDiagonal },
+      { href: '/test-data', label: 'Test Data', icon: Database },
       { href: '/scripts', label: 'Script Generation', icon: FileCode },
     ],
   },
