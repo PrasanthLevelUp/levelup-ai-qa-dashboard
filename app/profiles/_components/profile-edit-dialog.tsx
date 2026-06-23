@@ -57,6 +57,8 @@ export interface EditableProfile {
   form_fields?: any[] | null;
   screenshots?: Screenshot[] | null;
   tags?: string[] | null;
+  /** Free-form metadata bag; stores `additionalCrawlUrls` (extra pages to crawl). */
+  custom_metadata?: { additionalCrawlUrls?: string[]; [k: string]: any } | null;
   auth_required?: boolean | null;
   // Sanitized auth summary from the list endpoint (never contains the password).
   auth_config?: {
@@ -157,6 +159,8 @@ export function ProfileEditDialog({
   const [flows, setFlows] = useState<BusinessFlow[]>([]);
   const [fields, setFields] = useState<FormFieldEntry[]>([]);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
+  // Extra pages to crawl (newline-separated paths/URLs behind buttons/forms)
+  const [extraPages, setExtraPages] = useState('');
 
   // Screenshot upload
   const [uploading, setUploading] = useState(false);
@@ -175,6 +179,11 @@ export function ProfileEditDialog({
       setFlows(normalizeFlows(profile.business_flows));
       setFields(normalizeFields(profile.form_fields));
       setScreenshots(Array.isArray(profile.screenshots) ? profile.screenshots : []);
+      setExtraPages(
+        Array.isArray(profile.custom_metadata?.additionalCrawlUrls)
+          ? profile.custom_metadata!.additionalCrawlUrls!.join('\n')
+          : '',
+      );
       // Auth summary is sanitized — username/loginUrl may be present, password never is.
       setAuthUsername(profile.auth_config?.username || '');
       setAuthLoginUrl(profile.auth_config?.loginUrl || '');
@@ -189,6 +198,7 @@ export function ProfileEditDialog({
       setFlows([]);
       setFields([]);
       setScreenshots([]);
+      setExtraPages('');
       setAuthUsername('');
       setAuthPassword('');
       setAuthLoginUrl('');
@@ -231,6 +241,18 @@ export function ProfileEditDialog({
             testData: f.testData.trim(),
           })),
       };
+
+      // Persist user-specified extra pages to crawl (Cart, Checkout, etc.) into
+      // custom_metadata.additionalCrawlUrls, preserving any other metadata keys.
+      const extraPagesList = extraPages
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const existingMeta =
+        profile?.custom_metadata && typeof profile.custom_metadata === 'object'
+          ? profile.custom_metadata
+          : {};
+      payload.customMetadata = { ...existingMeta, additionalCrawlUrls: extraPagesList };
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -316,7 +338,7 @@ export function ProfileEditDialog({
       setSaving(false);
     }
   }, [
-    baseUrl, name, description, notes, tags, flows, fields, isEdit, profile,
+    baseUrl, name, description, notes, tags, flows, fields, extraPages, isEdit, profile,
     projectHeaders, onClose, authUsername, authPassword, authLoginUrl, hadCredentials,
   ]);
 
@@ -512,6 +534,32 @@ export function ProfileEditDialog({
                   placeholder="checkout, payments, critical"
                   className="w-full px-3 py-2 rounded-lg bg-[#0f172a] border border-[#2a3040] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
                 />
+              </div>
+
+              {/* Additional pages to crawl */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Pages to Crawl <span className="text-slate-500">(one per line)</span>
+                </label>
+                <textarea
+                  value={extraPages}
+                  onChange={(e) => setExtraPages(e.target.value)}
+                  rows={4}
+                  placeholder={'/cart.html\n/checkout-step-one.html\n/checkout-step-two.html\n/checkout-complete.html'}
+                  className="w-full px-3 py-2 rounded-lg bg-[#0f172a] border border-[#2a3040] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors resize-none font-mono"
+                />
+                <div className="flex items-start gap-2 mt-2 p-3 bg-violet-500/5 border border-violet-500/15 rounded-lg">
+                  <Info size={13} className="text-violet-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-[11px] text-violet-300/80 leading-relaxed">
+                    The crawler auto-discovers pages by following links. Pages reached only by
+                    clicking buttons or submitting forms (e.g. <span className="text-violet-300">Cart</span>,{' '}
+                    <span className="text-violet-300">Checkout</span>,{' '}
+                    <span className="text-violet-300">Order Complete</span>) can&apos;t be found that way —
+                    list them here. Use a path (<span className="font-mono">/cart.html</span>) or a full URL.
+                    After saving, click <span className="text-emerald-300 font-medium">Re-crawl Now</span> to
+                    capture them in the same logged-in session.
+                  </p>
+                </div>
               </div>
             </div>
           )}
