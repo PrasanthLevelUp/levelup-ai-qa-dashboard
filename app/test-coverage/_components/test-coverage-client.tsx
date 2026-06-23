@@ -1084,9 +1084,13 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
         <IntelligenceSourceCard
           accent="amber"
           icon={Shield}
-          title="Coverage Gap Analysis"
-          badge="Recommended"
-          description="Automatically surfaces missing test scenarios you might have overlooked."
+          title="Expanded Coverage (Gap Analysis)"
+          badge={includeCoverageGaps ? 'Expanded' : 'Strict'}
+          description={
+            includeCoverageGaps
+              ? 'ON = Expanded mode. Generates strict requirement coverage, then adds a separate "Suggested Additional Coverage" set plus a non-automatable gap analysis. Suggestions never inflate your committed coverage.'
+              : 'OFF = Strict mode (default). Generates ONLY test cases derived from this requirement. Knowledge, Test Data and App Profile are used as context to enrich those cases — never to spawn extra scenarios.'
+          }
           enabled={includeCoverageGaps}
           onToggle={() => setIncludeCoverageGaps(v => !v)}
         />
@@ -1623,6 +1627,13 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const scenarios = result.scenarios || [];
   const testCases = result.testCases || [];
   const gaps = result.coverageGaps || [];
+  // Strict vs Expanded mode buckets. Suggested cases are requirement-adjacent
+  // proposals (expanded mode only) kept separate so they never inflate the
+  // committed coverage count. Missing requirements are open questions surfaced
+  // instead of inventing assumption-based test cases.
+  const mode: string = result.mode || (result.coverageGaps?.length ? 'expanded' : 'strict');
+  const suggestedTestCases = result.suggestedTestCases || [];
+  const missingRequirements = result.missingRequirements || [];
   const stats = result.stats || {};
   const isSaved = result.requirementId != null;
   const warning = result._warning;
@@ -1710,7 +1721,21 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
               <CheckCircle2 className={`w-5 h-5 ${isSaved ? 'text-emerald-400' : 'text-amber-400'}`} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Generation Complete</h3>
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                Generation Complete
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                  mode === 'expanded'
+                    ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                    : 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                }`}>
+                  {mode === 'expanded' ? 'Expanded Coverage' : 'Strict Coverage'}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {mode === 'expanded'
+                  ? 'Requirement coverage + separate suggestions. Suggestions are not part of committed coverage.'
+                  : 'Only test cases derived from this requirement. Context enriched these cases — it did not add new ones.'}
+              </p>
               {warning && (
                 <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
@@ -2048,6 +2073,91 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                       <Lightbulb className="w-3 h-3 flex-shrink-0" />
                       <span>{gap.suggestion}</span>
                     </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Suggested Additional Coverage — expanded mode only. Visually separated
+          from the committed requirement coverage above so it can never be mistaken
+          for what the requirement actually asked for. These are PROPOSALS. */}
+      {suggestedTestCases.length > 0 && (
+        <div className="space-y-3 border-2 border-dashed border-sky-500/30 rounded-2xl p-4 bg-sky-500/5">
+          <div>
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-sky-400" />
+              Suggested Additional Coverage
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30">{suggestedTestCases.length} suggestion{suggestedTestCases.length !== 1 ? 's' : ''}</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Requirement-adjacent cases proposed by Expanded Coverage. The requirement did <span className="text-sky-300 font-medium">not</span> ask for these — they are not part of your committed coverage. Review and promote any you want to keep.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {suggestedTestCases.map((tc: any, ti: number) => (
+              <div key={ti} className="bg-slate-800/50 border border-sky-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-sky-500/20">
+                    <Sparkles className="w-4 h-4 text-sky-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-sm font-medium text-white">{tc.title}</span>
+                      {tc.coverageType && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700/60 text-slate-300 capitalize">{String(tc.coverageType).replace(/_/g, ' ')}</span>
+                      )}
+                      {tc.priority && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[tc.priority] || 'bg-slate-700/60 text-slate-300'}`}>{tc.priority}</span>
+                      )}
+                    </div>
+                    {tc.expectedResult && (
+                      <div className="text-xs text-slate-400"><span className="text-slate-500">Expected:</span> {tc.expectedResult}</div>
+                    )}
+                    {tc.rationale && (
+                      <div className="text-xs text-sky-300/80 mt-1.5">Why suggested: {tc.rationale}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Potential Missing Requirements — open questions surfaced INSTEAD of inventing
+          assumption-based test cases. These ask the author to clarify scope. */}
+      {missingRequirements.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-white flex items-center gap-2">
+              <HelpCircle className="w-4 h-4 text-fuchsia-400" />
+              Potential Missing Requirements
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30">{missingRequirements.length} question{missingRequirements.length !== 1 ? 's' : ''}</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              The requirement is silent on these points. Rather than guess and generate assumption-based tests, we surface them as open questions to clarify.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {missingRequirements.map((mr: any, mi: number) => (
+              <div key={mi} className="bg-slate-800/50 border border-fuchsia-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-fuchsia-500/20">
+                    <HelpCircle className="w-4 h-4 text-fuchsia-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-sm font-medium text-white">{mr.question}</span>
+                      {mr.area && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700/60 text-slate-300">{mr.area}</span>
+                      )}
+                    </div>
+                    {mr.rationale && (
+                      <div className="text-xs text-slate-400">{mr.rationale}</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2478,6 +2588,20 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
     if (typeof g === 'string') { try { return JSON.parse(g); } catch { return []; } }
     return Array.isArray(g) ? g : [];
   })();
+  // Strict/Expanded mode artifacts persisted in the analysis JSONB at generation time.
+  const histMode: string = analysis.mode || (coverageGaps.length ? 'expanded' : 'strict');
+  const suggestedTestCases = (() => {
+    const s = analysis.suggestedTestCases;
+    if (!s) return [];
+    if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } }
+    return Array.isArray(s) ? s : [];
+  })();
+  const missingRequirements = (() => {
+    const m = analysis.missingRequirements;
+    if (!m) return [];
+    if (typeof m === 'string') { try { return JSON.parse(m); } catch { return []; } }
+    return Array.isArray(m) ? m : [];
+  })();
 
   const toggleCase = (i: number) => {
     setExpandedCases(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
@@ -2513,7 +2637,16 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           <ChevronRight className="w-4 h-4 text-slate-400 rotate-180" />
         </button>
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-white">{req.title}</h3>
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            {req.title}
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+              histMode === 'expanded'
+                ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
+                : 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+            }`}>
+              {histMode === 'expanded' ? 'Expanded Coverage' : 'Strict Coverage'}
+            </span>
+          </h3>
           <p className="text-xs text-slate-400">{req.jira_id && `${req.jira_id} • `}{req.module && `${req.module} • `}{new Date(req.created_at).toLocaleString()}</p>
         </div>
         <button
@@ -2701,6 +2834,79 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           );
         })()}
       </div>
+
+      {/* Suggested Additional Coverage — persisted (expanded mode). Visually
+          separated from committed coverage so it is never mistaken for it. */}
+      {suggestedTestCases.length > 0 && (
+        <div className="bg-sky-500/5 rounded-xl border-2 border-dashed border-sky-500/30 p-4">
+          <h4 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-sky-400" />
+            {suggestedTestCases.length} Suggested Additional Coverage
+            <span className="text-xs text-slate-400 font-normal">Proposals — not part of committed coverage</span>
+          </h4>
+          <div className="space-y-2 mt-3">
+            {suggestedTestCases.map((tc: any, ti: number) => (
+              <div key={ti} className="bg-slate-900/40 border border-sky-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-sky-500/20">
+                    <Sparkles className="w-4 h-4 text-sky-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-sm font-medium text-white">{tc.title}</span>
+                      {tc.coverageType && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700/60 text-slate-300 capitalize">{String(tc.coverageType).replace(/_/g, ' ')}</span>
+                      )}
+                      {tc.priority && (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[tc.priority] || 'bg-slate-700/60 text-slate-300'}`}>{tc.priority}</span>
+                      )}
+                    </div>
+                    {tc.expectedResult && (
+                      <div className="text-xs text-slate-400"><span className="text-slate-500">Expected:</span> {tc.expectedResult}</div>
+                    )}
+                    {tc.rationale && (
+                      <div className="text-xs text-sky-300/80 mt-1.5">Why suggested: {tc.rationale}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Potential Missing Requirements — persisted open questions (not test cases). */}
+      {missingRequirements.length > 0 && (
+        <div className="bg-slate-800/50 rounded-xl border border-fuchsia-500/20 p-4">
+          <h4 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+            <HelpCircle className="w-4 h-4 text-fuchsia-400" />
+            {missingRequirements.length} Potential Missing Requirement{missingRequirements.length !== 1 ? 's' : ''}
+            <span className="text-xs text-slate-400 font-normal">Open questions to clarify scope</span>
+          </h4>
+          <div className="space-y-2 mt-3">
+            {missingRequirements.map((mr: any, mi: number) => (
+              <div key={mi} className="bg-slate-900/40 border border-fuchsia-500/20 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-fuchsia-500/20">
+                    <HelpCircle className="w-4 h-4 text-fuchsia-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-sm font-medium text-white">{mr.question}</span>
+                      {mr.area && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700/60 text-slate-300">{mr.area}</span>
+                      )}
+                    </div>
+                    {mr.rationale && (
+                      <div className="text-xs text-slate-400">{mr.rationale}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Coverage Gaps — persisted from generation (areas impractical to automate) */}
       {coverageGaps.length > 0 && (
