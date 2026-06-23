@@ -1578,6 +1578,8 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const knowledgeUsed = result.knowledgeUsed || [];
   // Issue #2: real application profile that grounded this generation, if any.
   const appProfileUsed = result.appProfileUsed || null;
+  // Provenance proof — which intelligence sources actually fed the model this run.
+  const intelligenceUsed = result.intelligenceUsed || null;
 
   // Build coverage type lookup
   const labelMap: Record<string, { label: string; icon: string }> = {};
@@ -1724,6 +1726,72 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           </div>
         </div>
       </div>
+
+      {/* Intelligence Used — provenance proof of which sources grounded this run */}
+      {intelligenceUsed && (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+            <Brain className="w-4 h-4 text-violet-400" />
+            Intelligence Used
+            <span className="text-xs font-normal text-slate-500">— what grounded these test cases (not generic AI guessing)</span>
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {([
+              { key: 'requirement', label: 'Requirement', icon: FileText,
+                src: intelligenceUsed.requirement,
+                detail: intelligenceUsed.requirement?.detail },
+              { key: 'appProfile', label: 'App Profile', icon: Sparkles,
+                src: intelligenceUsed.appProfile,
+                detail: intelligenceUsed.appProfile?.used
+                  ? [intelligenceUsed.appProfile.name,
+                     intelligenceUsed.appProfile.totalElements != null ? `${intelligenceUsed.appProfile.totalElements} elements` : null,
+                     intelligenceUsed.appProfile.totalForms != null ? `${intelligenceUsed.appProfile.totalForms} forms` : null]
+                    .filter(Boolean).join(' · ')
+                  : 'No crawled profile — crawl in Application Profiles to ground UI steps' },
+              { key: 'appKnowledge', label: 'App Knowledge', icon: BookOpen,
+                src: intelligenceUsed.appKnowledge,
+                detail: intelligenceUsed.appKnowledge?.used
+                  ? (intelligenceUsed.appKnowledge.items || []).join(', ')
+                  : 'No knowledge items selected' },
+              { key: 'testData', label: 'Test Data', icon: Database,
+                src: intelligenceUsed.testData,
+                detail: intelligenceUsed.testData?.used
+                  ? (intelligenceUsed.testData.datasets || []).join(', ')
+                  : 'No datasets — generation may use placeholders' },
+              { key: 'repoIntelligence', label: 'Repository Intelligence', icon: GitBranch,
+                src: intelligenceUsed.repoIntelligence,
+                detail: intelligenceUsed.repoIntelligence?.used
+                  ? (intelligenceUsed.repoIntelligence.summary || 'Repo patterns applied')
+                  : (intelligenceUsed.repoIntelligence?.reason || 'Not used for this run') },
+            ]).map(({ key, label, icon: Icon, src, detail }) => {
+              const used = !!src?.used;
+              return (
+                <div
+                  key={key}
+                  className={`flex items-start gap-2 rounded-lg px-3 py-2 border ${
+                    used ? 'bg-emerald-500/5 border-emerald-500/25' : 'bg-slate-900/40 border-slate-700/40'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${used ? 'text-emerald-400' : 'text-slate-500'}`} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-xs font-medium ${used ? 'text-white' : 'text-slate-400'}`}>{label}</span>
+                      {used
+                        ? <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        : <X className="w-3 h-3 text-slate-600 shrink-0" />}
+                    </div>
+                    {detail && (
+                      <p className={`text-[11px] mt-0.5 leading-snug ${used ? 'text-slate-300' : 'text-slate-500'} line-clamp-2`}>
+                        {detail}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Results Tab Bar: Core | Coverage Gaps | All */}
       {gaps.length > 0 && (
