@@ -69,6 +69,18 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: 'bg-green-500/20 text-green-400',
 };
 
+// Source provenance — which intelligence grounded each test case. Mirrors the
+// backend TestCaseSource type. "assumption" is amber-flagged so reviewers can
+// immediately spot tests the model inferred without direct evidence.
+const SOURCE_META: Record<string, { label: string; cls: string }> = {
+  requirement:  { label: 'Requirement',     cls: 'bg-sky-500/15 text-sky-300 border-sky-500/30' },
+  knowledge:    { label: 'App Knowledge',   cls: 'bg-violet-500/15 text-violet-300 border-violet-500/30' },
+  test_data:    { label: 'Test Data',       cls: 'bg-teal-500/15 text-teal-300 border-teal-500/30' },
+  app_profile:  { label: 'App Profile',     cls: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' },
+  gap_analysis: { label: 'Gap Analysis',    cls: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30' },
+  assumption:   { label: '⚠ Assumption-Based', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+};
+
 const RISK_COLORS: Record<string, string> = {
   critical: 'text-red-400',
   high: 'text-orange-400',
@@ -505,6 +517,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [useTestData, setUseTestData] = useState(true);
   const [testDataSets, setTestDataSets] = useState<Array<{ id: number; name: string; environment: string; recordCount?: number }>>([]);
   const [loadingTestData, setLoadingTestData] = useState(false);
+  // Which datasets the user explicitly picked. Empty = use ALL project datasets
+  // (keeps the convenient default). Selecting some pins exactly those — same
+  // opt-in model as App Knowledge.
+  const [selectedTestDataIds, setSelectedTestDataIds] = useState<number[]>([]);
 
   const [repos, setRepos] = useState<any[]>([]);
   const [repoContexts, setRepoContexts] = useState<any[]>([]);
@@ -804,6 +820,9 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           // Test Data grounding: only send useTestData:false when explicitly off
           // (keeps the backend default of using all project datasets).
           useTestData: useTestData ? undefined : false,
+          // Pin specific datasets when the user picked some; otherwise (empty)
+          // let the backend use all project datasets.
+          testDataIds: useTestData && selectedTestDataIds.length > 0 ? selectedTestDataIds : undefined,
           requirementId: selectedRequirementId || undefined,
           force: force || undefined,
         }),
@@ -873,6 +892,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setModule('');
     setSelectedTypes(['positive', 'negative', 'edge_cases']);
     setSelectedKnowledgeIds([]);
+    setSelectedTestDataIds([]);
     setUseRepoIntelligence(false);
     setSelectedRepoId('');
     setSelectedTemplate(null);
@@ -943,7 +963,11 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           description="Use your project's real datasets (e.g. valid_users, checkout_data) so generated cases reference actual data instead of invented placeholders."
           enabled={useTestData}
           onToggle={() => setUseTestData(v => !v)}
-          statusLabel={useTestData && testDataSets.length > 0 ? `${testDataSets.length} dataset${testDataSets.length === 1 ? '' : 's'}` : undefined}
+          statusLabel={useTestData && testDataSets.length > 0
+            ? (selectedTestDataIds.length > 0
+                ? `${selectedTestDataIds.length} of ${testDataSets.length} selected`
+                : `all ${testDataSets.length} dataset${testDataSets.length === 1 ? '' : 's'}`)
+            : undefined}
         >
           {loadingTestData ? (
             <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
@@ -957,27 +981,51 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
               </p>
             </div>
           ) : (
-            <div className="space-y-1.5">
-              <p className="text-xs text-slate-400">
-                These datasets will be shared with the AI (names &amp; keys only — never values or secrets):
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {testDataSets.slice(0, 12).map(ds => (
-                  <span
-                    key={ds.id}
-                    className="inline-flex items-center gap-1 rounded-md bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 text-xs text-violet-200"
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-slate-400">
+                  {selectedTestDataIds.length > 0
+                    ? 'Only the selected datasets will be shared with the AI (names & keys only — never values or secrets):'
+                    : 'Tap a dataset to use only specific ones. With none selected, all are used (names & keys only — never values or secrets):'}
+                </p>
+                {selectedTestDataIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTestDataIds([])}
+                    className="shrink-0 text-xs text-violet-300 hover:text-violet-200 underline"
                   >
-                    <Database className="w-3 h-3" />
-                    {ds.name}
-                    <span className="text-violet-400/70">[{ds.environment}]</span>
-                    {typeof ds.recordCount === 'number' ? (
-                      <span className="text-violet-400/70">· {ds.recordCount}</span>
-                    ) : null}
-                  </span>
-                ))}
-                {testDataSets.length > 12 && (
-                  <span className="text-xs text-slate-500">+{testDataSets.length - 12} more</span>
+                    Use all
+                  </button>
                 )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {testDataSets.map(ds => {
+                  const isSelected = selectedTestDataIds.includes(ds.id);
+                  // Visually highlight when explicitly picked, OR when "use all" is in effect.
+                  const active = isSelected || selectedTestDataIds.length === 0;
+                  return (
+                    <button
+                      type="button"
+                      key={ds.id}
+                      onClick={() => setSelectedTestDataIds(prev =>
+                        prev.includes(ds.id) ? prev.filter(id => id !== ds.id) : [...prev, ds.id]
+                      )}
+                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors ${
+                        active
+                          ? 'bg-violet-500/15 border-violet-500/40 text-violet-100'
+                          : 'bg-slate-800/40 border-slate-700/50 text-slate-400 hover:border-violet-500/30'
+                      }`}
+                      title={isSelected ? 'Selected — click to remove' : 'Click to use only specific datasets'}
+                    >
+                      {isSelected ? <Check className="w-3 h-3" /> : <Database className="w-3 h-3" />}
+                      {ds.name}
+                      <span className="opacity-70">[{ds.environment}]</span>
+                      {typeof ds.recordCount === 'number' ? (
+                        <span className="opacity-70">· {ds.recordCount}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1524,7 +1572,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
             )}
             {useTestData && testDataSets.length > 0 && (
               <span className="flex items-center gap-1 text-violet-400">
-                <Database className="w-3 h-3" /> {testDataSets.length} dataset{testDataSets.length !== 1 ? 's' : ''}
+                <Database className="w-3 h-3" />{' '}
+                {selectedTestDataIds.length > 0
+                  ? `${selectedTestDataIds.length} dataset${selectedTestDataIds.length !== 1 ? 's' : ''}`
+                  : `all ${testDataSets.length} dataset${testDataSets.length !== 1 ? 's' : ''}`}
               </span>
             )}
             {useRepoIntelligence && selectedRepoId && (
@@ -1684,6 +1735,12 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                 <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
                   <Info className="w-3 h-3" />
                   Generic generation — crawl this app in Application Profiles to ground test cases in real selectors.
+                </p>
+              )}
+              {(stats.duplicatesRemoved ?? 0) > 0 && (
+                <p className="text-xs text-teal-400 mt-0.5 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  Removed {stats.duplicatesRemoved} near-duplicate test case{stats.duplicatesRemoved !== 1 ? 's' : ''} (semantic similarity) — only unique cases kept.
                 </p>
               )}
             </div>
@@ -1874,6 +1931,14 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                                   </span>
                                   <span className="text-sm text-slate-200 flex-1 line-clamp-1">{tc.title}</span>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    {tc.source && SOURCE_META[tc.source] && (
+                                      <span
+                                        title={tc.sourceEvidence || tc.source_evidence || `Grounded in: ${SOURCE_META[tc.source].label}`}
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-medium border hidden sm:inline ${SOURCE_META[tc.source].cls}`}
+                                      >
+                                        {SOURCE_META[tc.source].label}
+                                      </span>
+                                    )}
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] ${SEVERITY_COLORS[tc.severity] || ''}`}>
                                       {tc.severity}
                                     </span>
@@ -1906,6 +1971,19 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                                       <div>
                                         <div className="text-[11px] font-medium text-slate-500 mb-0.5">Test Data</div>
                                         <div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.testData}</div>
+                                      </div>
+                                    )}
+                                    {tc.source && SOURCE_META[tc.source] && (
+                                      <div>
+                                        <div className="text-[11px] font-medium text-slate-500 mb-0.5">Source</div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${SOURCE_META[tc.source].cls}`}>
+                                            {SOURCE_META[tc.source].label}
+                                          </span>
+                                          {(tc.sourceEvidence || tc.source_evidence) && (
+                                            <span className="text-xs text-slate-400 italic">{tc.sourceEvidence || tc.source_evidence}</span>
+                                          )}
+                                        </div>
                                       </div>
                                     )}
                                     <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-700/30">
@@ -2547,6 +2625,14 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
                             {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                             <span className={`px-2 py-0.5 rounded text-xs font-bold border ${PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.P2}`}>{tc.priority}</span>
                             <span className="text-sm text-white flex-1 line-clamp-1">{tc.title}</span>
+                            {tc.source && SOURCE_META[tc.source] && (
+                              <span
+                                title={tc.source_evidence || tc.sourceEvidence || `Grounded in: ${SOURCE_META[tc.source].label}`}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-medium border hidden sm:inline ${SOURCE_META[tc.source].cls}`}
+                              >
+                                {SOURCE_META[tc.source].label}
+                              </span>
+                            )}
                             <span className={`px-1.5 py-0.5 rounded text-xs ${SEVERITY_COLORS[tc.severity] || ''}`}>{tc.severity}</span>
                             {/* Sprint 4 — automation status badge + script count */}
                             {tc.automation_status === 'automated' ? (
@@ -2572,6 +2658,17 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
                               <div><div className="text-xs font-medium text-slate-500 mb-1">Expected Result</div><div className="text-sm text-emerald-300">{tc.expected_result}</div></div>
                               {tc.test_data && (
                                 <div><div className="text-xs font-medium text-slate-500 mb-1">Test Data</div><div className="text-sm text-slate-300 font-mono bg-slate-800/50 px-2 py-1 rounded">{tc.test_data}</div></div>
+                              )}
+                              {tc.source && SOURCE_META[tc.source] && (
+                                <div>
+                                  <div className="text-xs font-medium text-slate-500 mb-1">Source</div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${SOURCE_META[tc.source].cls}`}>{SOURCE_META[tc.source].label}</span>
+                                    {(tc.source_evidence || tc.sourceEvidence) && (
+                                      <span className="text-xs text-slate-400 italic">{tc.source_evidence || tc.sourceEvidence}</span>
+                                    )}
+                                  </div>
+                                </div>
                               )}
                               <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-700/30">
                                 {tags.map((tag: string, ti: number) => (
