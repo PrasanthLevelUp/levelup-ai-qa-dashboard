@@ -66,22 +66,36 @@ interface GenerationResult {
     generationTimeMs: number;
     errors: string[];
     intelligence?: {
-      profileId: number;
-      crawlStrategy: 'FAST_PATH' | 'SLOW_PATH';
+      profileId?: number | null;
+      crawlStrategy?: 'FAST_PATH' | 'SLOW_PATH';
       crawlTimeMs?: number;
       profileAge?: string;
       patternsDetected?: number;
+      // True when a cached App Profile DOM powered this generation. Together
+      // with profileId this is the truthful "App Profile Used" signal.
+      profileCacheUsed?: boolean;
       generationSource?: string;
       testCaseId?: number | null;
       testCaseDataUsed?: boolean;
       folderDecision?: { testRoot?: string; targetDirectory?: string; fileName?: string; reason?: string };
     };
-    // Sprint 4 — locator resolution report (element → locator + confidence)
+    // Sprint 4 — locator resolution report (element → locator + confidence).
+    // `locators[]` carries the per-element grounding detail (Tier B) that powers
+    // the Locator Grounding Report: ✓ grounded in the real crawl DOM vs ⚠ fell
+    // back to a generic selector not found in the crawl.
     locatorReport?: {
       totalLocators: number;
       validatedCount: number;
       avgConfidence: number;
       todoCount: number;
+      locators?: Array<{
+        element: string;
+        selector: string;
+        confidence: number;
+        source?: string;
+        validated?: boolean;
+        status?: string;
+      }>;
     };
     // Sprint 4 — RTM auto-update result (requirement link + coverage delta)
     rtmUpdate?: {
@@ -1882,7 +1896,23 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 const validated = lr?.validatedCount ?? 0;
                 const realLocPct = totalLoc > 0 ? Math.round((validated / totalLoc) * 100) : null;
                 const assertions = result.data.stats.totalAssertions ?? 0;
-                const grounded = Boolean(result.data.intelligence?.crawlStrategy);
+                // Truthful grounding signal: a generation is grounded in the
+                // real application whenever a cached App Profile DOM was used
+                // (profileCacheUsed / profileId) or a fresh crawl walked the DOM
+                // (crawlStrategy present), or real locators were validated.
+                const intel = result.data.intelligence;
+                const grounded = Boolean(
+                  intel?.profileCacheUsed ||
+                  (intel?.profileId != null) ||
+                  intel?.crawlStrategy ||
+                  validated > 0
+                );
+                const groundingLabel = intel?.profileCacheUsed || intel?.profileId != null
+                  ? 'App Profile'
+                  : grounded ? 'Live Crawl' : 'AI only';
+                const groundingSub = intel?.profileCacheUsed || intel?.profileId != null
+                  ? 'cached real DOM'
+                  : grounded ? 'real URLs & DOM' : 'no profile used';
                 const qualityTone = (pct: number | null) =>
                   pct == null ? 'text-slate-300'
                     : pct >= 80 ? 'text-emerald-400'
@@ -1915,10 +1945,10 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                       <div className="bg-[#0c1222] rounded-lg p-3">
                         <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Grounding</p>
                         <p className={`text-sm font-bold ${grounded ? 'text-emerald-400' : 'text-slate-400'}`}>
-                          {grounded ? 'App Profile' : 'AI only'}
+                          {groundingLabel}
                         </p>
                         <p className="text-[10px] text-slate-500">
-                          {grounded ? 'real URLs & DOM' : 'no profile used'}
+                          {groundingSub}
                         </p>
                       </div>
                     </div>
@@ -2019,25 +2049,64 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 </div>
               )}
 
-              {/* ── Sprint 4: Locator resolution report ── */}
-              {result.data.locatorReport && result.data.locatorReport.totalLocators > 0 && (
-                <div className="bg-[#0c1222] rounded-lg p-3 flex items-center gap-3">
-                  <Link2 size={14} className="text-blue-400 shrink-0" />
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
-                    <span className="text-slate-300 font-medium">Locator Resolution</span>
-                    <span className="text-slate-500">
-                      <span className="text-emerald-400 font-medium">{result.data.locatorReport.validatedCount}</span>
-                      /{result.data.locatorReport.totalLocators} validated
-                    </span>
-                    <span className="text-slate-500">
-                      Avg confidence: <span className="text-blue-300 font-medium">{Math.round(result.data.locatorReport.avgConfidence)}%</span>
-                    </span>
-                    {result.data.locatorReport.todoCount > 0 && (
-                      <span className="text-amber-400">{result.data.locatorReport.todoCount} need review</span>
+              {/* ── Sprint 4 / Tier B: Locator Grounding Report ──
+                  Summary line + per-element breakdown showing exactly which
+                  selectors were grounded in the REAL crawled DOM (✓) vs fell
+                  back to a generic selector not found in the crawl (⚠). This is
+                  the demo-grade proof that locators come from the App Profile,
+                  not from AI guesses. ── */}
+              {result.data.locatorReport && result.data.locatorReport.totalLocators > 0 && (() => {
+                const lreport = result.data.locatorReport!;
+                const groundedPct = lreport.totalLocators > 0
+                  ? Math.round((lreport.validatedCount / lreport.totalLocators) * 100)
+                  : 0;
+                const pctTone = groundedPct >= 80 ? 'text-emerald-400'
+                  : groundedPct >= 50 ? 'text-amber-400' : 'text-red-400';
+                const entries = lreport.locators ?? [];
+                return (
+                  <div className="bg-[#0c1222] rounded-lg p-3">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                      <span className="inline-flex items-center gap-2 text-slate-300 font-medium">
+                        <Link2 size={14} className="text-blue-400 shrink-0" />
+                        Locator Grounding Report
+                      </span>
+                      <span className="text-slate-500">
+                        <span className={`font-semibold ${pctTone}`}>{groundedPct}%</span> grounded
+                        {' '}(<span className="text-emerald-400 font-medium">{lreport.validatedCount}</span>/{lreport.totalLocators})
+                      </span>
+                      <span className="text-slate-500">
+                        Avg confidence: <span className="text-blue-300 font-medium">{Math.round(lreport.avgConfidence)}%</span>
+                      </span>
+                      {lreport.todoCount > 0 && (
+                        <span className="text-amber-400">{lreport.todoCount} not found in crawl</span>
+                      )}
+                    </div>
+                    {entries.length > 0 && (
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {entries.map((loc, i) => {
+                          const ok = loc.validated ?? (loc.status === 'validated');
+                          return (
+                            <div
+                              key={`${loc.element}-${i}`}
+                              className="flex items-center gap-2 rounded-md bg-[#0a0f1c] border border-white/5 px-2.5 py-1.5"
+                              title={ok ? `Grounded in crawl DOM via ${loc.source ?? 'match'}` : 'Not found in crawl — generic fallback selector'}
+                            >
+                              {ok
+                                ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+                                : <AlertTriangle size={13} className="text-amber-400 shrink-0" />}
+                              <span className="text-[11px] text-slate-300 font-medium shrink-0 w-20 truncate">{loc.element}</span>
+                              <code className="text-[10px] text-slate-400 font-mono truncate flex-1">{loc.selector}</code>
+                              <span className={`text-[10px] font-medium shrink-0 ${ok ? 'text-emerald-300' : 'text-slate-500'}`}>
+                                {ok ? `${loc.confidence}%` : 'fallback'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Intelligence Info */}
               {result.data.intelligence && (
@@ -2063,9 +2132,11 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                         {result.data.intelligence.patternsDetected} pattern{result.data.intelligence.patternsDetected !== 1 ? 's' : ''} detected
                       </span>
                     )}
-                    <span className="text-slate-600">
-                      Profile #{result.data.intelligence.profileId} cached for 30 days
-                    </span>
+                    {result.data.intelligence.profileId != null && (
+                      <span className="text-slate-600">
+                        Profile #{result.data.intelligence.profileId} cached for 30 days
+                      </span>
+                    )}
                     {result.data.intelligence.generationSource && (
                       <span className="inline-flex items-center gap-1 text-slate-500">
                         <FileText size={10} />
