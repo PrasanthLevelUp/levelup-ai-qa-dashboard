@@ -9,7 +9,7 @@ import {
   GitBranch, Code2, BookOpen,
   Brain, Cpu, Info, HelpCircle, LayoutTemplate, Copy,
   Download, Filter, Search, Check, X,
-  Globe, Layers, FileStack,
+  Globe, Layers, FileStack, Database,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
@@ -499,6 +499,13 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [appProfiles, setAppProfiles] = useState<AppProfile[]>([]);
   const [loadingProfiles, setLoadingProfiles] = useState(false);
 
+  // Test Data — grounds generation in the project's real datasets (valid_users,
+  // checkout_data, …) so the AI references actual data instead of inventing
+  // placeholder credentials/products. On by default; '' = use all project datasets.
+  const [useTestData, setUseTestData] = useState(true);
+  const [testDataSets, setTestDataSets] = useState<Array<{ id: number; name: string; environment: string; recordCount?: number }>>([]);
+  const [loadingTestData, setLoadingTestData] = useState(false);
+
   const [repos, setRepos] = useState<any[]>([]);
   const [repoContexts, setRepoContexts] = useState<any[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(false);
@@ -551,7 +558,12 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
         }
         if (contextRes.ok) {
           const data = await contextRes.json();
-          setRepoContexts(Array.isArray(data) ? data : data.contexts || []);
+          // Backend returns { success, repositories: [...] }. Older shapes used
+          // `contexts` or a bare array — accept all so a scanned repo is never
+          // mislabelled "Not scanned".
+          setRepoContexts(
+            Array.isArray(data) ? data : (data.repositories || data.contexts || [])
+          );
         }
       } catch { /* ignore */ }
       setLoadingRepos(false);
@@ -559,8 +571,11 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   }, [activeProject?.id]);
 
   // Repos with intelligence data
+  // Normalize to strings: contexts store repo_id as TEXT while the repos list
+  // exposes a numeric id. Comparing without coercion (number vs string) made
+  // every scanned repo show as "Not scanned".
   const scannedRepoIds = useMemo(
-    () => new Set(repoContexts.map((c: any) => c.repoId || c.repo_id)),
+    () => new Set(repoContexts.map((c: any) => String(c.repoId ?? c.repo_id))),
     [repoContexts]
   );
 
@@ -589,6 +604,34 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
         setAppProfiles([]);
       }
       setLoadingProfiles(false);
+    })();
+  }, [activeProject?.id]);
+
+  // Fetch the project's Test Data sets so the Test Data source can show what
+  // will ground generation (names + record counts only — no values/secrets).
+  useEffect(() => {
+    if (!activeProject?.id) { setTestDataSets([]); return; }
+    (async () => {
+      setLoadingTestData(true);
+      try {
+        const headers: Record<string, string> = { 'x-project-id': String(activeProject.id) };
+        const res = await fetch('/api/test-data', { headers });
+        if (res.ok) {
+          const json = await res.json();
+          const rows: any[] = Array.isArray(json) ? json : (json?.datasets || []);
+          setTestDataSets(rows.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            environment: d.environment,
+            recordCount: d.recordCount ?? d.record_count,
+          })));
+        } else {
+          setTestDataSets([]);
+        }
+      } catch {
+        setTestDataSets([]);
+      }
+      setLoadingTestData(false);
     })();
   }, [activeProject?.id]);
 
@@ -758,6 +801,9 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           // (keeps backend default behaviour). Pin a specific crawl when one is chosen.
           useAppProfile: useAppProfile ? undefined : false,
           appProfileId: useAppProfile && selectedProfileId ? selectedProfileId : undefined,
+          // Test Data grounding: only send useTestData:false when explicitly off
+          // (keeps the backend default of using all project datasets).
+          useTestData: useTestData ? undefined : false,
           requirementId: selectedRequirementId || undefined,
           force: force || undefined,
         }),
@@ -888,6 +934,57 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
       ),
     },
     {
+      id: 'test-data',
+      render: () => (
+        <IntelligenceSourceCard
+          accent="violet"
+          icon={Database}
+          title="Test Data"
+          description="Use your project's real datasets (e.g. valid_users, checkout_data) so generated cases reference actual data instead of invented placeholders."
+          enabled={useTestData}
+          onToggle={() => setUseTestData(v => !v)}
+          statusLabel={useTestData && testDataSets.length > 0 ? `${testDataSets.length} dataset${testDataSets.length === 1 ? '' : 's'}` : undefined}
+        >
+          {loadingTestData ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading test data...
+            </div>
+          ) : testDataSets.length === 0 ? (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+              <p className="text-xs text-amber-300">
+                No test data sets found for this project. Add datasets in the{' '}
+                <a href="/test-data" className="underline">Test Data</a> page to ground generation in real data.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-xs text-slate-400">
+                These datasets will be shared with the AI (names &amp; keys only — never values or secrets):
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {testDataSets.slice(0, 12).map(ds => (
+                  <span
+                    key={ds.id}
+                    className="inline-flex items-center gap-1 rounded-md bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 text-xs text-violet-200"
+                  >
+                    <Database className="w-3 h-3" />
+                    {ds.name}
+                    <span className="text-violet-400/70">[{ds.environment}]</span>
+                    {typeof ds.recordCount === 'number' ? (
+                      <span className="text-violet-400/70">· {ds.recordCount}</span>
+                    ) : null}
+                  </span>
+                ))}
+                {testDataSets.length > 12 && (
+                  <span className="text-xs text-slate-500">+{testDataSets.length - 12} more</span>
+                )}
+              </div>
+            </div>
+          )}
+        </IntelligenceSourceCard>
+      ),
+    },
+    {
       id: 'repo-intelligence',
       render: () => (
         <IntelligenceSourceCard
@@ -915,7 +1012,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
             >
               <option value="">Select a repository...</option>
               {repos.map((r: any) => {
-                const hasIntel = scannedRepoIds.has(r.id);
+                const hasIntel = scannedRepoIds.has(String(r.id));
                 return (
                   <option key={r.id} value={String(r.id)}>
                     {r.name} {r.branch ? `(${r.branch})` : ''} {hasIntel ? '✓ Scanned' : '— Not scanned'}
@@ -924,7 +1021,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
               })}
             </select>
           )}
-          {selectedRepoId && !scannedRepoIds.has(parseInt(selectedRepoId, 10)) && (
+          {selectedRepoId && !scannedRepoIds.has(String(selectedRepoId)) && (
             <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               This repo hasn&apos;t been scanned yet. <a href="/repo-intelligence" className="underline">Scan it first →</a>
@@ -1423,6 +1520,11 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
             {selectedKnowledgeIds.length > 0 && (
               <span className="flex items-center gap-1 text-violet-400">
                 <BookOpen className="w-3 h-3" /> {selectedKnowledgeIds.length} knowledge item{selectedKnowledgeIds.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {useTestData && testDataSets.length > 0 && (
+              <span className="flex items-center gap-1 text-violet-400">
+                <Database className="w-3 h-3" /> {testDataSets.length} dataset{testDataSets.length !== 1 ? 's' : ''}
               </span>
             )}
             {useRepoIntelligence && selectedRepoId && (
