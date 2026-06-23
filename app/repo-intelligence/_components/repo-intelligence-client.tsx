@@ -29,6 +29,8 @@ import {
   BarChart3,
   BookOpen,
   Scan,
+  Settings,
+  KeyRound,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -65,12 +67,22 @@ interface RepoProfile {
     quoteStyle: string;
     semicolons: boolean;
   };
-  helperFunctions: Array<{ name: string; filePath: string; parameters?: string[]; category?: string }>;
-  pageObjects: Array<{ name: string; filePath: string; methods?: string[] }>;
+  // NOTE: parameters/methods arrive from the backend AST as objects
+  // ({ name, type }), not strings — the UI normalizes them before rendering.
+  helperFunctions: Array<{ name: string; filePath: string; parameters?: Array<{ name: string; type?: string }> | string[]; category?: string }>;
+  pageObjects: Array<{ name: string; filePath: string; methods?: Array<{ name: string }> | string[] }>;
   fixtures: Array<{ name: string; filePath: string }>;
   customCommands: Array<{ name: string; filePath: string }>;
   sharedConstants: Array<{ name: string; value: string; filePath: string }>;
-  businessFlows: Array<{ name: string; filePath: string; steps: string[] }>;
+  dataFiles?: Array<{ name: string; path: string; type: string; recordCount?: number }>;
+  environment?: {
+    envFiles: string[];
+    usesDotenv: boolean;
+    configModule: string | null;
+    envVars: string[];
+  };
+  // Backend BusinessFlow exposes relatedFiles[]; filePath kept optional for back-compat.
+  businessFlows: Array<{ name: string; filePath?: string; relatedFiles?: string[]; steps: string[]; category?: string; entryUrl?: string | null }>;
   testSuites: Array<{ name: string; filePath: string; testCount: number; tags?: string[] }>;
   preferredLocators: Array<{ pattern: string; count: number; example: string }>;
   avoidPatterns: string[];
@@ -114,31 +126,49 @@ function computeQualityScore(profile: RepoProfile): {
   overall: number;
   readiness: string;
 } {
-  // Understanding = how much we detected
+  // Understanding = how much of the framework's identity & conventions we detected.
   let understanding = 0;
   if (profile.framework && profile.framework !== 'unknown') understanding += 20;
   if (profile.testPattern && profile.testPattern !== 'unknown') understanding += 15;
   if (profile.locatorStrategy && profile.locatorStrategy !== 'unknown') understanding += 15;
   if (profile.codingStyle?.namingConvention) understanding += 10;
   if (profile.folderStructure?.testFolder) understanding += 10;
-  if (profile.ciIntegration) understanding += 10;
+  if (profile.ciIntegration) understanding += 5;
   if (profile.preferredLocators?.length > 0) understanding += 10;
   if (profile.dependencies?.length > 0) understanding += 10;
+  // Environment awareness (.env / env loader / dotenv) is part of understanding
+  // how the framework is configured at runtime.
+  const env = profile.environment;
+  if (env && ((env.envFiles?.length || 0) > 0 || env.usesDotenv || env.configModule)) understanding += 5;
   understanding = Math.min(100, understanding);
 
-  // Workflow coverage = how many flows we found
+  // Asset coverage = the reusable building blocks AI can leverage when
+  // generating new tests: helpers, page objects, fixtures, commands AND
+  // test-data files. Previously data files were ignored entirely, which
+  // unfairly suppressed the score for data-driven frameworks.
+  const assets = (profile.helperFunctions?.length || 0) + (profile.pageObjects?.length || 0) +
+    (profile.fixtures?.length || 0) + (profile.customCommands?.length || 0) +
+    (profile.dataFiles?.length || 0);
+  const helperReuse = Math.min(100, assets * 8);
+
+  // Workflow coverage = business flows extracted, with partial credit for test
+  // suites so a repo with real tests but few distinct describe-flows isn't
+  // zeroed out. Flow count is a property of how many tests exist, not of how
+  // well AI understands the framework, so it carries the lowest weight.
   const flows = profile.businessFlows?.length || 0;
-  const workflowCoverage = Math.min(100, flows * 15);
+  const suites = profile.testSuites?.length || 0;
+  const workflowCoverage = Math.min(100, flows * 20 + suites * 10);
 
-  // Helper reuse = how many reusable assets
-  const helpers = (profile.helperFunctions?.length || 0) + (profile.pageObjects?.length || 0) +
-    (profile.fixtures?.length || 0) + (profile.customCommands?.length || 0);
-  const helperReuse = Math.min(100, helpers * 5);
-
-  const overall = Math.round((understanding * 0.4) + (workflowCoverage * 0.3) + (helperReuse * 0.3));
+  const overall = Math.round((understanding * 0.4) + (helperReuse * 0.35) + (workflowCoverage * 0.25));
   const readiness = overall >= 75 ? 'High' : overall >= 45 ? 'Medium' : 'Low';
 
   return { repoUnderstanding: understanding, workflowCoverage, helperReuse, overall, readiness };
+}
+
+/** Normalize a list that may be string[] or {name}[] (from the AST) to string[]. */
+function nameList(items?: Array<{ name: string }> | string[]): string[] {
+  if (!items) return [];
+  return items.map((it: any) => (typeof it === 'string' ? it : it?.name)).filter(Boolean);
 }
 
 function frameworkIcon(fw: string) {
@@ -512,7 +542,7 @@ export function RepoIntelligenceClient() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <QualityCard label="Understanding" value={quality.repoUnderstanding} color="violet" />
             <QualityCard label="Workflow Coverage" value={quality.workflowCoverage} color="blue" />
-            <QualityCard label="Helper Reuse" value={quality.helperReuse} color="emerald" />
+            <QualityCard label="Asset Coverage" value={quality.helperReuse} color="emerald" />
             <QualityCard label="Overall Score" value={quality.overall} color="amber" />
             <div className="rounded-xl bg-slate-800/50 border border-slate-700/50 p-4 flex flex-col items-center justify-center">
               <span className="text-xs text-slate-500 uppercase tracking-wider mb-1">Readiness</span>
@@ -617,7 +647,7 @@ export function RepoIntelligenceClient() {
           <CollapsibleSection
             id="helpers"
             title="Reusable Assets"
-            subtitle={`AI discovered ${(profile.helperFunctions?.length || 0) + (profile.pageObjects?.length || 0) + (profile.fixtures?.length || 0)} reusable components`}
+            subtitle={`AI discovered ${(profile.helperFunctions?.length || 0) + (profile.pageObjects?.length || 0) + (profile.fixtures?.length || 0) + (profile.dataFiles?.length || 0)} reusable components`}
             icon={<Sparkles className="w-5 h-5 text-emerald-400" />}
             expanded={expandedSections.helpers}
             onToggle={() => toggleSection('helpers')}
@@ -649,7 +679,17 @@ export function RepoIntelligenceClient() {
             <ContextPreview profile={profile} repoId={selectedRepo} />
           </CollapsibleSection>
 
-          {/* ── SECTION 7: Dependencies & Capabilities ────── */}
+          {/* ── SECTION 7: Environment Awareness ──────────── */}
+          {profile.environment && (
+            ((profile.environment.envFiles?.length || 0) > 0 ||
+              profile.environment.usesDotenv ||
+              profile.environment.configModule ||
+              (profile.environment.envVars?.length || 0) > 0) && (
+              <EnvironmentPanel env={profile.environment} />
+            )
+          )}
+
+          {/* ── SECTION 8: Dependencies & Capabilities ────── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <CapabilityCard icon={<Layers className="w-5 h-5" />} label="API Layer" active={profile.hasApiLayer} />
             <CapabilityCard icon={<Box className="w-5 h-5" />} label="Custom Fixtures" active={profile.hasCustomFixtures} />
@@ -739,6 +779,67 @@ function CapabilityCard({ icon, label, active }: { icon: React.ReactNode; label:
   );
 }
 
+function EnvironmentPanel({ env }: { env: NonNullable<RepoProfile['environment']> }) {
+  return (
+    <div className="rounded-xl bg-slate-800/40 border border-slate-700/50 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Settings className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-sm font-semibold text-slate-200">Environment Awareness</h3>
+        <span className="text-[10px] text-slate-500">how this framework is configured at runtime</span>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-lg bg-slate-900/50 border border-slate-700/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+            <Folder className="w-3 h-3" /> Env Files
+          </p>
+          {env.envFiles?.length ? (
+            <div className="flex flex-wrap gap-1">
+              {env.envFiles.map((f, i) => (
+                <span key={i} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-300">{f}</span>
+              ))}
+            </div>
+          ) : <span className="text-xs text-slate-600">None</span>}
+        </div>
+
+        <div className="rounded-lg bg-slate-900/50 border border-slate-700/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+            <Zap className="w-3 h-3" /> dotenv
+          </p>
+          <span className={`text-sm font-medium ${env.usesDotenv ? 'text-emerald-400' : 'text-slate-600'}`}>
+            {env.usesDotenv ? 'In use' : 'Not used'}
+          </span>
+        </div>
+
+        <div className="rounded-lg bg-slate-900/50 border border-slate-700/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+            <FileCode className="w-3 h-3" /> Config Module
+          </p>
+          {env.configModule
+            ? <span className="text-[11px] font-mono text-slate-300 break-all">{env.configModule}</span>
+            : <span className="text-xs text-slate-600">None</span>}
+        </div>
+
+        <div className="rounded-lg bg-slate-900/50 border border-slate-700/40 p-3">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+            <KeyRound className="w-3 h-3" /> Env Variables ({env.envVars?.length || 0})
+          </p>
+          {env.envVars?.length ? (
+            <div className="flex flex-wrap gap-1">
+              {env.envVars.slice(0, 8).map((v, i) => (
+                <span key={i} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">{v}</span>
+              ))}
+              {env.envVars.length > 8 && (
+                <span className="text-[10px] text-slate-500">+{env.envVars.length - 8} more</span>
+              )}
+            </div>
+          ) : <span className="text-xs text-slate-600">None referenced</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CollapsibleSection({
   id, title, subtitle, icon, expanded, onToggle, children,
 }: {
@@ -772,13 +873,16 @@ function KnowledgeGraph({ profile }: { profile: RepoProfile }) {
     { id: 'pages', label: 'Page Objects', count: profile.pageObjects?.length || 0, color: 'blue', icon: '📄' },
     { id: 'flows', label: 'Workflows', count: profile.businessFlows?.length || 0, color: 'amber', icon: '🔀' },
     { id: 'fixtures', label: 'Fixtures', count: profile.fixtures?.length || 0, color: 'cyan', icon: '📌' },
+    { id: 'data', label: 'Data Files', count: profile.dataFiles?.length || 0, color: 'rose', icon: '🗂️' },
     { id: 'commands', label: 'Commands', count: profile.customCommands?.length || 0, color: 'pink', icon: '⚡' },
   ];
 
-  // Simple connection visualization
+  // Simple connection visualization. Datasets feed tests + helpers (the helpers
+  // that read data/*.json), page objects extend the base page, fixtures wrap tests.
   const connections = [
-    ['tests', 'helpers'], ['tests', 'pages'], ['tests', 'fixtures'],
-    ['helpers', 'pages'], ['flows', 'tests'], ['commands', 'tests'],
+    ['tests', 'pages'], ['tests', 'fixtures'], ['tests', 'helpers'],
+    ['helpers', 'data'], ['tests', 'data'],
+    ['flows', 'tests'], ['commands', 'tests'],
   ];
 
   return (
@@ -827,25 +931,33 @@ function KnowledgeGraph({ profile }: { profile: RepoProfile }) {
 
 function HelpersList({ profile }: { profile: RepoProfile }) {
   const [filter, setFilter] = useState('');
-  const [activeTab, setActiveTab] = useState<'helpers' | 'pages' | 'fixtures' | 'commands'>('helpers');
+  const [activeTab, setActiveTab] = useState<'helpers' | 'pages' | 'fixtures' | 'data' | 'commands'>('helpers');
 
   const tabs = [
     { key: 'helpers' as const, label: 'Helpers', count: profile.helperFunctions?.length || 0, icon: '🔧' },
     { key: 'pages' as const, label: 'Page Objects', count: profile.pageObjects?.length || 0, icon: '📄' },
     { key: 'fixtures' as const, label: 'Fixtures', count: profile.fixtures?.length || 0, icon: '📌' },
+    { key: 'data' as const, label: 'Data Files', count: profile.dataFiles?.length || 0, icon: '🗂️' },
     { key: 'commands' as const, label: 'Commands', count: profile.customCommands?.length || 0, icon: '⚡' },
   ];
 
-  const getItems = () => {
+  const getItems = (): Array<{ name: string; file: string; detail: string }> => {
     switch (activeTab) {
       case 'helpers': return (profile.helperFunctions || []).map(h => ({
-        name: h.name, file: h.filePath, detail: h.parameters?.join(', ') || '',
+        name: h.name, file: h.filePath, detail: nameList(h.parameters).join(', '),
       }));
-      case 'pages': return (profile.pageObjects || []).map(p => ({
-        name: p.name, file: p.filePath, detail: p.methods?.slice(0, 4).join(', ') || '',
-      }));
+      case 'pages': return (profile.pageObjects || []).map(p => {
+        const methods = nameList(p.methods);
+        const shown = methods.slice(0, 4).join(', ');
+        const extra = methods.length > 4 ? ` +${methods.length - 4} more` : '';
+        return { name: p.name, file: p.filePath, detail: shown + extra };
+      });
       case 'fixtures': return (profile.fixtures || []).map(f => ({
         name: f.name, file: f.filePath, detail: '',
+      }));
+      case 'data': return (profile.dataFiles || []).map(d => ({
+        name: d.name, file: d.path,
+        detail: `${d.type}${typeof d.recordCount === 'number' ? ` · ${d.recordCount} record${d.recordCount === 1 ? '' : 's'}` : ''}`,
       }));
       case 'commands': return (profile.customCommands || []).map(c => ({
         name: c.name, file: c.filePath, detail: '',
@@ -900,7 +1012,7 @@ function HelpersList({ profile }: { profile: RepoProfile }) {
           items.map((item, i) => (
             <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-700/20 transition-colors group">
               <div className="w-8 h-8 rounded-md bg-slate-700/50 flex items-center justify-center text-xs font-mono text-violet-400 shrink-0">
-                {activeTab === 'helpers' ? 'fn' : activeTab === 'pages' ? 'PO' : activeTab === 'fixtures' ? 'fx' : 'cmd'}
+                {activeTab === 'helpers' ? 'fn' : activeTab === 'pages' ? 'PO' : activeTab === 'fixtures' ? 'fx' : activeTab === 'data' ? 'db' : 'cmd'}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-mono font-medium text-slate-200 truncate">
@@ -943,8 +1055,11 @@ function WorkflowVisualization({
                 <Workflow className="w-4 h-4 text-amber-400 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-200 truncate">{flow.name}</p>
-                  <p className="text-[10px] text-slate-600 font-mono truncate">{flow.filePath}</p>
+                  <p className="text-[10px] text-slate-600 font-mono truncate">{flow.filePath || flow.relatedFiles?.[0] || ''}</p>
                 </div>
+                {flow.category && flow.category !== 'general' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 capitalize">{flow.category}</span>
+                )}
                 <span className="text-xs text-slate-500">{flow.steps?.length || 0} steps</span>
                 {expandedFlow === i
                   ? <ChevronDown className="w-4 h-4 text-slate-500" />
