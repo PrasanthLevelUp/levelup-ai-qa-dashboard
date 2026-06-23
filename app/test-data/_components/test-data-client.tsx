@@ -275,6 +275,11 @@ export function TestDataClient() {
               ))}
             </div>
 
+            {/* Selected dataset preview */}
+            {mode === 'view' && selected && (
+              <DatasetPreview dataset={selected} getHeaders={getHeaders} />
+            )}
+
             {/* Dataset list */}
             <div className="space-y-2">
               {loading && (
@@ -285,10 +290,21 @@ export function TestDataClient() {
 
               {!loading && datasets.length === 0 && (
                 <div className="rounded-xl bg-[#111c30] border border-[#1e293b] p-8 text-center">
-                  <Boxes className="mx-auto text-slate-600 mb-2" size={28} />
-                  <p className="text-sm text-slate-400 mb-1">No datasets yet</p>
-                  <p className="text-xs text-slate-600">
-                    Create your first dataset — e.g. <span className="text-slate-400">valid_users</span>.
+                  <Boxes className="mx-auto text-slate-600 mb-3" size={32} />
+                  <p className="text-sm font-medium text-slate-300 mb-2">Create datasets like:</p>
+                  <ul className="text-xs text-slate-400 space-y-1 mb-3">
+                    <li className="flex items-center justify-center gap-1.5">
+                      <span className="text-emerald-400">•</span> valid_users
+                    </li>
+                    <li className="flex items-center justify-center gap-1.5">
+                      <span className="text-emerald-400">•</span> products
+                    </li>
+                    <li className="flex items-center justify-center gap-1.5">
+                      <span className="text-emerald-400">•</span> test_orders
+                    </li>
+                  </ul>
+                  <p className="text-xs text-slate-500">
+                    Script Generation will automatically use linked datasets.
                   </p>
                 </div>
               )}
@@ -740,13 +756,32 @@ function RecordForm({
         </div>
       </div>
 
-      {/* Secret toggle */}
-      <label className="flex items-center gap-2 mt-3 cursor-pointer">
-        <input type="checkbox" checked={isSecret} onChange={(e) => setIsSecret(e.target.checked)} className="accent-amber-500" />
-        <span className="flex items-center gap-1.5 text-sm text-slate-300">
-          <ShieldAlert size={14} className="text-amber-400" /> This value is a secret
-        </span>
-      </label>
+      {/* Value type selector (radio buttons) */}
+      <div className="mt-3">
+        <label className="block text-[11px] font-medium text-slate-400 mb-2">Value Type</label>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={!isSecret}
+              onChange={() => setIsSecret(false)}
+              className="accent-emerald-500"
+            />
+            <span className="text-sm text-slate-300">Plain Value</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              checked={isSecret}
+              onChange={() => setIsSecret(true)}
+              className="accent-amber-500"
+            />
+            <span className="flex items-center gap-1.5 text-sm text-slate-300">
+              <ShieldAlert size={14} className="text-amber-400" /> Secret Reference
+            </span>
+          </label>
+        </div>
+      </div>
 
       {!isSecret ? (
         <div className="mt-3">
@@ -802,6 +837,89 @@ function RecordForm({
 /* ================================================================== */
 /*  Linkage panel — usage display + link/unlink management             */
 /* ================================================================== */
+
+/** Dataset preview panel — shows quick stats and record keys. */
+function DatasetPreview({
+  dataset, getHeaders,
+}: {
+  dataset: TestDataSet;
+  getHeaders: () => Record<string, string>;
+}) {
+  const [records, setRecords] = useState<TestDataRecord[]>([]);
+  const [usage, setUsage] = useState<UsageTestCase[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      fetch(`/api/test-data/${dataset.id}`, { cache: 'no-store', headers: getHeaders() }),
+      fetch(`/api/test-data/${dataset.id}/usage`, { cache: 'no-store', headers: getHeaders() }),
+    ])
+      .then(async ([dRes, uRes]) => {
+        const d = await dRes.json();
+        const u = await uRes.json();
+        if (!cancelled) {
+          setRecords(Array.isArray(d?.records) ? d.records : []);
+          setUsage(Array.isArray(u?.testCases) ? u.testCases : []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [dataset.id, getHeaders]);
+
+  const recordKeys = records.slice(0, 5).map((r) => r.key);
+
+  return (
+    <div className="rounded-xl bg-[#111c30] border border-emerald-500/30 p-4 mb-3">
+      <div className="flex items-center gap-2 mb-3">
+        <Database size={15} className="text-emerald-400" />
+        <h3 className="text-sm font-semibold text-white truncate">{dataset.name}</h3>
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 text-xs text-slate-500 py-2">
+          <Loader2 className="animate-spin" size={13} /> Loading...
+        </div>
+      ) : (
+        <div className="space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Records</span>
+            <span className="font-medium text-emerald-300">{records.length}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Environment</span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${envBadge(dataset.environment)}`}>
+              {dataset.environment}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Used by</span>
+            <span className="font-medium text-sky-300">{usage.length} test cases</span>
+          </div>
+          {recordKeys.length > 0 && (
+            <div className="pt-2 border-t border-[#1e293b]">
+              <p className="text-slate-500 mb-1.5">Preview</p>
+              <ul className="space-y-1">
+                {recordKeys.map((key) => (
+                  <li key={key} className="flex items-center gap-1.5 text-slate-300">
+                    <ChevronLeft size={10} className="text-slate-600 rotate-180" />
+                    <span className="font-mono text-[11px] truncate">{key}</span>
+                  </li>
+                ))}
+                {records.length > 5 && (
+                  <li className="text-slate-600 text-[11px]">...and {records.length - 5} more</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LinkagePanel({
   dataset, usage, getHeaders, onChanged, flash,
