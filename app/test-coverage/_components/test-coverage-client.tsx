@@ -1084,12 +1084,12 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
         <IntelligenceSourceCard
           accent="amber"
           icon={Shield}
-          title="Expanded Coverage (Gap Analysis)"
-          badge={includeCoverageGaps ? 'Expanded' : 'Strict'}
+          title="Coverage Gap Analysis"
+          badge={includeCoverageGaps ? 'Gap Analysis' : 'Standard'}
           description={
             includeCoverageGaps
-              ? 'ON = Expanded mode. Generates strict requirement coverage, then adds a separate "Suggested Additional Coverage" set plus a non-automatable gap analysis. Suggestions never inflate your committed coverage.'
-              : 'OFF = Strict mode (default). Generates ONLY test cases derived from this requirement. Knowledge, Test Data and App Profile are used as context to enrich those cases — never to spawn extra scenarios.'
+              ? 'ON = Gap Analysis. Everything in Standard, PLUS assumption-based "Suggested Additional Coverage" and "Potential Missing Requirements" for scenarios your requirement and context don\'t state.'
+              : 'OFF = Standard mode (default). Generates committed test cases grounded in your requirement AND App Knowledge, App Profile and Test Data. No assumptions.'
           }
           enabled={includeCoverageGaps}
           onToggle={() => setIncludeCoverageGaps(v => !v)}
@@ -1726,15 +1726,15 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
                   mode === 'expanded'
                     ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
-                    : 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                 }`}>
-                  {mode === 'expanded' ? 'Expanded Coverage' : 'Strict Coverage'}
+                  {mode === 'expanded' ? 'Gap Analysis' : 'Standard Coverage'}
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 {mode === 'expanded'
-                  ? 'Requirement coverage + separate suggestions. Suggestions are not part of committed coverage.'
-                  : 'Only test cases derived from this requirement. Context enriched these cases — it did not add new ones.'}
+                  ? 'Grounded coverage + separate assumption-based suggestions & open questions. Suggestions are not part of committed coverage.'
+                  : 'Committed coverage grounded in your requirement plus App Knowledge, App Profile and Test Data.'}
               </p>
               {warning && (
                 <p className="text-xs text-amber-400 mt-0.5 flex items-center gap-1">
@@ -2093,7 +2093,7 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
               <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-500/20 text-sky-300 border border-sky-500/30">{suggestedTestCases.length} suggestion{suggestedTestCases.length !== 1 ? 's' : ''}</span>
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              Requirement-adjacent cases proposed by Expanded Coverage. The requirement did <span className="text-sky-300 font-medium">not</span> ask for these — they are not part of your committed coverage. Review and promote any you want to keep.
+              Assumption-based cases proposed by Gap Analysis — not grounded in your requirement or context. They are <span className="text-sky-300 font-medium">not</span> part of your committed coverage. Review and promote any you want to keep.
             </p>
           </div>
           <div className="space-y-2">
@@ -2642,9 +2642,9 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
               histMode === 'expanded'
                 ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
-                : 'bg-violet-500/20 text-violet-300 border-violet-500/30'
+                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
             }`}>
-              {histMode === 'expanded' ? 'Expanded Coverage' : 'Strict Coverage'}
+              {histMode === 'expanded' ? 'Gap Analysis' : 'Standard Coverage'}
             </span>
           </h3>
           <p className="text-xs text-slate-400">{req.jira_id && `${req.jira_id} • `}{req.module && `${req.module} • `}{new Date(req.created_at).toLocaleString()}</p>
