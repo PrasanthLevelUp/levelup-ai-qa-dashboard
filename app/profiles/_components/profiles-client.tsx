@@ -268,9 +268,27 @@ export function ProfilesClient() {
   useEffect(() => {
     const anyCrawling = profiles.some(p => p.status === 'crawling');
     if (!anyCrawling) return;
-    const interval = setInterval(() => { fetchProfiles(); }, 4000);
+    const interval = setInterval(() => { 
+      // Inline fetch to avoid circular dependency that causes infinite re-renders
+      if (projectLoading) return;
+      setLoading(true);
+      const qs = filterStatus ? `?status=${filterStatus}` : '';
+      const headers: Record<string, string> = activeProject 
+        ? { 'x-project-id': String(activeProject.id) } 
+        : {};
+      fetch(`/api/intelligence/profiles${qs}`, { headers })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setProfiles(data.data || []);
+            setTotal(data.total || 0);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, 4000);
     return () => clearInterval(interval);
-  }, [profiles, fetchProfiles]);
+  }, [profiles, filterStatus, activeProject, projectLoading]);
 
   /* -- Check profile status for a URL -- */
   const handleCheckUrl = async () => {
