@@ -71,6 +71,8 @@ interface ApplicationProfile {
   form_fields?: any[] | null;
   screenshots?: any[] | null;
   tags?: string[] | null;
+  /** Free-form metadata bag; stores `additionalCrawlUrls` (extra pages to crawl). */
+  custom_metadata?: { additionalCrawlUrls?: string[]; [k: string]: any } | null;
   /**
    * How the profile was created:
    *  - 'manual' → explicitly created by you via the Profiles UI
