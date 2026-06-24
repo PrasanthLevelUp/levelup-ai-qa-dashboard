@@ -5,7 +5,7 @@ import { useProject, useProjectHeaders } from '@/lib/project-context';
 import {
   Play, RefreshCw, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle,
   GitBranch, ChevronDown, ChevronUp, Zap, FileCode, StopCircle, Plus,
-  Trash2, X, FolderGit2,
+  Trash2, X, FolderGit2, Layers, Wrench, Ban, ShieldX, SearchX,
 } from 'lucide-react';
 
 /* ─── Types ─── */
@@ -22,6 +22,26 @@ interface JobResult {
     testName?: string; failedLocator?: string; healedLocator?: string;
     strategy?: string; success?: boolean;
   }>;
+  healingSummary?: string;
+  healingTrails?: HealingTrail[];
+}
+
+interface HealingLayerAttempt {
+  layer: string;
+  candidate?: string;
+  confidence?: number;
+  decision: 'applied' | 'rejected' | 'rerun_failed' | 'no_candidate' | 'skipped' | string;
+  reason: string;
+}
+
+interface HealingTrail {
+  testName: string;
+  failureType: string;
+  classification: 'healable_locator' | 'assertion' | 'timeout' | 'navigation' | 'unknown' | string;
+  healable: boolean;
+  attempts: HealingLayerAttempt[];
+  outcome: 'healed' | 'not_healed' | string;
+  summary: string;
 }
 
 interface Job {
@@ -133,8 +153,11 @@ function JobResultSummary({ result, error }: { result: JobResult | null; error: 
     </div>
   );
   if ((result.failed ?? 0) > 0) return (
-    <div className="flex items-center gap-2 text-red-400 text-xs">
-      <XCircle size={12} /><span>{result.failed} failures — healing unsuccessful</span>
+    <div className="flex items-center gap-2 text-amber-400 text-xs">
+      <XCircle size={12} />
+      <span className="truncate max-w-[520px]">
+        {result.healingSummary || `${result.failed} failures — healing unsuccessful`}
+      </span>
     </div>
   );
   if (result.message) return (
@@ -143,6 +166,93 @@ function JobResultSummary({ result, error }: { result: JobResult | null; error: 
     </div>
   );
   return <span className="text-slate-500 text-xs">Tests passed — no healing needed</span>;
+}
+
+/* ─── Healing layer / class helpers ─── */
+const LAYER_LABEL: Record<string, string> = {
+  rule_based: 'Layer 1 · Rule Engine',
+  database_pattern: 'Layer 2 · Pattern/DB',
+  ai_reasoning: 'Layer 3 · AI Reasoning',
+};
+function layerLabel(layer: string) { return LAYER_LABEL[layer] || layer; }
+
+const DECISION_META: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
+  applied:      { icon: CheckCircle2, color: 'text-emerald-400', label: 'Applied — passed' },
+  rejected:     { icon: ShieldX,      color: 'text-amber-400',   label: 'Rejected' },
+  rerun_failed: { icon: XCircle,      color: 'text-red-400',     label: 'Applied — rerun failed' },
+  no_candidate: { icon: SearchX,      color: 'text-slate-400',   label: 'No candidate' },
+  skipped:      { icon: Ban,          color: 'text-slate-400',   label: 'Skipped' },
+};
+function decisionMeta(d: string) { return DECISION_META[d] || { icon: AlertTriangle, color: 'text-slate-400', label: d }; }
+
+const CLASS_META: Record<string, { color: string; label: string }> = {
+  healable_locator: { color: 'text-sky-400 bg-sky-500/10 border-sky-500/20', label: 'Broken locator' },
+  assertion:        { color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', label: 'Assertion / functional' },
+  timeout:          { color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', label: 'Timeout' },
+  navigation:       { color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', label: 'Navigation / environment' },
+  unknown:          { color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', label: 'Unclassified' },
+};
+function classMeta(c: string) { return CLASS_META[c] || CLASS_META.unknown; }
+
+/* ─── Healing Trail Panel (3-layer observability) ─── */
+function HealingTrailPanel({ summary, trails }: { summary?: string; trails: HealingTrail[] }) {
+  return (
+    <div className="bg-[#0c1222] rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Layers size={13} className="text-violet-400" />
+        <p className="text-[10px] text-slate-400 uppercase tracking-wider">3-Layer Healing Trail</p>
+      </div>
+      {summary && (
+        <div className="mb-3 text-xs text-slate-300 bg-violet-500/5 border border-violet-500/20 rounded-lg px-3 py-2">
+          {summary}
+        </div>
+      )}
+      <div className="space-y-2">
+        {trails.map((t, i) => {
+          const cm = classMeta(t.classification);
+          const healed = t.outcome === 'healed';
+          return (
+            <div key={i} className="bg-[#1e293b] rounded-lg p-2.5">
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  {healed
+                    ? <Wrench size={12} className="text-emerald-400 shrink-0" />
+                    : <XCircle size={12} className="text-slate-500 shrink-0" />}
+                  <span className="text-xs text-slate-200 truncate" title={t.testName}>{t.testName}</span>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded border whitespace-nowrap ${cm.color}`}>{cm.label}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mb-2 leading-snug">{t.summary}</p>
+              {t.attempts && t.attempts.length > 0 && (
+                <div className="space-y-1 border-l border-slate-700 pl-2.5">
+                  {t.attempts.map((a, j) => {
+                    const dm = decisionMeta(a.decision);
+                    const Icon = dm.icon;
+                    return (
+                      <div key={j} className="flex items-start gap-2 text-[10px]">
+                        <Icon size={11} className={`${dm.color} mt-0.5 shrink-0`} />
+                        <div className="min-w-0">
+                          <span className="text-slate-300 font-medium">{layerLabel(a.layer)}</span>
+                          <span className={`ml-1.5 ${dm.color}`}>· {dm.label}</span>
+                          {typeof a.confidence === 'number' && (
+                            <span className="ml-1.5 text-slate-500">({Math.round(a.confidence * 100)}%)</span>
+                          )}
+                          {a.candidate && (
+                            <span className="ml-1.5 text-slate-500 font-mono break-all">{a.candidate}</span>
+                          )}
+                          <p className="text-slate-500 leading-snug">{a.reason}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /* ─── Expanded Job Details ─── */
@@ -187,6 +297,9 @@ function ExpandedJobDetails({ job }: { job: Job }) {
             ))}
           </div>
         </div>
+      )}
+      {r?.healingTrails && r.healingTrails.length > 0 && (
+        <HealingTrailPanel summary={r.healingSummary} trails={r.healingTrails} />
       )}
       {job.error && (
         <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">

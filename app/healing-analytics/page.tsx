@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { Sidebar } from '@/components/sidebar';
 import HealingAnalyticsClient from './_components/healing-analytics-client';
 
 export const metadata: Metadata = {
@@ -7,5 +8,12 @@ export const metadata: Metadata = {
 };
 
 export default function HealingAnalyticsPage() {
-  return <HealingAnalyticsClient />;
+  return (
+    <div className="min-h-screen bg-[#0f172a]">
+      <Sidebar />
+      <main className="lg:ml-64 p-6 lg:p-8">
+        <HealingAnalyticsClient />
+      </main>
+    </div>
+  );
 }
