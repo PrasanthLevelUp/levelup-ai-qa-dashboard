@@ -390,7 +390,7 @@ export function JobsClient() {
       });
       const data = await res.json();
       if (res.ok) {
-        setTriggerResult({ type: 'success', message: `Job ${data.jobId} triggered!` });
+        setTriggerResult({ type: 'success', message: `Job ${data.jobId} triggered on ${selectedRepo.replace(/^https?:\/\//, '')}` });
         setTimeout(fetchJobs, 1500);
       } else {
         setTriggerResult({ type: 'error', message: data.error || 'Failed to trigger' });
@@ -482,8 +482,15 @@ export function JobsClient() {
             <select value={selectedRepo} onChange={e => handleRepoChange(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500">
               {repos.length === 0 && <option value="">No repositories configured</option>}
-              {repos.map(r => <option key={r.id} value={r.url}>{r.name}</option>)}
+              {repos.map(r => <option key={r.id} value={r.url}>{r.name} — {r.url.replace(/^https?:\/\//, '')}</option>)}
             </select>
+            {/* Show the EXACT repo URL that will be cloned, so a name↔URL mismatch is impossible to miss */}
+            {selectedRepo && (
+              <p className="mt-1 flex items-center gap-1 text-[10px] text-slate-500 truncate">
+                <FolderGit2 size={9} className="flex-shrink-0" />
+                Will clone: <span className="text-slate-400 font-mono">{selectedRepo.replace(/^https?:\/\//, '')}</span>
+              </p>
+            )}
           </div>
           <div className="w-full md:w-36">
             <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Branch</label>
@@ -520,10 +527,16 @@ export function JobsClient() {
                 <div key={r.id} className="flex items-center justify-between bg-[#0c1222] rounded-lg px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <FolderGit2 size={12} className="text-slate-500 flex-shrink-0" />
-                    <span className="text-xs text-slate-300 truncate">{r.name}</span>
-                    <span className="flex items-center gap-0.5 text-[10px] text-slate-500"><GitBranch size={9} />{r.branch}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-300 truncate">{r.name}</span>
+                        <span className="flex items-center gap-0.5 text-[10px] text-slate-500"><GitBranch size={9} />{r.branch}</span>
+                      </div>
+                      {/* Always show the real URL so a wrong name↔URL mapping is visible */}
+                      <span className="block text-[10px] text-slate-500 font-mono truncate">{r.url.replace(/^https?:\/\//, '')}</span>
+                    </div>
                   </div>
-                  <button onClick={() => deleteRepo(r.id)} className="text-slate-600 hover:text-red-400 transition-colors p-1">
+                  <button onClick={() => deleteRepo(r.id)} className="text-slate-600 hover:text-red-400 transition-colors p-1 flex-shrink-0">
                     <Trash2 size={12} />
                   </button>
                 </div>
