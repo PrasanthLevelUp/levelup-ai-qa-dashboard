@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { Sidebar } from '@/components/sidebar';
 import IntelligenceLearningClient from './_components/intelligence-learning-client';
 
 export const metadata: Metadata = {
@@ -7,5 +8,12 @@ export const metadata: Metadata = {
 };
 
 export default function IntelligenceLearningPage() {
-  return <IntelligenceLearningClient />;
+  return (
+    <div className="min-h-screen bg-[#0f172a]">
+      <Sidebar />
+      <main className="lg:ml-64 p-6 lg:p-8">
+        <IntelligenceLearningClient />
+      </main>
+    </div>
+  );
 }
