@@ -21,6 +21,12 @@ interface JobResult {
   healingActions?: Array<{
     testName?: string; failedLocator?: string; healedLocator?: string;
     strategy?: string; success?: boolean;
+    decision_trail?: Array<{
+      layer: string;
+      outcome: 'hit' | 'miss' | 'skipped' | 'not_reached' | 'error';
+      confidence?: number;
+      reasoning?: string;
+    }>;
   }>;
   healingSummary?: string;
   healingTrails?: HealingTrail[];
@@ -255,6 +261,71 @@ function HealingTrailPanel({ summary, trails }: { summary?: string; trails: Heal
   );
 }
 
+/* ─── Healing Decision Card (Observability) ─── */
+function HealingDecisionCard({ trail }: {
+  trail: Array<{
+    layer: string;
+    outcome: 'hit' | 'miss' | 'skipped' | 'not_reached' | 'error';
+    confidence?: number;
+    reasoning?: string;
+  }>;
+}) {
+  const OUTCOME_CONFIG: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
+    hit: { icon: CheckCircle2, color: 'text-emerald-400', label: '✓' },
+    miss: { icon: XCircle, color: 'text-slate-500', label: '❌' },
+    skipped: { icon: Ban, color: 'text-slate-600', label: 'Skipped' },
+    not_reached: { icon: ShieldX, color: 'text-slate-700', label: 'Not Reached' },
+    error: { icon: AlertTriangle, color: 'text-red-400', label: 'Error' },
+  };
+
+  return (
+    <div className="bg-[#0c1222] rounded-lg p-3 mt-2">
+      <div className="flex items-center gap-2 mb-2">
+        <Zap size={13} className="text-amber-400" />
+        <p className="text-[10px] text-slate-400 uppercase tracking-wider">Healing Decision</p>
+      </div>
+      <div className="space-y-1.5">
+        {trail.map((entry, i) => {
+          const config = OUTCOME_CONFIG[entry.outcome] || OUTCOME_CONFIG.error;
+          const Icon = config.icon;
+          const isWinner = entry.outcome === 'hit';
+
+          return (
+            <div
+              key={i}
+              className={`flex items-start gap-2 p-2 rounded ${
+                isWinner ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-[#1e293b]'
+              }`}
+            >
+              <Icon size={12} className={`${config.color} mt-0.5 shrink-0`} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-medium ${isWinner ? 'text-emerald-300' : 'text-slate-300'}`}>
+                    {entry.layer}
+                  </span>
+                  {entry.outcome !== 'hit' && entry.outcome !== 'miss' && (
+                    <span className="text-[9px] text-slate-500 px-1.5 py-0.5 bg-slate-700/30 rounded">
+                      {config.label}
+                    </span>
+                  )}
+                  {typeof entry.confidence === 'number' && (
+                    <span className={`text-[10px] ${isWinner ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {Math.round(entry.confidence * 100)}%
+                    </span>
+                  )}
+                </div>
+                {entry.reasoning && (
+                  <p className="text-[10px] text-slate-500 leading-snug mt-0.5">{entry.reasoning}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Expanded Job Details ─── */
 function ExpandedJobDetails({ job }: { job: Job }) {
   const r = job.resultData;
@@ -287,12 +358,17 @@ function ExpandedJobDetails({ job }: { job: Job }) {
           <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Healing Actions</p>
           <div className="space-y-2">
             {r.healingActions.map((a, i) => (
-              <div key={i} className="flex items-center justify-between bg-[#1e293b] rounded p-2">
-                <div className="flex items-center gap-2"><FileCode size={12} className="text-slate-500" /><span className="text-xs text-slate-300">{a.testName || 'Unknown'}</span></div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] text-slate-500">{a.strategy}</span>
-                  {a.success ? <CheckCircle2 size={12} className="text-emerald-400" /> : <XCircle size={12} className="text-red-400" />}
+              <div key={i}>
+                <div className="flex items-center justify-between bg-[#1e293b] rounded p-2">
+                  <div className="flex items-center gap-2"><FileCode size={12} className="text-slate-500" /><span className="text-xs text-slate-300">{a.testName || 'Unknown'}</span></div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500">{a.strategy}</span>
+                    {a.success ? <CheckCircle2 size={12} className="text-emerald-400" /> : <XCircle size={12} className="text-red-400" />}
+                  </div>
                 </div>
+                {a.decision_trail && a.decision_trail.length > 0 && (
+                  <HealingDecisionCard trail={a.decision_trail} />
+                )}
               </div>
             ))}
           </div>
