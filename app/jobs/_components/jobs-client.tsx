@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
+import { GitHubActionsRunner } from './github-actions-runner';
 import {
   Play, RefreshCw, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle,
   GitBranch, ChevronDown, ChevronUp, Zap, FileCode, StopCircle, Plus,
@@ -742,6 +743,17 @@ export function JobsClient() {
           <div className={`mt-3 px-3 py-2 rounded-lg text-xs ${
             triggerResult.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'
           }`}>{triggerResult.message}</div>
+        )}
+
+        {/* Execution Mode 2: trigger the repo's existing GitHub Actions workflow,
+            then hand failures off to the same LevelUp healing pipeline. */}
+        {selectedRepo && (
+          <GitHubActionsRunner
+            repoUrl={selectedRepo}
+            defaultRef={selectedBranch}
+            onTriggerHeal={triggerHealing}
+            healLoading={triggerLoading}
+          />
         )}
 
         {/* Configured repos list */}
