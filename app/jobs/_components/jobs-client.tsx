@@ -599,9 +599,22 @@ export function JobsClient() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [jobs, pollRunningJobs]);
 
-  const triggerHealing = async () => {
+  /**
+   * Trigger a healing job. By default this runs on the Local Runner (unchanged
+   * behavior). When called with `executionMode: 'github_actions'` + a
+   * `providerConfig` ({ workflowId, ref }), the backend's
+   * GitHubActionsExecutionProvider runs the repo's real CI workflow, ingests the
+   * Playwright artifacts, and heals from the ACTUAL CI failure — then validation
+   * continues locally for speed (Hybrid). The healing pipeline itself is
+   * identical regardless of execution source.
+   */
+  const triggerHealing = async (opts?: {
+    executionMode?: 'local' | 'github_actions';
+    providerConfig?: { workflowId: string; ref?: string };
+  }) => {
     if (!selectedRepo) return;
     setTriggerLoading(true); setTriggerResult(null);
+    const mode = opts?.executionMode ?? 'local';
     try {
       const res = await fetch('/api/jobs/trigger', {
         method: 'POST',
@@ -613,11 +626,16 @@ export function JobsClient() {
           ...(testFile.trim() ? { testFile: testFile.trim() } : {}),
           // Scope the job to the active project so it shows up under the right filter.
           ...(activeProject?.id != null ? { projectId: activeProject.id } : {}),
+          // Execution source: omit for local (default); pass through for GitHub Actions.
+          ...(mode === 'github_actions' && opts?.providerConfig?.workflowId
+            ? { executionMode: 'github_actions', providerConfig: { workflowId: opts.providerConfig.workflowId, ref: opts.providerConfig.ref || selectedBranch } }
+            : {}),
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        setTriggerResult({ type: 'success', message: `Job ${data.jobId} triggered on ${selectedRepo.replace(/^https?:\/\//, '')}` });
+        const via = mode === 'github_actions' ? ' via GitHub Actions' : '';
+        setTriggerResult({ type: 'success', message: `Job ${data.jobId} triggered${via} on ${selectedRepo.replace(/^https?:\/\//, '')}` });
         setTimeout(fetchJobs, 1500);
       } else {
         setTriggerResult({ type: 'error', message: data.error || 'Failed to trigger' });
@@ -731,7 +749,7 @@ export function JobsClient() {
               className="w-full px-3 py-2 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
           </div>
           <div className="flex items-end">
-            <button onClick={triggerHealing} disabled={triggerLoading || !selectedRepo}
+            <button onClick={() => triggerHealing()} disabled={triggerLoading || !selectedRepo}
               className="flex items-center justify-center gap-2 px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
               {triggerLoading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
               {triggerLoading ? 'Triggering...' : 'Run Healing'}
@@ -751,7 +769,11 @@ export function JobsClient() {
           <GitHubActionsRunner
             repoUrl={selectedRepo}
             defaultRef={selectedBranch}
-            onTriggerHeal={triggerHealing}
+            onTriggerHeal={(opts) => triggerHealing(
+              opts?.workflowId
+                ? { executionMode: 'github_actions', providerConfig: { workflowId: opts.workflowId, ref: opts.ref } }
+                : undefined,
+            )}
             healLoading={triggerLoading}
           />
         )}

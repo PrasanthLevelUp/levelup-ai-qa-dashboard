@@ -8,7 +8,7 @@ const API_KEY = process.env.BACKEND_API_KEY || '';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { repository, branch, testFile, projectId } = body;
+    const { repository, branch, testFile, projectId, executionMode, providerConfig } = body;
 
     if (!repository) {
       return NextResponse.json(
@@ -21,6 +21,12 @@ export async function POST(req: NextRequest) {
     // project-context middleware (it cannot read the x-project-id header).
     const payload: Record<string, unknown> = { repository, branch, testFile };
     if (projectId != null && projectId !== '') payload.projectId = Number(projectId);
+    // Execution source (optional). Forward only for GitHub Actions; absence ⇒
+    // backend defaults to the Local Runner (unchanged behavior, zero regression).
+    if (executionMode === 'github_actions' && providerConfig && typeof providerConfig === 'object') {
+      payload.executionMode = 'github_actions';
+      payload.providerConfig = providerConfig;
+    }
 
     console.log('[Trigger Job] Calling backend:', `${BACKEND_URL}/api/heal`, {
       repository, branch, testFile, projectId: payload.projectId,

@@ -51,8 +51,13 @@ interface Props {
   repoUrl: string;
   /** Branch/ref selected in the parent — used as the default dispatch ref. */
   defaultRef?: string;
-  /** Hand-off to the parent's existing healing trigger (Local Runner pipeline). */
-  onTriggerHeal?: () => void;
+  /**
+   * Hand-off to the parent's healing trigger. When the runner has dispatched a
+   * specific workflow, it passes `{ workflowId, ref }` so the heal job runs via
+   * the GitHubActionsExecutionProvider and heals from the REAL CI failure (the
+   * run the user just saw fail) — not a separate Local Runner execution.
+   */
+  onTriggerHeal?: (opts?: { workflowId: string; ref: string }) => void;
   /** Whether a heal job is currently being triggered by the parent. */
   healLoading?: boolean;
 }
@@ -279,7 +284,7 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
                 <AlertTriangle size={12} /> Workflow failed — let LevelUp AI heal it.
               </div>
               <button
-                onClick={onTriggerHeal}
+                onClick={() => onTriggerHeal(selectedWorkflow ? { workflowId: selectedWorkflow, ref } : undefined)}
                 disabled={healLoading}
                 className="ml-auto flex items-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
               >
