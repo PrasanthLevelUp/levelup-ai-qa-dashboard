@@ -49,7 +49,7 @@ export function ExecutionsListClient() {
     <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <ScrollText size={20} /> Executions
+          <ScrollText size={20} /> Execution History
         </h1>
         <p className="text-sm text-slate-400 mt-1">
           Every test execution as a single canonical record — diagnosis, healing, validation and learning in one place.
