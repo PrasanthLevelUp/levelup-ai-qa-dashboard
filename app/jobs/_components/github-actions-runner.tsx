@@ -24,9 +24,10 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   Play, Loader2, RefreshCw, Github, ExternalLink, CheckCircle2,
-  XCircle, Clock, Wrench, AlertTriangle,
+  XCircle, Clock, Wrench, AlertTriangle, FileArchive, ScrollText,
 } from 'lucide-react';
 
 /* ─── Minimal types (mirror backend github-service shapes) ─── */
@@ -45,6 +46,22 @@ interface GHRun {
   runNumber?: number;
   event?: string;
 }
+interface GHArtifact {
+  id: number;
+  name: string;
+  expired?: boolean;
+}
+/** Summary returned by POST /runs/:runId/record (recorded as executions). */
+interface RecordSummary {
+  runId: number;
+  jobId: string;
+  conclusion: string | null;
+  hasResults: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+}
 
 interface Props {
   /** The repo clone URL currently selected in the parent (e.g. github.com/org/repo.git). */
@@ -52,19 +69,21 @@ interface Props {
   /** Branch/ref selected in the parent — used as the default dispatch ref. */
   defaultRef?: string;
   /**
-   * Hand-off to the parent's healing trigger. When the runner has dispatched a
-   * specific workflow, it passes `{ workflowId, ref }` so the heal job runs via
-   * the GitHubActionsExecutionProvider and heals from the REAL CI failure (the
-   * run the user just saw fail) — not a separate Local Runner execution.
+   * Hand-off to the parent's healing trigger. The runner passes the EXACT run it
+   * just polled — `{ workflowId, ref, runId }` — so the heal job runs via the
+   * GitHubActionsExecutionProvider and heals from THAT run's real CI artifacts.
+   * No new workflow is dispatched; the user never has to re-run their suite.
    */
-  onTriggerHeal?: (opts?: { workflowId: string; ref: string }) => void;
+  onTriggerHeal?: (opts?: { workflowId: string; ref: string; runId?: number }) => void;
   /** Whether a heal job is currently being triggered by the parent. */
   healLoading?: boolean;
+  /** Active project id — scopes recorded executions to the right project filter. */
+  projectId?: number | null;
 }
 
 const POLL_MS = 5000;
 
-export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLoading }: Props) {
+export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLoading, projectId }: Props) {
   const [workflows, setWorkflows] = useState<GHWorkflow[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<string>('');
   const [ref, setRef] = useState<string>(defaultRef || 'main');
@@ -74,6 +93,14 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
   const [polling, setPolling] = useState(false);
   const [notice, setNotice] = useState<{ type: 'info' | 'error'; message: string } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Recording the finished run as executions ──
+  const [recording, setRecording] = useState(false);
+  const [recordSummary, setRecordSummary] = useState<RecordSummary | null>(null);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const [artifacts, setArtifacts] = useState<GHArtifact[]>([]);
+  // Guards so we record / fetch artifacts exactly once per completed run.
+  const recordedRunRef = useRef<number | null>(null);
 
   // Keep ref input in sync when parent branch changes.
   useEffect(() => { if (defaultRef) setRef(defaultRef); }, [defaultRef]);
@@ -120,6 +147,10 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
     // Reset run state when repo changes, then (re)load workflows.
     stopPolling();
     setRun(null);
+    setRecordSummary(null);
+    setRecordError(null);
+    setArtifacts([]);
+    recordedRunRef.current = null;
     fetchWorkflows();
     return stopPolling;
   }, [repoUrl, fetchWorkflows, stopPolling]);
@@ -129,9 +160,11 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
     try {
       const res = await fetch(`/api/github/actions/runs/${runId}?repoUrl=${encodeURIComponent(repoUrl)}`);
       const data = await res.json();
-      if (res.ok && data.run) {
-        setRun(data.run as GHRun);
-        if ((data.run as GHRun).status === 'completed') {
+      // Backend contract: { success, data: <run> }.
+      const r = (data?.data ?? data?.run) as GHRun | undefined;
+      if (res.ok && r) {
+        setRun(r);
+        if (r.status === 'completed') {
           stopPolling();
         }
       }
@@ -147,12 +180,63 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
     pollRef.current = setInterval(() => pollRun(runId), POLL_MS);
   }, [pollRun, stopPolling]);
 
+  /* ── List the finished run's uploaded artifacts (for display) ── */
+  const fetchArtifacts = useCallback(async (runId: number) => {
+    try {
+      const res = await fetch(`/api/github/actions/runs/${runId}/artifacts?repoUrl=${encodeURIComponent(repoUrl)}`);
+      const data = await res.json();
+      const list = (data?.data ?? []) as GHArtifact[];
+      setArtifacts(Array.isArray(list) ? list : []);
+    } catch {
+      setArtifacts([]);
+    }
+  }, [repoUrl]);
+
+  /* ── Record the finished run as executions (pass + fail) ──
+     This is what makes the run appear on the Execution / Healing / Jobs
+     screens. It does NOT heal and does NOT re-run anything. */
+  const recordRun = useCallback(async (runId: number) => {
+    setRecording(true);
+    setRecordError(null);
+    try {
+      const res = await fetch(`/api/github/actions/runs/${runId}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl, ...(projectId != null ? { projectId } : {}) }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        setRecordError(data.error || 'Could not record this run as executions.');
+        return;
+      }
+      setRecordSummary(data.data as RecordSummary);
+    } catch {
+      setRecordError('Network error while recording this run.');
+    } finally {
+      setRecording(false);
+    }
+  }, [repoUrl]);
+
+  /* ── When a run completes, record it + list its artifacts exactly once ── */
+  useEffect(() => {
+    if (run?.status === 'completed' && recordedRunRef.current !== run.id) {
+      recordedRunRef.current = run.id;
+      recordRun(run.id);
+      fetchArtifacts(run.id);
+    }
+  }, [run, recordRun, fetchArtifacts]);
+
   /* ── Dispatch the chosen workflow ── */
   const dispatch = async () => {
     if (!repoUrl || !selectedWorkflow) return;
     setDispatching(true);
     setNotice(null);
     setRun(null);
+    // Reset any previous run's recording state.
+    setRecordSummary(null);
+    setRecordError(null);
+    setArtifacts([]);
+    recordedRunRef.current = null;
     try {
       const res = await fetch('/api/github/actions/dispatch', {
         method: 'POST',
@@ -164,12 +248,15 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
         setNotice({ type: 'error', message: data.error || 'Failed to dispatch workflow.' });
         return;
       }
-      if (data.run?.id) {
-        setRun(data.run as GHRun);
-        startPolling(data.run.id);
+      // Backend contract: { success, data: { dispatched, ref, run, note } }.
+      const dispatched = data?.data ?? data;
+      const newRun = (dispatched?.run ?? null) as GHRun | null;
+      if (newRun?.id) {
+        setRun(newRun);
+        startPolling(newRun.id);
       } else {
         // Dispatch accepted but the run hasn't surfaced yet — inform the user.
-        setNotice({ type: 'info', message: 'Workflow dispatched. The run is starting on GitHub — refresh in a moment to track it.' });
+        setNotice({ type: 'info', message: dispatched?.note || 'Workflow dispatched. The run is starting on GitHub — refresh in a moment to track it.' });
       }
     } catch {
       setNotice({ type: 'error', message: 'Network error while dispatching workflow.' });
@@ -277,24 +364,95 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
             )}
           </div>
 
-          {/* On failure → hand off to the existing LevelUp healing pipeline */}
-          {isFailure && onTriggerHeal && (
-            <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 text-[11px] text-amber-300">
-                <AlertTriangle size={12} /> Workflow failed — let LevelUp AI heal it.
+          {/* ── On completion: record as executions + show results ── */}
+          {run.status === 'completed' && (
+            <div className="mt-3 border-t border-[#1e2433] pt-2.5 space-y-2.5">
+              {/* Recording status + pass/fail counts */}
+              {recording && (
+                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <Loader2 size={12} className="animate-spin" /> Recording this run as executions…
+                </div>
+              )}
+              {recordError && (
+                <div className="flex items-center gap-1.5 text-[11px] text-red-400">
+                  <AlertTriangle size={12} /> {recordError}
+                </div>
+              )}
+              {recordSummary && (
+                <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    <CheckCircle2 size={12} /> {recordSummary.passed} Passed
+                  </span>
+                  <span className="text-slate-600">·</span>
+                  <span className="flex items-center gap-1 text-red-400">
+                    <XCircle size={12} /> {recordSummary.failed} Failed
+                  </span>
+                  {recordSummary.skipped > 0 && (
+                    <>
+                      <span className="text-slate-600">·</span>
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <Clock size={12} /> {recordSummary.skipped} Skipped
+                      </span>
+                    </>
+                  )}
+                  {!recordSummary.hasResults && (
+                    <span className="text-[10px] text-amber-400/80">
+                      (no Playwright results uploaded — upload <code className="text-amber-300">test-results.json</code> as an artifact to see per-test results)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Artifacts list */}
+              {artifacts.length > 0 && (
+                <div>
+                  <p className="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">
+                    <FileArchive size={11} /> Artifacts ({artifacts.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {artifacts.map((a) => (
+                      <span
+                        key={a.id}
+                        className={`text-[10px] px-2 py-0.5 rounded-md border ${
+                          a.expired
+                            ? 'border-[#2a3040] text-slate-600 line-through'
+                            : 'border-[#334155] text-slate-300 bg-[#0f1729]'
+                        }`}
+                        title={a.expired ? 'Artifact expired' : a.name}
+                      >
+                        {a.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action row: View Execution + (conditionally) Heal Failures */}
+              <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                {recordSummary && (
+                  <Link
+                    href="/executions"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium transition-colors"
+                  >
+                    <ScrollText size={12} /> View Execution
+                  </Link>
+                )}
+                {(isFailure || (recordSummary?.failed ?? 0) > 0) && onTriggerHeal && (
+                  <button
+                    onClick={() => onTriggerHeal(selectedWorkflow ? { workflowId: selectedWorkflow, ref, runId: run?.id } : undefined)}
+                    disabled={healLoading}
+                    className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
+                    title="Heal THIS run's failures — no re-run; uses this run's artifacts."
+                  >
+                    {healLoading ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
+                    {healLoading ? 'Triggering…' : 'Heal Failures'}
+                  </button>
+                )}
+                {isSuccess && (recordSummary?.failed ?? 0) === 0 && (
+                  <span className="text-[11px] text-emerald-400/80">Workflow passed — no healing needed.</span>
+                )}
               </div>
-              <button
-                onClick={() => onTriggerHeal(selectedWorkflow ? { workflowId: selectedWorkflow, ref } : undefined)}
-                disabled={healLoading}
-                className="ml-auto flex items-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white text-xs font-medium transition-colors"
-              >
-                {healLoading ? <Loader2 size={12} className="animate-spin" /> : <Wrench size={12} />}
-                {healLoading ? 'Triggering…' : 'Heal failures with LevelUp AI'}
-              </button>
             </div>
-          )}
-          {isSuccess && (
-            <p className="mt-2 text-[11px] text-emerald-400/80">Workflow passed — no healing needed.</p>
           )}
         </div>
       )}
