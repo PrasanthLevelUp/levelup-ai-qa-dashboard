@@ -464,7 +464,7 @@ function AddRepoDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () 
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════ */
 export function JobsClient() {
-  const { activeProject, projects } = useProject();
+  const { activeProject, projects, loading: projectsLoading } = useProject();
   const projectHeaders = useProjectHeaders();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -497,12 +497,19 @@ export function JobsClient() {
   }, [projectFilter]);
 
   const fetchRepos = useCallback(async () => {
+    // ROOT-CAUSE GUARD: never fetch repos until the project context has resolved.
+    // The repositories endpoint is project-scoped via the `x-project-id` header;
+    // calling it *before* `activeProject` is known sends no header, and the
+    // backend then falls back to `listAllRepositories` — returning repos from
+    // EVERY project in the company (e.g. another user's project_demo). That is
+    // exactly the "showing all repos / wrong clone URL" bug. So we wait for the
+    // project to load and always scope the request.
+    if (projectsLoading) return;
+    if (!activeProject?.id) { setRepos([]); return; }
     if (fetchingReposRef.current) return; // prevent duplicate fetches
     fetchingReposRef.current = true;
     try {
-      const headers: Record<string, string> = activeProject?.id
-        ? { 'x-project-id': String(activeProject.id) }
-        : {};
+      const headers: Record<string, string> = { 'x-project-id': String(activeProject.id) };
       const res = await fetch('/api/repos', { headers });
       if (!res.ok) return;
       const data = await res.json();
@@ -527,7 +534,7 @@ export function JobsClient() {
       });
     } catch { /* backend unavailable */ }
     finally { fetchingReposRef.current = false; }
-  }, [activeProject?.id]);
+  }, [activeProject?.id, projectsLoading]);
 
   /* Poll live progress for running jobs */
   const pollRunningJobs = useCallback(async () => {
