@@ -102,7 +102,7 @@ export function GitHubActionsRunner({ repoUrl, defaultRef, onTriggerHeal, healLo
         setWorkflows([]);
         return;
       }
-      const list: GHWorkflow[] = (data.workflows || []).filter((w: GHWorkflow) => w.state === 'active');
+      const list: GHWorkflow[] = (data.data || []).filter((w: GHWorkflow) => w.state === 'active');
       setWorkflows(list);
       setSelectedWorkflow(prev => (prev && list.some(w => String(w.id) === prev)) ? prev : (list[0] ? String(list[0].id) : ''));
       if (list.length === 0) {
