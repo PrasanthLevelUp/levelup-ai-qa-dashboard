@@ -508,13 +508,26 @@ export function JobsClient() {
       const data = await res.json();
       const list: Repo[] = data.repositories || [];
       setRepos(list);
-      if (list.length > 0 && !selectedRepo) {
-        setSelectedRepo(list[0].url);
-        setSelectedBranch(list[0].branch || 'main');
-      }
+      // Reconcile the current selection against the freshly fetched list.
+      // The repo list changes when the active project switches (project-scoped
+      // filtering). If the previously selected repo is no longer in the list
+      // (e.g. it belonged to another project), the <select value> would point at
+      // a non-existent option — the browser then *visually* falls back to the
+      // first option while state still holds the stale URL, so "Will clone" and
+      // the actual heal target would silently use the wrong repo. Always snap the
+      // selection to a repo that genuinely exists in the current list.
+      setSelectedRepo(prev => {
+        const stillValid = !!prev && list.some(r => r.url === prev);
+        const next = stillValid ? prev : (list[0]?.url ?? '');
+        if (next !== prev) {
+          const branch = list.find(r => r.url === next)?.branch || 'main';
+          setSelectedBranch(branch);
+        }
+        return next;
+      });
     } catch { /* backend unavailable */ }
     finally { fetchingReposRef.current = false; }
-  }, [selectedRepo, activeProject?.id]);
+  }, [activeProject?.id]);
 
   /* Poll live progress for running jobs */
   const pollRunningJobs = useCallback(async () => {
@@ -548,6 +561,23 @@ export function JobsClient() {
     const interval = setInterval(fetchJobs, 5000);
     return () => clearInterval(interval);
   }, [fetchJobs, fetchRepos]);
+
+  // Safety net: keep the selected repo consistent with whatever is currently in
+  // the list. This guards against fetch-timing races (project switch while a
+  // fetch is in flight) and against deleting the currently-selected repo — in
+  // both cases the <select value> must never dangle on a URL that isn't an
+  // option, otherwise the UI shows one repo but heals another.
+  useEffect(() => {
+    setSelectedRepo(prev => {
+      if (repos.length === 0) return prev === '' ? prev : '';
+      const stillValid = !!prev && repos.some(r => r.url === prev);
+      if (stillValid) return prev;
+      const next = repos[0]?.url ?? '';
+      const branch = repos.find(r => r.url === next)?.branch || 'main';
+      setSelectedBranch(branch);
+      return next;
+    });
+  }, [repos]);
 
   useEffect(() => {
     const hasRunning = jobs.some(j => j.status === 'running' || j.status === 'pending');
