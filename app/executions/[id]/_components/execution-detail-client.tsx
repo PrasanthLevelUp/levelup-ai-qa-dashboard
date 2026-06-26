@@ -4,7 +4,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, CheckCircle2, XCircle, MinusCircle, Circle, Clock, Cpu, Brain,
   Sparkles, Stethoscope, Wrench, ShieldCheck, GraduationCap, Camera, Video,
-  FileSearch, Terminal, Code, Network, History, Fingerprint, GitBranch, Database,
+  FileSearch, Terminal, Code, Network, History, GitBranch,
   Route,
 } from 'lucide-react';
 
@@ -122,7 +122,39 @@ interface ExecutionRecord {
   };
 }
 
-interface ExecutionPayload { record: ExecutionRecord; timeline: TimelineEvent[]; }
+/** One advisor's verdict in the healing waterfall — AUTHORITATIVE, from the
+ *  backend (deriveDecisionTrail). The UI renders this verbatim and NEVER infers
+ *  which advisors ran: the backend captured exactly what happened at heal time. */
+interface AdvisorDecisionView {
+  advisor: string;
+  status: 'won' | 'consulted' | 'skipped';
+  /** Confidence as an integer percentage (0..100), when known. */
+  confidence?: number;
+  reasoning?: string;
+  durationMs?: number;
+}
+
+/** Customer-facing narrated event — AUTHORITATIVE, from the backend
+ *  (deriveEventFeed). Backend owns the label + tone + icon kind; UI just renders. */
+type FriendlyEventKind =
+  | 'started' | 'preparing' | 'running' | 'evidence'
+  | 'diagnosis' | 'healing' | 'validation' | 'learning' | 'finished';
+type FriendlyEventTone = 'positive' | 'negative' | 'neutral' | 'info';
+interface FriendlyEvent {
+  timestamp: string;
+  label: string;
+  kind: FriendlyEventKind;
+  tone: FriendlyEventTone;
+}
+
+interface ExecutionPayload {
+  record: ExecutionRecord;
+  timeline: TimelineEvent[];
+  /** Authoritative advisor waterfall (backend-derived). */
+  decisionTrail?: AdvisorDecisionView[];
+  /** Authoritative customer-facing event narration (backend-derived). */
+  eventFeed?: FriendlyEvent[];
+}
 
 /** Internal pipeline stage → clean user-facing label (mirror of backend toDisplayStage). */
 const STAGE_DISPLAY: Record<string, string> = {
@@ -336,11 +368,11 @@ export function ExecutionDetailClient({ id }: { id: string }) {
       {/* Learning */}
       {record.learning && <LearningCard l={record.learning} />}
 
-      {/* Decision Trail — which knowledge sources informed the decision */}
-      <DecisionTrail record={record} />
+      {/* Decision Trail — the advisor waterfall, AUTHORITATIVE from the backend */}
+      <DecisionTrail trail={data.decisionTrail ?? []} />
 
-      {/* Events — the canonical append-only history log */}
-      <EventsLog events={record.events ?? []} />
+      {/* Events — the customer-facing narrated feed, AUTHORITATIVE from the backend */}
+      <EventsLog feed={data.eventFeed} events={record.events ?? []} />
     </div>
   );
 }
@@ -588,17 +620,34 @@ function advisorToneCls(tone: AdvisorTone): string {
   }
 }
 
+/** Tone-keyed colour for the prominent advisor icon badge. These four badges are
+ *  meant to be one of the most recognizable parts of LevelUp AI — so the icon is
+ *  the hero of each card, not a tiny glyph in the label row. */
+function advisorBadgeCls(tone: AdvisorTone): string {
+  switch (tone) {
+    case 'ok': return 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30';
+    case 'warn': return 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30';
+    case 'bad': return 'bg-red-500/15 text-red-300 ring-1 ring-red-500/30';
+    default: return 'bg-slate-500/10 text-slate-400 ring-1 ring-[#1e293b]';
+  }
+}
+
 function AdvisorTile({ icon: Icon, title, value, sub, tone, timing }: {
   icon: any; title: string; value: string; sub?: string; tone: AdvisorTone; timing?: SectionTiming;
 }) {
   const ms = timingMs(timing);
   return (
     <div className={`rounded-xl border bg-[#1e293b]/30 p-4 ${advisorToneCls(tone)}`}>
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
-        <Icon size={13} /> {title}
+      <div className="flex items-center gap-3">
+        <span className={`inline-flex items-center justify-center w-11 h-11 rounded-xl shrink-0 ${advisorBadgeCls(tone)}`}>
+          <Icon size={22} strokeWidth={2} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">{title}</p>
+          <p className="text-sm font-semibold leading-tight mt-0.5 truncate">{value}</p>
+        </div>
       </div>
-      <p className="text-sm font-semibold mt-2 leading-tight">{value}</p>
-      {sub && <p className="text-xs text-slate-500 mt-0.5 break-all">{sub}</p>}
+      {sub && <p className="text-xs text-slate-500 mt-2 break-all">{sub}</p>}
       {ms != null && (
         <p className="text-[11px] text-slate-600 mt-2 font-mono flex items-center gap-1">
           <Clock size={11} /> {fmtDuration(ms)}
@@ -666,112 +715,109 @@ function cap(s?: string): string {
 }
 
 /* ─── Decision Trail ──────────────────────────────────────────────────────
-   Which knowledge sources informed this execution's decision. Each source's
-   "consulted" flag is DERIVED from concrete record fields — we never claim a
-   source was used unless the record shows evidence of it. */
+   The advisor waterfall: which intelligence layers were consulted, which won,
+   which were skipped. This is AUTHORITATIVE — the backend captured it from the
+   orchestrator at heal time (record.healing.decisionTrail) and the UI renders it
+   verbatim. We NEVER infer advisor usage on the client. */
 
-interface TrailSource {
-  key: string;
-  label: string;
-  icon: any;
-  used: boolean;
-  detail: string;
-}
+const TRAIL_STATUS_META: Record<AdvisorDecisionView['status'], { label: string; cls: string; icon: any }> = {
+  won: { label: 'Won', cls: 'border-amber-500/40 bg-amber-500/10 text-amber-200', icon: CheckCircle2 },
+  consulted: { label: 'Consulted', cls: 'border-slate-600/50 bg-slate-500/5 text-slate-300', icon: Circle },
+  skipped: { label: 'Skipped', cls: 'border-[#1e293b] bg-transparent text-slate-500 opacity-70', icon: MinusCircle },
+};
 
-function deriveDecisionTrail(record: ExecutionRecord): TrailSource[] {
-  const h = record.healing;
-  const d = record.diagnosis;
-  const l = record.learning;
-  const ev = record.evidence ?? record.observations;
-  const src = (h?.source ?? '').toLowerCase();
-  const attempted = (h?.attemptedStrategies ?? []).map((s) => s.toLowerCase());
-
-  // App Profile — a non-default execution profile shaped how the test ran.
-  const profileUsed = !!record.profile && record.profile !== 'standard';
-
-  // Repo Intelligence — the record is tied to a healing job (repo/branch context).
-  const repoUsed = !!record.jobId;
-
-  // DOM Memory — locator state came from a stored DOM snapshot, or memory was updated.
-  const domUsed = ev?.locatorState?.source === 'dom_snapshot' || l?.domMemoryUpdated === true;
-
-  // AI — the applied/attempted fix or an evidence-based diagnosis involved the model.
-  const aiUsed = src === 'ai' || attempted.includes('ai') || d?.evidenceBased === true;
-
-  return [
-    {
-      key: 'profile', label: 'App Profile', icon: Fingerprint, used: profileUsed,
-      detail: profileUsed ? `${cap(record.profile)} profile applied` : 'Standard profile',
-    },
-    {
-      key: 'repo', label: 'Repo Intelligence', icon: GitBranch, used: repoUsed,
-      detail: repoUsed ? `Job ${record.jobId}` : 'No repo context on record',
-    },
-    {
-      key: 'dom', label: 'DOM Memory', icon: Database, used: domUsed,
-      detail: l?.domMemoryUpdated ? 'Memory updated this run'
-        : ev?.locatorState?.source === 'dom_snapshot' ? 'Locator from DOM snapshot'
-        : 'Not consulted',
-    },
-    {
-      key: 'ai', label: 'AI', icon: Sparkles, used: aiUsed,
-      detail: src === 'ai' || attempted.includes('ai') ? 'AI produced a candidate'
-        : d?.evidenceBased ? 'Evidence-based diagnosis'
-        : 'Not consulted',
-    },
-  ];
-}
-
-function DecisionTrail({ record }: { record: ExecutionRecord }) {
-  const sources = deriveDecisionTrail(record);
+function DecisionTrail({ trail }: { trail: AdvisorDecisionView[] }) {
   return (
     <Card title="Decision Trail" icon={Route} accent="text-amber-300">
       <p className="text-xs text-slate-500 mb-4">
-        Knowledge sources consulted for this decision — derived from the record, never stored.
+        The advisor waterfall for this heal — which intelligence layers were consulted, which won,
+        which were skipped. Recorded by the backend at decision time, not inferred here.
       </p>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {sources.map((s) => {
-          const Icon = s.icon;
-          return (
-            <div
-              key={s.key}
-              className={`rounded-lg border p-3 ${
-                s.used ? 'border-amber-500/30 bg-amber-500/5' : 'border-[#1e293b] bg-transparent opacity-70'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Icon size={14} className={s.used ? 'text-amber-300' : 'text-slate-500'} />
-                <span className={`text-sm font-medium ${s.used ? 'text-slate-100' : 'text-slate-400'}`}>{s.label}</span>
-                {s.used
-                  ? <CheckCircle2 size={14} className="text-amber-300 ml-auto" />
-                  : <MinusCircle size={14} className="text-slate-600 ml-auto" />}
+      {trail.length === 0 ? (
+        <Empty label="No advisor waterfall on this record — this execution did not go through healing." />
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {trail.map((s, i) => {
+            const meta = TRAIL_STATUS_META[s.status] ?? TRAIL_STATUS_META.consulted;
+            const Icon = meta.icon;
+            return (
+              <div key={`${s.advisor}-${i}`} className={`rounded-lg border p-3 ${meta.cls}`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-slate-100 truncate">{s.advisor}</span>
+                  <Icon size={14} className="ml-auto shrink-0" />
+                </div>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[10px] uppercase tracking-wide font-semibold">{meta.label}</span>
+                  {typeof s.confidence === 'number' && (
+                    <span className="text-[11px] text-slate-400 font-mono">{s.confidence}%</span>
+                  )}
+                  {typeof s.durationMs === 'number' && (
+                    <span className="text-[11px] text-slate-600 font-mono ml-auto flex items-center gap-1">
+                      <Clock size={10} /> {fmtDuration(s.durationMs)}
+                    </span>
+                  )}
+                </div>
+                {s.reasoning && <p className="text-[11px] text-slate-500 mt-1.5 break-all">{s.reasoning}</p>}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1.5 break-all">{s.detail}</p>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 }
 
 /* ─── Events log ──────────────────────────────────────────────────────────
-   The canonical append-only history — rendered verbatim from `record.events`.
-   This is the substrate Timeline / Replay / bottleneck analysis derive from;
-   here we simply show it as the audit trail. */
+   The customer-facing event story. Customers don't think in backend event
+   names ("stage_changed", "diagnosis_completed") — they want a readable feed:
+   "Collected Browser Evidence → Diagnosed Timing Failure → Applied Wait Strategy
+   → Validation Passed → Learning Stored". The BACKEND owns the labels, tone and
+   icon kind (deriveEventFeed); the UI just renders. Falls back to the raw events
+   log only for legacy records that predate the feed. */
 
-const EVENT_TONE: Record<string, string> = {
-  execution_created: 'text-slate-300',
-  execution_finalized: 'text-emerald-300',
-  evidence_collected: 'text-violet-300',
-  diagnosis_completed: 'text-sky-300',
-  healing_completed: 'text-emerald-300',
-  validation_completed: 'text-emerald-300',
-  learning_completed: 'text-indigo-300',
-  stage_changed: 'text-slate-400',
+/** Icon for each friendly event kind. */
+const FEED_KIND_ICON: Record<FriendlyEventKind, any> = {
+  started: Circle,
+  preparing: GitBranch,
+  running: Cpu,
+  evidence: Camera,
+  diagnosis: Stethoscope,
+  healing: Wrench,
+  validation: ShieldCheck,
+  learning: GraduationCap,
+  finished: CheckCircle2,
 };
 
-function EventsLog({ events }: { events: ExecutionEvent[] }) {
+/** Colour for each tone. */
+const FEED_TONE_CLS: Record<FriendlyEventTone, string> = {
+  positive: 'text-emerald-300',
+  negative: 'text-red-300',
+  neutral: 'text-slate-300',
+  info: 'text-sky-300',
+};
+
+function EventsLog({ feed, events }: { feed?: FriendlyEvent[]; events: ExecutionEvent[] }) {
+  // Preferred path: the backend's narrated, customer-facing feed.
+  if (feed && feed.length > 0) {
+    return (
+      <Card title="Events" icon={History}>
+        <ol className="space-y-2.5">
+          {feed.map((ev, i) => {
+            const Icon = FEED_KIND_ICON[ev.kind] ?? Circle;
+            return (
+              <li key={`${ev.kind}-${ev.timestamp}-${i}`} className="flex items-center gap-3 text-sm">
+                <span className="text-[11px] text-slate-500 font-mono shrink-0 w-20">{fmtClock(ev.timestamp) || '—'}</span>
+                <Icon size={15} className={`shrink-0 ${FEED_TONE_CLS[ev.tone] ?? 'text-slate-400'}`} />
+                <span className={`font-medium ${FEED_TONE_CLS[ev.tone] ?? 'text-slate-300'}`}>{ev.label}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </Card>
+    );
+  }
+
+  // Legacy fallback: raw append-only history (records that predate the feed).
   if (!events.length) {
     return (
       <Card title="Events" icon={History}>
@@ -785,7 +831,7 @@ function EventsLog({ events }: { events: ExecutionEvent[] }) {
         {events.map((ev, i) => (
           <li key={`${ev.type}-${ev.timestamp}-${i}`} className="flex items-baseline gap-3 text-sm">
             <span className="text-[11px] text-slate-500 font-mono shrink-0 w-20">{fmtClock(ev.timestamp) || '—'}</span>
-            <span className={`font-medium ${EVENT_TONE[ev.type] ?? 'text-slate-300'}`}>{eventLabel(ev)}</span>
+            <span className="font-medium text-slate-300">{eventLabel(ev)}</span>
             {ev.note && <span className="text-xs text-slate-500 break-all">· {ev.note}</span>}
           </li>
         ))}
