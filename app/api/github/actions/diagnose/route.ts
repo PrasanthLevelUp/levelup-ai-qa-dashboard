@@ -4,12 +4,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { backendUrl, proxyHeaders } from '@/lib/backend-proxy';
 
 /**
- * GET /api/github/actions/_diagnose?owner=&repo=  (or ?repoUrl=)
+ * GET /api/github/actions/diagnose?owner=&repo=  (or ?repoUrl=)
  *
  * TEMPORARY diagnostic proxy. Forwards the user's session cookie to the
  * backend's step-by-step workflow-loading diagnostics so we can see EXACTLY
  * which step fails (DB context → SQL → token → GitHub API). Tokens are masked
  * by the backend; nothing sensitive is returned.
+ *
+ * NOTE: this folder must NOT start with an underscore — Next.js App Router
+ * treats `_`-prefixed folders as private and excludes them from routing.
+ * The backend route is still `/api/github/actions/_diagnose` (Express has no
+ * such rule), so we proxy to that path below.
  */
 export async function GET(req: NextRequest) {
   try {
