@@ -7,6 +7,7 @@ import {
   FileSearch, Terminal, Code, Network, History, GitBranch,
   Route, AlertTriangle,
 } from 'lucide-react';
+import { BeforeAfterHealing } from '@/components/before-after-healing';
 
 /* ─── Types: mirror of the backend canonical ExecutionRecord + timeline ─── */
 
@@ -402,6 +403,20 @@ export function ExecutionDetailClient({ id }: { id: string }) {
 
       {/* Healing Decision Tree */}
       {record.healing && <HealingTree h={record.healing} />}
+
+      {/* Before → After Healing — the side-by-side of what broke vs what changed */}
+      {record.healing && (
+        <BeforeAfterHealing
+          data={{
+            brokenLocator: record.healing.brokenLocator,
+            newLocator: record.healing.newLocator,
+            appliedStrategy: record.healing.appliedStrategy,
+            source: record.healing.source,
+            failureCategory: record.diagnosis?.category,
+            passedAfterHealing: record.validation?.passedAfterHealing,
+          }}
+        />
+      )}
 
       {/* Validation */}
       {record.validation?.reran && <ValidationCard v={record.validation} />}
