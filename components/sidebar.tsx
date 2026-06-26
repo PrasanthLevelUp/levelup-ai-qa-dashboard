@@ -60,7 +60,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: '/projects', label: 'Projects', icon: FolderKanban },
       { href: '/jobs', label: 'Healing Jobs', icon: Play },
-      { href: '/executions', label: 'Executions', icon: ScrollText },
+      { href: '/executions', label: 'Execution History', icon: ScrollText },
       { href: '/healings', label: 'Healings', icon: HeartPulse },
       { href: '/flaky', label: 'Flaky Tests', icon: Bug },
     ],

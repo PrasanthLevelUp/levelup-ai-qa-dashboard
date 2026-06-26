@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { CheckCircle2, XCircle, Clock, MinusCircle, ChevronRight, ScrollText } from 'lucide-react';
 import { useProject } from '@/lib/project-context';
+import { ExecutionSummary } from '@/components/execution-summary';
 
 interface ExecutionRow {
   executionId: string;
   testName: string;
   status: 'passed' | 'failed' | 'timedout' | 'skipped';
+  result?: string | null;
   profile: string;
   durationMs: number;
   startTime: string;
@@ -49,7 +51,7 @@ export function ExecutionsListClient() {
     <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <ScrollText size={20} /> Executions
+          <ScrollText size={20} /> Execution History
         </h1>
         <p className="text-sm text-slate-400 mt-1">
           Every test execution as a single canonical record — diagnosis, healing, validation and learning in one place.
@@ -68,6 +70,13 @@ export function ExecutionsListClient() {
           <p className="text-xs text-slate-500 mt-1">Records are created when the healing worker processes a failing run.</p>
         </div>
       ) : (
+        <>
+        {/* Most recent execution, summarised by the reusable ExecutionSummary card. */}
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Most recent</p>
+          <ExecutionSummary execution={rows[0]} />
+        </div>
+
         <div className="rounded-xl border border-[#1e293b] overflow-hidden">
           {rows.map((r) => {
             const meta = STATUS_META[r.status] ?? STATUS_META.failed;
@@ -96,6 +105,7 @@ export function ExecutionsListClient() {
             );
           })}
         </div>
+        </>
       )}
     </div>
   );
