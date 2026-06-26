@@ -610,7 +610,7 @@ export function JobsClient() {
    */
   const triggerHealing = async (opts?: {
     executionMode?: 'local' | 'github_actions';
-    providerConfig?: { workflowId: string; ref?: string };
+    providerConfig?: { workflowId: string; ref?: string; runId?: number };
   }) => {
     if (!selectedRepo) return;
     setTriggerLoading(true); setTriggerResult(null);
@@ -628,7 +628,13 @@ export function JobsClient() {
           ...(activeProject?.id != null ? { projectId: activeProject.id } : {}),
           // Execution source: omit for local (default); pass through for GitHub Actions.
           ...(mode === 'github_actions' && opts?.providerConfig?.workflowId
-            ? { executionMode: 'github_actions', providerConfig: { workflowId: opts.providerConfig.workflowId, ref: opts.providerConfig.ref || selectedBranch } }
+            ? { executionMode: 'github_actions', providerConfig: {
+                workflowId: opts.providerConfig.workflowId,
+                ref: opts.providerConfig.ref || selectedBranch,
+                // When present, heal THIS exact run instead of dispatching a new
+                // one — the user never has to re-run their suite.
+                ...(opts.providerConfig.runId != null ? { runId: opts.providerConfig.runId } : {}),
+              } }
             : {}),
         }),
       });
@@ -769,9 +775,10 @@ export function JobsClient() {
           <GitHubActionsRunner
             repoUrl={selectedRepo}
             defaultRef={selectedBranch}
+            projectId={activeProject?.id}
             onTriggerHeal={(opts) => triggerHealing(
               opts?.workflowId
-                ? { executionMode: 'github_actions', providerConfig: { workflowId: opts.workflowId, ref: opts.ref } }
+                ? { executionMode: 'github_actions', providerConfig: { workflowId: opts.workflowId, ref: opts.ref, runId: opts.runId } }
                 : undefined,
             )}
             healLoading={triggerLoading}
