@@ -5,7 +5,7 @@ import {
   ArrowLeft, CheckCircle2, XCircle, MinusCircle, Circle, Clock, Cpu, Brain,
   Sparkles, Stethoscope, Wrench, ShieldCheck, GraduationCap, Camera, Video,
   FileSearch, Terminal, Code, Network, History, GitBranch,
-  Route,
+  Route, AlertTriangle,
 } from 'lucide-react';
 
 /* ─── Types: mirror of the backend canonical ExecutionRecord + timeline ─── */
@@ -123,28 +123,63 @@ interface ExecutionRecord {
 }
 
 /** One advisor's verdict in the healing waterfall — AUTHORITATIVE, from the
- *  backend (deriveDecisionTrail). The UI renders this verbatim and NEVER infers
+ *  backend (deriveDecisionTrail). This is the ENTIRE decision: the raw orchestrator
+ *  outcome + the reason + confidence. The UI renders it verbatim and NEVER infers
  *  which advisors ran: the backend captured exactly what happened at heal time. */
+type AdvisorOutcome = 'hit' | 'miss' | 'skipped' | 'not_reached' | 'error';
 interface AdvisorDecisionView {
   advisor: string;
-  status: 'won' | 'consulted' | 'skipped';
+  /** Raw orchestrator outcome — the UI maps it to a label/icon/colour. */
+  status: AdvisorOutcome;
+  /** Human-readable reason for the outcome, when known. */
+  reason?: string;
   /** Confidence as an integer percentage (0..100), when known. */
   confidence?: number;
-  reasoning?: string;
   durationMs?: number;
 }
 
-/** Customer-facing narrated event — AUTHORITATIVE, from the backend
- *  (deriveEventFeed). Backend owns the label + tone + icon kind; UI just renders. */
-type FriendlyEventKind =
-  | 'started' | 'preparing' | 'running' | 'evidence'
-  | 'diagnosis' | 'healing' | 'validation' | 'learning' | 'finished';
-type FriendlyEventTone = 'positive' | 'negative' | 'neutral' | 'info';
-interface FriendlyEvent {
+/** Semantic event feed — AUTHORITATIVE, from the backend (deriveEventFeed).
+ *  The backend emits ONLY the semantic kind + structured data (never display
+ *  text); the UI owns all labels/icons/colour, so adding a language later changes
+ *  only the UI (i18n-clean). */
+type ExecutionFeedKind =
+  | 'execution_started'
+  | 'preparing_environment'
+  | 'running_tests'
+  | 'evidence_collected'
+  | 'diagnosis_completed'
+  | 'healing_applied'
+  | 'healing_report_only'
+  | 'healing_failed'
+  | 'validation_passed'
+  | 'validation_failed'
+  | 'learning_stored'
+  | 'learning_skipped'
+  | 'execution_passed'
+  | 'execution_healed'
+  | 'execution_failed'
+  | 'execution_timed_out'
+  | 'execution_skipped';
+interface ExecutionFeedData {
+  /** Raw diagnosis category, e.g. "timing_failure" (the UI title-cases it). */
+  category?: string;
+  /** Raw applied healing strategy, e.g. "wait_strategy" (the UI title-cases it). */
+  strategy?: string;
+}
+interface ExecutionFeedEvent {
   timestamp: string;
-  label: string;
-  kind: FriendlyEventKind;
-  tone: FriendlyEventTone;
+  kind: ExecutionFeedKind;
+  data?: ExecutionFeedData;
+}
+
+/** Per-phase health verdict — AUTHORITATIVE, from the backend
+ *  (deriveExecutionHealth). Semantic only (phase + status); the UI owns labels/
+ *  icons/colour. Always all six phases, in canonical order. */
+type ExecutionPhase = 'execution' | 'evidence' | 'diagnosis' | 'healing' | 'validation' | 'learning';
+type PhaseStatus = 'passed' | 'partial' | 'failed' | 'skipped' | 'not_run';
+interface ExecutionHealthEntry {
+  phase: ExecutionPhase;
+  status: PhaseStatus;
 }
 
 interface ExecutionPayload {
@@ -152,8 +187,10 @@ interface ExecutionPayload {
   timeline: TimelineEvent[];
   /** Authoritative advisor waterfall (backend-derived). */
   decisionTrail?: AdvisorDecisionView[];
-  /** Authoritative customer-facing event narration (backend-derived). */
-  eventFeed?: FriendlyEvent[];
+  /** Authoritative semantic event feed (backend-derived). */
+  eventFeed?: ExecutionFeedEvent[];
+  /** Authoritative per-phase health verdicts (backend-derived). */
+  health?: ExecutionHealthEntry[];
 }
 
 /** Internal pipeline stage → clean user-facing label (mirror of backend toDisplayStage). */
@@ -327,6 +364,10 @@ export function ExecutionDetailClient({ id }: { id: string }) {
           <Field label="Schema" value={`v${record.schemaVersion}`} />
         </div>
       </div>
+
+      {/* Execution Health Bar — within ~2 seconds a viewer sees what each
+          lifecycle phase did. Authoritative, backend-derived (deriveExecutionHealth). */}
+      <HealthBar health={data.health ?? []} />
 
       {/* Advisor summary strip — the four independent advisors at a glance */}
       <AdvisorStrip record={record} />
@@ -720,25 +761,32 @@ function cap(s?: string): string {
    orchestrator at heal time (record.healing.decisionTrail) and the UI renders it
    verbatim. We NEVER infer advisor usage on the client. */
 
-const TRAIL_STATUS_META: Record<AdvisorDecisionView['status'], { label: string; cls: string; icon: any }> = {
-  won: { label: 'Won', cls: 'border-amber-500/40 bg-amber-500/10 text-amber-200', icon: CheckCircle2 },
-  consulted: { label: 'Consulted', cls: 'border-slate-600/50 bg-slate-500/5 text-slate-300', icon: Circle },
+/** UI mapping for each RAW orchestrator outcome → label/colour/icon. The backend
+ *  passes the verbatim outcome (hit/miss/skipped/not_reached/error); the UI owns
+ *  all of the presentation here, so the customer immediately sees WHY a layer was
+ *  used or skipped. */
+const TRAIL_STATUS_META: Record<AdvisorOutcome, { label: string; cls: string; icon: any }> = {
+  hit: { label: 'Hit', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200', icon: CheckCircle2 },
+  miss: { label: 'Miss', cls: 'border-slate-600/50 bg-slate-500/5 text-slate-300', icon: Circle },
   skipped: { label: 'Skipped', cls: 'border-[#1e293b] bg-transparent text-slate-500 opacity-70', icon: MinusCircle },
+  not_reached: { label: 'Not reached', cls: 'border-[#1e293b] bg-transparent text-slate-600 opacity-60', icon: MinusCircle },
+  error: { label: 'Error', cls: 'border-red-500/40 bg-red-500/10 text-red-200', icon: XCircle },
 };
 
 function DecisionTrail({ trail }: { trail: AdvisorDecisionView[] }) {
   return (
     <Card title="Decision Trail" icon={Route} accent="text-amber-300">
       <p className="text-xs text-slate-500 mb-4">
-        The advisor waterfall for this heal — which intelligence layers were consulted, which won,
-        which were skipped. Recorded by the backend at decision time, not inferred here.
+        The advisor waterfall for this heal — every intelligence layer&apos;s verdict (hit · miss ·
+        skipped · not reached) with the reason it gave. Recorded by the backend at decision time,
+        not inferred here.
       </p>
       {trail.length === 0 ? (
         <Empty label="No advisor waterfall on this record — this execution did not go through healing." />
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {trail.map((s, i) => {
-            const meta = TRAIL_STATUS_META[s.status] ?? TRAIL_STATUS_META.consulted;
+            const meta = TRAIL_STATUS_META[s.status] ?? TRAIL_STATUS_META.miss;
             const Icon = meta.icon;
             return (
               <div key={`${s.advisor}-${i}`} className={`rounded-lg border p-3 ${meta.cls}`}>
@@ -757,7 +805,7 @@ function DecisionTrail({ trail }: { trail: AdvisorDecisionView[] }) {
                     </span>
                   )}
                 </div>
-                {s.reasoning && <p className="text-[11px] text-slate-500 mt-1.5 break-all">{s.reasoning}</p>}
+                {s.reason && <p className="text-[11px] text-slate-400 mt-1.5 break-words">{s.reason}</p>}
               </div>
             );
           })}
@@ -771,44 +819,68 @@ function DecisionTrail({ trail }: { trail: AdvisorDecisionView[] }) {
    The customer-facing event story. Customers don't think in backend event
    names ("stage_changed", "diagnosis_completed") — they want a readable feed:
    "Collected Browser Evidence → Diagnosed Timing Failure → Applied Wait Strategy
-   → Validation Passed → Learning Stored". The BACKEND owns the labels, tone and
-   icon kind (deriveEventFeed); the UI just renders. Falls back to the raw events
-   log only for legacy records that predate the feed. */
+   → Validation Passed → Learning Stored". The BACKEND emits ONLY the semantic
+   kind + structured data; the UI owns ALL labels/icons/colour here, so adding a
+   language later changes only this file (i18n-clean). Falls back to the raw
+   events log only for legacy records that predate the feed. */
 
-/** Icon for each friendly event kind. */
-const FEED_KIND_ICON: Record<FriendlyEventKind, any> = {
-  started: Circle,
-  preparing: GitBranch,
-  running: Cpu,
-  evidence: Camera,
-  diagnosis: Stethoscope,
-  healing: Wrench,
-  validation: ShieldCheck,
-  learning: GraduationCap,
-  finished: CheckCircle2,
+type FeedTone = 'positive' | 'negative' | 'neutral' | 'info';
+
+/** Title-case a raw snake_case token, e.g. "timing_failure" → "Timing Failure". */
+function titleCase(s?: string): string {
+  if (!s) return '';
+  return s.split(/[_\s]+/).filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** UI presentation for each semantic feed kind: icon, tone, and a label builder
+ *  that interpolates the raw structured data (title-cased here, never on the
+ *  backend). This is the ONLY place event display text lives. */
+const FEED_KIND_META: Record<ExecutionFeedKind, { icon: any; tone: FeedTone; label: (d?: ExecutionFeedData) => string }> = {
+  execution_started: { icon: Circle, tone: 'info', label: () => 'Execution Started' },
+  preparing_environment: { icon: GitBranch, tone: 'info', label: () => 'Preparing Environment' },
+  running_tests: { icon: Cpu, tone: 'info', label: () => 'Running Tests' },
+  evidence_collected: { icon: Camera, tone: 'info', label: () => 'Collected Browser Evidence' },
+  diagnosis_completed: { icon: Stethoscope, tone: 'info', label: (d) => d?.category ? `Diagnosed ${titleCase(d.category)}` : 'Diagnosis Completed' },
+  healing_applied: { icon: Wrench, tone: 'positive', label: (d) => d?.strategy ? `Applied ${titleCase(d.strategy)}` : 'Healing Applied' },
+  healing_report_only: { icon: Wrench, tone: 'neutral', label: () => 'Flagged for Review' },
+  healing_failed: { icon: Wrench, tone: 'negative', label: () => 'Healing Failed' },
+  validation_passed: { icon: ShieldCheck, tone: 'positive', label: () => 'Validation Passed' },
+  validation_failed: { icon: ShieldCheck, tone: 'negative', label: () => 'Validation Failed' },
+  learning_stored: { icon: GraduationCap, tone: 'positive', label: () => 'Learning Stored' },
+  learning_skipped: { icon: GraduationCap, tone: 'neutral', label: () => 'Nothing to Learn' },
+  execution_passed: { icon: CheckCircle2, tone: 'positive', label: () => 'Execution Passed' },
+  execution_healed: { icon: CheckCircle2, tone: 'positive', label: () => 'Passed after Healing' },
+  execution_failed: { icon: XCircle, tone: 'negative', label: () => 'Execution Failed' },
+  execution_timed_out: { icon: Clock, tone: 'negative', label: () => 'Execution Timed Out' },
+  execution_skipped: { icon: MinusCircle, tone: 'neutral', label: () => 'Execution Skipped' },
 };
 
 /** Colour for each tone. */
-const FEED_TONE_CLS: Record<FriendlyEventTone, string> = {
+const FEED_TONE_CLS: Record<FeedTone, string> = {
   positive: 'text-emerald-300',
   negative: 'text-red-300',
   neutral: 'text-slate-300',
   info: 'text-sky-300',
 };
 
-function EventsLog({ feed, events }: { feed?: FriendlyEvent[]; events: ExecutionEvent[] }) {
-  // Preferred path: the backend's narrated, customer-facing feed.
+function EventsLog({ feed, events }: { feed?: ExecutionFeedEvent[]; events: ExecutionEvent[] }) {
+  // Preferred path: the backend's semantic feed, mapped to display text here.
   if (feed && feed.length > 0) {
     return (
       <Card title="Events" icon={History}>
         <ol className="space-y-2.5">
           {feed.map((ev, i) => {
-            const Icon = FEED_KIND_ICON[ev.kind] ?? Circle;
+            const meta = FEED_KIND_META[ev.kind];
+            const Icon = meta?.icon ?? Circle;
+            const tone = meta?.tone ?? 'neutral';
+            const label = meta ? meta.label(ev.data) : titleCase(ev.kind);
             return (
               <li key={`${ev.kind}-${ev.timestamp}-${i}`} className="flex items-center gap-3 text-sm">
                 <span className="text-[11px] text-slate-500 font-mono shrink-0 w-20">{fmtClock(ev.timestamp) || '—'}</span>
-                <Icon size={15} className={`shrink-0 ${FEED_TONE_CLS[ev.tone] ?? 'text-slate-400'}`} />
-                <span className={`font-medium ${FEED_TONE_CLS[ev.tone] ?? 'text-slate-300'}`}>{ev.label}</span>
+                <Icon size={15} className={`shrink-0 ${FEED_TONE_CLS[tone]}`} />
+                <span className={`font-medium ${FEED_TONE_CLS[tone]}`}>{label}</span>
               </li>
             );
           })}
@@ -837,5 +909,55 @@ function EventsLog({ feed, events }: { feed?: FriendlyEvent[]; events: Execution
         ))}
       </ol>
     </Card>
+  );
+}
+
+/* ─── Execution Health Bar ─────────────────────────────────────────────────
+   The single most demo-worthy at-a-glance: a CTO sees within ~2 seconds what
+   every lifecycle phase did. AUTHORITATIVE — the backend derives the per-phase
+   verdict (deriveExecutionHealth); the UI owns ALL labels/icons/colour here. */
+
+const PHASE_META: Record<ExecutionPhase, { label: string; icon: any }> = {
+  execution: { label: 'Execution', icon: Cpu },
+  evidence: { label: 'Evidence', icon: Camera },
+  diagnosis: { label: 'Diagnosis', icon: Stethoscope },
+  healing: { label: 'Healing', icon: Wrench },
+  validation: { label: 'Validation', icon: ShieldCheck },
+  learning: { label: 'Learning', icon: GraduationCap },
+};
+
+const PHASE_STATUS_META: Record<PhaseStatus, { label: string; icon: any; cls: string; iconCls: string }> = {
+  passed: { label: 'Passed', icon: CheckCircle2, cls: 'border-emerald-500/30 bg-emerald-500/5', iconCls: 'text-emerald-400' },
+  partial: { label: 'Partial', icon: AlertTriangle, cls: 'border-amber-500/30 bg-amber-500/5', iconCls: 'text-amber-400' },
+  failed: { label: 'Failed', icon: XCircle, cls: 'border-red-500/30 bg-red-500/5', iconCls: 'text-red-400' },
+  skipped: { label: 'Skipped', icon: MinusCircle, cls: 'border-[#1e293b] bg-transparent', iconCls: 'text-slate-500' },
+  not_run: { label: 'Not run', icon: Circle, cls: 'border-[#1e293b] bg-transparent opacity-60', iconCls: 'text-slate-600' },
+};
+
+function HealthBar({ health }: { health: ExecutionHealthEntry[] }) {
+  if (!health.length) return null;
+  return (
+    <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-4">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2.5">
+        {health.map((h) => {
+          const phase = PHASE_META[h.phase] ?? { label: h.phase, icon: Circle };
+          const st = PHASE_STATUS_META[h.status] ?? PHASE_STATUS_META.not_run;
+          const PhaseIcon = phase.icon;
+          const StatusIcon = st.icon;
+          return (
+            <div key={h.phase} className={`rounded-lg border p-3 flex flex-col gap-1.5 ${st.cls}`}>
+              <div className="flex items-center gap-1.5 text-slate-400">
+                <PhaseIcon size={13} className="shrink-0" />
+                <span className="text-[11px] uppercase tracking-wide truncate">{phase.label}</span>
+              </div>
+              <div className={`flex items-center gap-1.5 ${st.iconCls}`}>
+                <StatusIcon size={15} className="shrink-0" />
+                <span className="text-sm font-semibold">{st.label}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
