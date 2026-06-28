@@ -6,7 +6,7 @@ import { GitHubActionsRunner } from './github-actions-runner';
 import {
   Play, RefreshCw, Clock, CheckCircle2, XCircle, Loader2, AlertTriangle,
   GitBranch, ChevronDown, ChevronUp, Zap, FileCode, StopCircle, Plus,
-  Trash2, X, FolderGit2, Layers, Wrench, Ban, ShieldX, SearchX,
+  Trash2, X, FolderGit2, Layers, Wrench, Ban, ShieldX, SearchX, GitPullRequest,
 } from 'lucide-react';
 
 /* ─── Types ─── */
@@ -330,6 +330,37 @@ function HealingDecisionCard({ trail }: {
 /* ─── Expanded Job Details ─── */
 function ExpandedJobDetails({ job }: { job: Job }) {
   const r = job.resultData;
+  const [creatingPR, setCreatingPR] = useState(false);
+  const [prResult, setPRResult] = useState<{ type: 'success' | 'error'; message: string; prUrl?: string } | null>(null);
+
+  const createPR = async () => {
+    setCreatingPR(true);
+    setPRResult(null);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/create-pr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPRResult({
+          type: 'success',
+          message: `PR #${data.data.github.prNumber} created successfully`,
+          prUrl: data.data.github.prUrl,
+        });
+      } else {
+        setPRResult({ type: 'error', message: data.error || 'Failed to create PR' });
+      }
+    } catch (err) {
+      setPRResult({ type: 'error', message: 'Network error — failed to create PR' });
+    } finally {
+      setCreatingPR(false);
+    }
+  };
+
+  // Show Create PR button if job completed successfully with healings
+  const canCreatePR = job.status === 'completed' && (r?.healed ?? 0) > 0;
+
   return (
     <div className="px-4 pb-4 space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -352,6 +383,56 @@ function ExpandedJobDetails({ job }: { job: Job }) {
             <div><p className="text-[10px] text-slate-500">Strategy</p><p className="text-sm text-slate-300 font-semibold">{r.strategy || 'none'}</p></div>
             <div><p className="text-[10px] text-slate-500">Exit Code</p><p className={`text-sm font-semibold ${r.testResults?.exitCode === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>{r.testResults?.exitCode ?? '—'}</p></div>
           </div>
+        </div>
+      )}
+      {/* Create PR Button */}
+      {canCreatePR && (
+        <div className="bg-[#0c1222] rounded-lg p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <GitPullRequest size={13} className="text-emerald-400" />
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider">Commit Fixes</p>
+              </div>
+              <p className="text-xs text-slate-500">Create a pull request with the healed locators</p>
+            </div>
+            <button
+              onClick={createPR}
+              disabled={creatingPR}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+            >
+              {creatingPR ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Creating PR...
+                </>
+              ) : (
+                <>
+                  <GitPullRequest size={14} />
+                  Create PR
+                </>
+              )}
+            </button>
+          </div>
+          {prResult && (
+            <div className={`mt-3 px-3 py-2 rounded-lg text-xs ${
+              prResult.type === 'success'
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                : 'bg-red-500/10 border border-red-500/20 text-red-400'
+            }`}>
+              {prResult.message}
+              {prResult.prUrl && (
+                <a
+                  href={prResult.prUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-2 underline hover:text-emerald-300"
+                >
+                  View PR →
+                </a>
+              )}
+            </div>
+          )}
         </div>
       )}
       {r?.healingActions && r.healingActions.length > 0 && (
