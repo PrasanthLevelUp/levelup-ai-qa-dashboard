@@ -332,6 +332,13 @@ function ExpandedJobDetails({ job }: { job: Job }) {
   const r = job.resultData;
   const [creatingPR, setCreatingPR] = useState(false);
   const [prResult, setPRResult] = useState<{ type: 'success' | 'error'; message: string; prUrl?: string } | null>(null);
+  // PR push-access pre-flight: tells the user up-front whether the backend
+  // GITHUB_TOKEN can actually push to this repo, so a failed Create PR is never
+  // a surprise. null = not checked yet / unknown.
+  const [pushAccess, setPushAccess] = useState<
+    { canPush: boolean; reason?: string; tokenPresent?: boolean; tokenLength?: number } | null
+  >(null);
+  const [checkingAccess, setCheckingAccess] = useState(false);
 
   const createPR = async () => {
     setCreatingPR(true);
@@ -360,6 +367,32 @@ function ExpandedJobDetails({ job }: { job: Job }) {
 
   // Show Create PR button if job completed successfully with healings
   const canCreatePR = job.status === 'completed' && (r?.healed ?? 0) > 0;
+
+  // Pre-flight the backend's push token the moment the Create PR section is
+  // relevant, so we can warn BEFORE the user clicks (mirrors the exact token
+  // the PR flow uses). Runs once per repo.
+  useEffect(() => {
+    if (!canCreatePR || !job.repositoryUrl) return;
+    let cancelled = false;
+    (async () => {
+      setCheckingAccess(true);
+      try {
+        const qs = new URLSearchParams({ repoUrl: job.repositoryUrl! });
+        const res = await fetch(`/api/github/actions/check-pr-access?${qs.toString()}`);
+        const data = await res.json();
+        if (!cancelled && data?.success && data.data) {
+          setPushAccess({
+            canPush: !!data.data.canPush,
+            reason: data.data.reason,
+            tokenPresent: data.data.tokenPresent,
+            tokenLength: data.data.tokenLength,
+          });
+        }
+      } catch { /* leave as unknown */ }
+      finally { if (!cancelled) setCheckingAccess(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [canCreatePR, job.repositoryUrl]);
 
   return (
     <div className="px-4 pb-4 space-y-3">
@@ -398,7 +431,8 @@ function ExpandedJobDetails({ job }: { job: Job }) {
             </div>
             <button
               onClick={createPR}
-              disabled={creatingPR}
+              disabled={creatingPR || pushAccess?.canPush === false}
+              title={pushAccess?.canPush === false ? (pushAccess.reason || 'Token cannot push to this repo') : undefined}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
             >
               {creatingPR ? (
@@ -413,6 +447,30 @@ function ExpandedJobDetails({ job }: { job: Job }) {
                 </>
               )}
             </button>
+          </div>
+          {/* Token health indicator — pre-flight so a failed push is never a surprise */}
+          <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+            {checkingAccess ? (
+              <>
+                <Loader2 size={10} className="animate-spin text-slate-500" />
+                <span className="text-slate-500">Checking GitHub push access…</span>
+              </>
+            ) : pushAccess?.canPush === true ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-emerald-400">GitHub token verified — push access OK</span>
+              </>
+            ) : pushAccess?.canPush === false ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                <span className="text-red-400">
+                  {pushAccess.tokenPresent === false
+                    ? 'No GitHub token configured on the backend (GITHUB_TOKEN). '
+                    : 'GitHub token cannot push to this repo. '}
+                  {pushAccess.reason}
+                </span>
+              </>
+            ) : null}
           </div>
           {prResult && (
             <div className={`mt-3 px-3 py-2 rounded-lg text-xs ${
