@@ -2410,6 +2410,26 @@ function HistoryTab() {
                     {req.module && <><span>•</span><span>{req.module}</span></>}
                     <span>•</span>
                     <span>{new Date(req.created_at).toLocaleDateString()}</span>
+                    {(() => {
+                      const analysis = typeof req.analysis === 'string' ? (() => { try { return JSON.parse(req.analysis); } catch { return null; } })() : req.analysis;
+                      const meta = analysis?.generationMetadata;
+                      if (!meta?.totalTokens) return null;
+                      const tier = meta.complexityTier;
+                      const tierColors: Record<string, string> = {
+                        FAST: 'text-green-400',
+                        STANDARD: 'text-blue-400',
+                        COMPREHENSIVE: 'text-amber-400',
+                      };
+                      const tierColor = tier ? tierColors[tier] || 'text-slate-400' : 'text-slate-400';
+                      return (
+                        <>
+                          <span>•</span>
+                          <span className={tierColor} title={`Complexity: ${tier || 'unknown'} | ${Math.round(meta.totalMs || 0) / 1000}s`}>
+                            {meta.totalTokens.toLocaleString()} tokens
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                   {/* Coverage type badges */}
                   {(() => {
