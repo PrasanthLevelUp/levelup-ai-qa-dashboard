@@ -66,6 +66,13 @@ interface RepoProfile {
     indentStyle: string;
     quoteStyle: string;
     semicolons: boolean;
+    // Wait strategy intelligence — how the repo synchronizes with the app.
+    waitStyle?: string;
+    waitStyles?: string[];
+    usesFixedTimeouts?: boolean;
+    // Logging convention intelligence — how the repo reports step progress.
+    loggingStyle?: string;
+    loggingStyles?: string[];
   };
   // NOTE: parameters/methods arrive from the backend AST as objects
   // ({ name, type }), not strings — the UI normalizes them before rendering.
@@ -588,7 +595,23 @@ export function RepoIntelligenceClient() {
                   {profile.codingStyle.indentStyle && <StyleTag label="Indent" value={profile.codingStyle.indentStyle} />}
                   <StyleTag label="Semicolons" value={profile.codingStyle.semicolons ? 'Yes' : 'No'} />
                   {profile.codingStyle.tagConvention && <StyleTag label="Tags" value={profile.codingStyle.tagConvention} />}
+                  {profile.codingStyle.waitStyle && profile.codingStyle.waitStyle !== 'none' && (
+                    <StyleTag
+                      label="Wait Strategy"
+                      value={formatWaitStyle(profile.codingStyle.waitStyle)}
+                      variant={profile.codingStyle.usesFixedTimeouts ? 'warning' : 'success'}
+                    />
+                  )}
+                  {profile.codingStyle.loggingStyle && profile.codingStyle.loggingStyle !== 'none' && (
+                    <StyleTag label="Logging" value={formatLoggingStyle(profile.codingStyle.loggingStyle)} />
+                  )}
                 </div>
+                {profile.codingStyle.usesFixedTimeouts && (
+                  <div className="mt-2 flex items-start gap-2 text-xs px-3 py-2 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>Fixed timeouts (<code className="text-amber-200">page.waitForTimeout</code>) detected — generated scripts will avoid this anti-pattern and prefer web-first assertions.</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -747,12 +770,45 @@ function ProfileCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StyleTag({ label, value }: { label: string; value: string }) {
+function StyleTag({ label, value, variant = 'default' }: { label: string; value: string; variant?: 'default' | 'success' | 'warning' }) {
+  const styles = {
+    default: 'bg-slate-700/50 border-slate-600/50 text-slate-300',
+    success: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
+    warning: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+  }[variant];
+  const labelColor = variant === 'default' ? 'text-slate-500' : 'opacity-70';
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-slate-700/50 border border-slate-600/50 text-slate-300">
-      <span className="text-slate-500">{label}:</span> {value}
+    <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${styles}`}>
+      <span className={labelColor}>{label}:</span> {value}
     </span>
   );
+}
+
+// Human-friendly labels for the backend's wait-strategy enum.
+function formatWaitStyle(style: string): string {
+  const labels: Record<string, string> = {
+    'web-first-assertions': 'Web-First Assertions',
+    'load-state': 'Load State',
+    'locator-waitfor': 'Locator waitFor()',
+    'response-wait': 'Response Wait',
+    'fixed-timeout': 'Fixed Timeouts',
+    'none': 'None',
+    'mixed': 'Mixed',
+  };
+  return labels[style] || style;
+}
+
+// Human-friendly labels for the backend's logging-style enum.
+function formatLoggingStyle(style: string): string {
+  const labels: Record<string, string> = {
+    'test-step': 'test.step()',
+    'annotations': 'Annotations',
+    'logger': 'Logger',
+    'console-log': 'console.log',
+    'none': 'None',
+    'mixed': 'Mixed',
+  };
+  return labels[style] || style;
 }
 
 function FolderTag({ icon, label }: { icon: React.ReactNode; label: string }) {
