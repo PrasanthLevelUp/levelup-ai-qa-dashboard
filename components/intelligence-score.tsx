@@ -96,7 +96,7 @@ export function IntelligenceScore({
           <Info className="w-3.5 h-3.5 text-slate-500 cursor-help" />
           <div className="absolute left-0 top-6 w-64 bg-slate-900 border border-slate-700 rounded-md p-2 text-xs text-slate-300 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-50">
             Shows how much of this generation was grounded in real intelligence 
-            (repository code, app profile, test data, patterns) vs. AI inference.
+            (repository code, app profile, test data, patterns) vs. AI-assisted inference.
           </div>
         </div>
       </div>
@@ -114,7 +114,7 @@ export function IntelligenceScore({
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border bg-purple-500/15 text-purple-300 border-purple-500/30">
           <Sparkles className="w-4 h-4" />
           <span className="text-lg font-bold">{aiContribution}%</span>
-          <span className="text-xs opacity-75">AI</span>
+          <span className="text-xs opacity-75">AI Assisted</span>
         </div>
       </div>
 
@@ -188,7 +188,7 @@ export function IntelligenceScoreBadge({ score }: { score: IntelligenceScore }) 
       <span className="opacity-40">·</span>
       <Sparkles className="w-3 h-3 text-purple-400" />
       <span className="font-medium text-purple-300">{aiContribution}%</span>
-      <span className="opacity-60 text-purple-300">AI</span>
+      <span className="opacity-60 text-purple-300">AI assisted</span>
     </div>
   );
 }
