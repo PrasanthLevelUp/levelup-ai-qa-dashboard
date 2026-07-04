@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
+import { IntelligenceScore as IntelligenceScoreComponent } from '@/components/intelligence-score';
 import { toast } from 'sonner';
 
 /* ------------------------------------------------------------------ */
@@ -1642,6 +1643,8 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const appProfileUsed = result.appProfileUsed || null;
   // Provenance proof — which intelligence sources actually fed the model this run.
   const intelligenceUsed = result.intelligenceUsed || null;
+  // Phase 5: Intelligence Score — grounded% vs AI% transparency metric
+  const intelligenceScore = result.intelligenceScore || null;
 
   // Build coverage type lookup
   const labelMap: Record<string, { label: string; icon: string }> = {};
@@ -1808,6 +1811,14 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           </div>
         </div>
       </div>
+
+      {/* Phase 5: Intelligence Score — signature transparency metric */}
+      {intelligenceScore && (
+        <IntelligenceScoreComponent 
+          score={intelligenceScore} 
+          title="Test Case Intelligence Score"
+        />
+      )}
 
       {/* Intelligence Used — provenance proof of which sources grounded this run */}
       {intelligenceUsed && (

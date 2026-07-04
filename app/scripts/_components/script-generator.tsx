@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
 import { useWorkspaceHeaders, useProjectEnvironments } from '@/lib/workspace-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
+import { IntelligenceScore as IntelligenceScoreComponent } from '@/components/intelligence-score';
 import {
   Play,
   Loader2,
@@ -113,6 +114,13 @@ interface GenerationResult {
       scriptId: number;
       coverageBefore: { totalTestCases: number; automatedCount: number; automationPercentage: number } | null;
       coverageAfter: { totalTestCases: number; automatedCount: number; automationPercentage: number } | null;
+    };
+    // Phase 5: Intelligence Score — grounded% vs AI% transparency metric
+    intelligenceScore?: {
+      grounded: number;
+      aiContribution: number;
+      bySource: Record<string, number>;
+      summary: string;
     };
   };
   error?: string;
@@ -1885,6 +1893,14 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   color="text-amber-400"
                 />
               </div>
+
+              {/* Phase 5: Intelligence Score — signature transparency metric */}
+              {result.data.intelligenceScore && (
+                <IntelligenceScoreComponent 
+                  score={result.data.intelligenceScore} 
+                  title="Script Generation Intelligence Score"
+                />
+              )}
 
               {/* ── Generation Quality — at-a-glance proof scripts are grounded
                   in real data (real locators, real assertions) rather than AI
