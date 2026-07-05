@@ -11,6 +11,9 @@ export async function POST(req: NextRequest) {
       knowledgeItemIds, authConfig, additionalUrls, forceFreshCrawl,
       // ── Sprint 4: Enterprise Script Generation Enhancement ──
       testCaseId, requirementId, generationSource, locatorStrategy, folderStrategy,
+      // Inline structured test cases from a CSV/Excel upload — forwarded so the
+      // backend runs them through the deterministic, grounded engine.
+      testCases,
     } = body;
 
     const missingFields: string[] = [];
@@ -34,7 +37,8 @@ export async function POST(req: NextRequest) {
     // (e.g. OrangeHRM's `Admin`/`admin123`) into those flows previously leaked
     // wrong credentials and instructions into SauceDemo scripts. So only enrich
     // from project context for plain-English / URL generations.
-    const isDeterministicFlow = !!requirementId || testCaseId != null;
+    const hasInlineTestCases = Array.isArray(testCases) && testCases.length > 0;
+    const isDeterministicFlow = !!requirementId || testCaseId != null || hasInlineTestCases;
     if (projectContextId && isDeterministicFlow) {
       console.log('[ScriptGen] Skipping project-context enrichment for deterministic flow (requirement/test-case) to avoid contamination');
     }
@@ -101,6 +105,7 @@ export async function POST(req: NextRequest) {
         // ── Sprint 4: Requirement → Test Case → Script context + strategies ──
         ...(testCaseId != null ? { testCaseId } : {}),
         ...(requirementId ? { requirementId } : {}),
+        ...(hasInlineTestCases ? { testCases } : {}),
         ...(generationSource ? { generationSource } : {}),
         ...(locatorStrategy ? { locatorStrategy } : {}),
         ...(folderStrategy ? { folderStrategy } : {}),

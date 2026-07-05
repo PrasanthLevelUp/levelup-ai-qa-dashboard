@@ -38,11 +38,19 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
+import type { ParsedTestCase } from './upload-test-cases';
 
 interface ScriptGeneratorProps {
   projectContext: ProjectContext;
   onGenerated: () => void;
   prefillScenarios?: string[] | null;
+  /**
+   * Structured test cases from a CSV/Excel upload. When present these are sent
+   * as an inline `testCases` array so the backend routes them through the
+   * deterministic, grounded engine (real locators) instead of the ungrounded
+   * LLM discovery fallback that flattened scenario strings triggered.
+   */
+  prefillTestCases?: ParsedTestCase[] | null;
   onPrefillConsumed?: () => void;
   /** Sprint 4 — deep link context from the Test Case Lab. */
   requirementId?: string | null;
@@ -89,6 +97,16 @@ interface GenerationResult {
       validatedCount: number;
       avgConfidence: number;
       todoCount: number;
+      // App-Profile-grounding KPI (customer proof point): how many locators came
+      // from the App Profile vs curated fallback vs AI, so the UI can show
+      // "20 from App Profile · 2 healed by AI · 91% Repository Grounded · 9% AI".
+      appProfileCount?: number;
+      fallbackCount?: number;
+      aiCount?: number;
+      appProfilePct?: number;
+      aiPct?: number;
+      groundedPct?: number;
+      provenanceSummary?: string;
       locators?: Array<{
         element: string;
         selector: string;
@@ -429,7 +447,7 @@ function IntelSourceCard({
   );
 }
 
-export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, onPrefillConsumed, requirementId, testCaseId }: ScriptGeneratorProps) {
+export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios, prefillTestCases, onPrefillConsumed, requirementId, testCaseId }: ScriptGeneratorProps) {
   const { activeProject } = useProject();
   const projectHeaders = useProjectHeaders();
   // Full workspace headers (project + environment + sprint) — sent on record
@@ -438,6 +456,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   // Active environment — its base_url auto-populates the target URL (Sprint 4).
   const { activeEnvironment } = useProjectEnvironments();
   const [scenario, setScenario] = useState('');
+  // Structured test cases carried from a CSV/Excel upload. When set, generation
+  // sends them inline so the backend uses the deterministic, grounded engine.
+  const [uploadedTestCases, setUploadedTestCases] = useState<ParsedTestCase[] | null>(null);
   const [targetUrl, setTargetUrl] = useState(projectContext.appUrl || '');
   const [testTypes, setTestTypes] = useState<string[]>(['smoke', 'functional']);
   const [includeNegative, setIncludeNegative] = useState(true);
@@ -703,14 +724,21 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEnvironment?.base_url]);
 
-  // Auto-fill from CSV/Excel upload
+  // Auto-fill from CSV/Excel upload. Capture BOTH the readable scenario text
+  // (for the textarea preview) AND the structured test cases (sent inline so
+  // the backend uses the deterministic, grounded engine — not the LLM fallback).
   useEffect(() => {
+    if (prefillTestCases && prefillTestCases.length > 0) {
+      setUploadedTestCases(prefillTestCases);
+    }
     if (prefillScenarios && prefillScenarios.length > 0) {
       const combined = prefillScenarios.map((s, i) => `${i + 1}. ${s}`).join('\n\n');
       setScenario(combined);
+    }
+    if ((prefillTestCases && prefillTestCases.length > 0) || (prefillScenarios && prefillScenarios.length > 0)) {
       onPrefillConsumed?.();
     }
-  }, [prefillScenarios, onPrefillConsumed]);
+  }, [prefillScenarios, prefillTestCases, onPrefillConsumed]);
 
   // Auto-scroll target: the results panel rendered after generation completes.
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -934,10 +962,14 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     // wins, then the deep-link prop. Drives generationSource + auto-marking.
     const effectiveTestCaseId = testCaseInfo?.id ?? testCaseId ?? null;
 
+    // Structured test cases from a CSV/Excel upload. When present they are sent
+    // inline so the backend routes them into the deterministic, grounded engine.
+    const hasUploadedTestCases = Boolean(uploadedTestCases && uploadedTestCases.length > 0);
+
     // Requirement-based generation derives everything from the requirement's
     // linked test cases (deterministic backend path), so a free-text scenario is
     // optional. Only block when there's nothing to generate from at all.
-    if (!scenario.trim() && !selectedReqId && effectiveTestCaseId == null) return;
+    if (!scenario.trim() && !selectedReqId && effectiveTestCaseId == null && !hasUploadedTestCases) return;
 
     // The backend requires a non-empty `scenario` field. For requirement-based
     // generation (where the textarea may be empty) fall back to a concise label
@@ -980,9 +1012,16 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           // requirement chosen in the picker.
           ...(effectiveTestCaseId != null ? { testCaseId: Number(effectiveTestCaseId) } : {}),
           ...(selectedReqId ? { requirementId: selectedReqId } : {}),
+          // Inline structured test cases from a CSV/Excel upload — the backend
+          // normalizes these and runs them through the deterministic, grounded
+          // engine (real locators, page-consolidated) instead of the ungrounded
+          // LLM discovery fallback that flattened scenario strings triggered.
+          ...(hasUploadedTestCases ? { testCases: uploadedTestCases } : {}),
           generationSource: effectiveTestCaseId != null
             ? 'test_case_based'
-            : (selectedReqId ? 'requirement_based' : 'url_based'),
+            : (selectedReqId
+              ? 'requirement_based'
+              : (hasUploadedTestCases ? 'uploaded_test_cases' : 'url_based')),
         }),
       });
 
@@ -1245,11 +1284,27 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             )}
           </div>
 
+          {uploadedTestCases && uploadedTestCases.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+              <ShieldCheck size={15} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-emerald-300">
+                  {uploadedTestCases.length} uploaded test case{uploadedTestCases.length !== 1 ? 's' : ''} — grounded engine
+                </p>
+                <p className="text-[10px] text-emerald-400/70 mt-0.5 leading-snug">
+                  These structured test cases (steps, expected results) are sent to the deterministic engine to
+                  produce real, grounded locators consolidated by page. Editing the scenario below reverts to
+                  free-text generation.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Test Scenario</label>
             <textarea
               value={scenario}
-              onChange={(e) => setScenario(e.target.value)}
+              onChange={(e) => { setScenario(e.target.value); if (uploadedTestCases) setUploadedTestCases(null); }}
               placeholder={`Describe the test scenario in plain English, e.g.:\n\n\u2022 "Test login with valid credentials, verify dashboard loads, check employee count is visible"\n\u2022 "Add a new employee, fill all required fields, verify success message and employee appears in list"\n\u2022 "Try login with wrong password 3 times, verify account lockout message"`}
               rows={5}
               className="w-full px-3 py-2.5 rounded-lg bg-[#0c1222] border border-[#334155] text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 resize-none"
@@ -2097,6 +2152,34 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                         <span className="text-amber-400">{lreport.todoCount} not found in crawl</span>
                       )}
                     </div>
+                    {/* App-Profile-grounding KPI — the customer proof point:
+                        how many locators came from the App Profile (repository)
+                        vs healed by AI. Goal: grow App-Profile %, shrink AI %. */}
+                    {typeof lreport.appProfileCount === 'number' && (
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] border-t border-white/5 pt-2">
+                        <span className="inline-flex items-center gap-1.5 text-slate-300">
+                          <Fingerprint size={12} className="text-violet-400 shrink-0" />
+                          Locator provenance
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-emerald-300">
+                          <CheckCircle2 size={12} className="shrink-0" />
+                          <span className="font-semibold">{lreport.appProfileCount}</span> from App Profile
+                        </span>
+                        {typeof lreport.fallbackCount === 'number' && lreport.fallbackCount > 0 && (
+                          <span className="text-slate-400">
+                            <span className="font-semibold text-slate-300">{lreport.fallbackCount}</span> curated fallback
+                          </span>
+                        )}
+                        <span className="text-slate-400">
+                          <span className="font-semibold text-blue-300">{lreport.aiCount ?? 0}</span> healed by AI
+                        </span>
+                        <span className="text-slate-500">
+                          <span className="font-semibold text-emerald-400">{lreport.appProfilePct ?? 0}%</span> Repository Grounded
+                          {' · '}
+                          <span className={`font-semibold ${(lreport.aiPct ?? 0) > 0 ? 'text-blue-300' : 'text-slate-500'}`}>{lreport.aiPct ?? 0}%</span> AI
+                        </span>
+                      </div>
+                    )}
                     {entries.length > 0 && (
                       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         {entries.map((loc, i) => {

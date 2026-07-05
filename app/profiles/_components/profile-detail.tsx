@@ -45,6 +45,8 @@ import {
   ChevronRight,
   Brain,
   ListOrdered,
+  MapPin,
+  Wand2,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -85,6 +87,23 @@ interface CoverageData {
   formCount: number;
   selectorCount: number;
   capturedAt: string | null;
+}
+
+/**
+ * Test-case page coverage — which pages the project's test cases reference vs.
+ * which the crawl actually captured. Powers the "pages your tests need but the
+ * crawl missed" panel with a one-click add-&-crawl action.
+ */
+interface PageCoverageData {
+  baseUrl: string;
+  testCaseCount: number;
+  crawledPageCount: number;
+  referencedUrls: string[];
+  covered: string[];
+  missing: string[];
+  missingNotQueued: string[];
+  alreadyQueued: string[];
+  fullyCovered: boolean;
 }
 
 interface VersionRow {
@@ -610,19 +629,29 @@ export function ProfileDetail({
   const [changes, setChanges] = useState<ChangeRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  /* Test-case page coverage (the "pages your tests need but the crawl missed"
+   * intelligence layer) + the one-click add-&-crawl action state. */
+  const [pageCoverage, setPageCoverage] = useState<PageCoverageData | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyMsg, setApplyMsg] = useState<string | null>(null);
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
       const headers = getHeaders ? getHeaders() : {};
-      const [covRes, verRes, chgRes] = await Promise.all([
+      const [covRes, verRes, chgRes, pcvRes] = await Promise.all([
         fetch(`/api/intelligence/profiles/${profile.id}/coverage`, { headers }),
         fetch(`/api/intelligence/profiles/${profile.id}/versions`, { headers }),
         fetch(`/api/intelligence/profiles/${profile.id}/changes?limit=100`, { headers }),
+        fetch(`/api/intelligence/profiles/${profile.id}/page-coverage`, { headers }),
       ]);
-      const [cov, ver, chg] = await Promise.all([covRes.json(), verRes.json(), chgRes.json()]);
+      const [cov, ver, chg, pcv] = await Promise.all([
+        covRes.json(), verRes.json(), chgRes.json(), pcvRes.json(),
+      ]);
       if (cov?.success) setCoverage(cov.data as CoverageData);
       if (ver?.success) setVersions((ver.data || []) as VersionRow[]);
       if (chg?.success) setChanges((chg.data || []) as ChangeRow[]);
+      if (pcv?.success) setPageCoverage(pcv.data as PageCoverageData);
     } catch {
       /* non-blocking — the rest of the profile detail still renders */
     } finally {
@@ -631,6 +660,43 @@ export function ProfileDetail({
   }, [profile.id, getHeaders]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  /**
+   * One-click: add every referenced-but-missing page to the profile and crawl
+   * them so Element Intelligence has the real DOM to ground against. The user
+   * never has to know which URLs to type — the AI derives them from the test
+   * cases. On success the profile flips to 'crawling' and the parent's polling
+   * picks up the fresh crawl.
+   */
+  const applyMissingPages = useCallback(async () => {
+    setApplyBusy(true);
+    setApplyMsg(null);
+    try {
+      const headers = { 'Content-Type': 'application/json', ...(getHeaders ? getHeaders() : {}) };
+      // Persist the missing pages onto the profile (crawl:false) — the backend
+      // auto-derives them from the project's test cases. We then trigger the
+      // standard "Crawl Now" flow, which reads those persisted pages and lets
+      // the parent's polling reflect live progress (avoids a double crawl).
+      const res = await fetch(`/api/intelligence/profiles/${profile.id}/page-coverage/apply`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ crawl: false }),
+      });
+      const json = await res.json();
+      if (json?.success) {
+        const added = json.data?.added?.length ?? 0;
+        setApplyMsg(`Added ${added} page(s) — starting a crawl to capture them. This view refreshes automatically.`);
+        // Run the standard crawl (picks up the just-persisted pages) + polling.
+        onCrawlNow();
+      } else {
+        setApplyMsg(json?.error || 'Could not add pages. Please try again.');
+      }
+    } catch (err: any) {
+      setApplyMsg(err?.message || 'Could not add pages. Please try again.');
+    } finally {
+      setApplyBusy(false);
+    }
+  }, [profile.id, getHeaders, onCrawlNow]);
 
   /* Group changes by version transition (vFrom → vTo), newest first. */
   const changeGroups = useMemo(() => {
@@ -908,6 +974,98 @@ export function ProfileDetail({
               <span className="text-amber-300/80"> Re-crawl to capture discovered-but-unvisited pages and raise coverage.</span>
             )}
           </p>
+        </div>
+      )}
+
+      {/* ── Test-Case Page Coverage ─────────────────────────────────────────
+       * The intelligence layer: pages the project's test cases reference vs.
+       * the pages this crawl actually captured. Surfaces the gap the user would
+       * otherwise never notice (and which silently tanks locator grounding), and
+       * fixes it in one click — the AI derives the missing pages, no typing. */}
+      {pageCoverage && pageCoverage.referencedUrls.length > 0 && (
+        <div className={`rounded-xl p-4 border ${
+          pageCoverage.fullyCovered
+            ? 'bg-emerald-500/[0.04] border-emerald-500/20'
+            : 'bg-amber-500/[0.05] border-amber-500/25'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <SectionHeader
+              icon={MapPin}
+              title="Test-Case Page Coverage"
+              accent={pageCoverage.fullyCovered ? 'text-emerald-400' : 'text-amber-400'}
+            />
+            <span className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border ${
+              pageCoverage.fullyCovered
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+            }`}>
+              {pageCoverage.fullyCovered ? <ShieldCheck size={11} /> : <ShieldAlert size={11} />}
+              {pageCoverage.covered.length}/{pageCoverage.referencedUrls.length} pages
+            </span>
+          </div>
+
+          {pageCoverage.fullyCovered ? (
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Every page your {pageCoverage.testCaseCount.toLocaleString()} test case{pageCoverage.testCaseCount !== 1 ? 's' : ''} reference{pageCoverage.testCaseCount === 1 ? 's' : ''} has been crawled.
+              Element Intelligence has the real DOM for all of them — locators will ground against actual selectors, not guesses.
+            </p>
+          ) : (
+            <>
+              <p className="text-[11px] text-slate-300 leading-relaxed mb-3">
+                Your test cases navigate to{' '}
+                <span className="font-semibold text-amber-200">{pageCoverage.missing.length}</span>{' '}
+                page{pageCoverage.missing.length !== 1 ? 's' : ''} this profile never crawled. Locators for those pages can&apos;t be grounded
+                against real DOM until they&apos;re captured — which is why grounding can read 0%. No need to figure out the URLs;
+                we detected them from your test cases.
+              </p>
+
+              {/* Missing pages */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {pageCoverage.missing.map((u) => {
+                  let label = u;
+                  try { label = new URL(u).pathname || u; } catch { /* keep raw */ }
+                  const queued = pageCoverage.alreadyQueued.some((q) => {
+                    try { return new URL(q, pageCoverage.baseUrl).pathname === new URL(u, pageCoverage.baseUrl).pathname; }
+                    catch { return q === u; }
+                  });
+                  return (
+                    <span
+                      key={u}
+                      title={u}
+                      className={`inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-md border ${
+                        queued
+                          ? 'bg-sky-500/10 text-sky-300 border-sky-500/20'
+                          : 'bg-amber-500/10 text-amber-200 border-amber-500/25'
+                      }`}
+                    >
+                      {queued ? <Clock size={10} /> : <MapPin size={10} />}
+                      {label}{queued ? ' · queued' : ''}
+                    </span>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={applyMissingPages}
+                  disabled={applyBusy || crawlBusy}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                >
+                  {applyBusy || crawlBusy ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                  Add {pageCoverage.missing.length} missing page{pageCoverage.missing.length !== 1 ? 's' : ''} &amp; crawl
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  One click — LevelUp adds these pages to the profile and re-crawls to capture their selectors.
+                </span>
+              </div>
+
+              {applyMsg && (
+                <p className="text-[11px] text-emerald-300/90 mt-2 flex items-center gap-1.5">
+                  <Check size={11} /> {applyMsg}
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 
