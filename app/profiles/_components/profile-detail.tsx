@@ -38,6 +38,10 @@ import {
   MinusCircle,
   RefreshCw,
   ArrowRightLeft,
+  Search,
+  Copy,
+  Check,
+  Crosshair,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -266,7 +270,9 @@ function recommendedStrategy(el: any): keyof StrategyTally | null {
     if (r === 'xpath') return 'xpath';
   }
   // Derive from available selectors / raw attributes (best → worst).
-  if (s?.dataTestId || el?.dataTestId) return 'dataTestId';
+  // Read the raw DOM attributes too: many apps (e.g. SauceDemo) expose their
+  // test hook as `data-test` which the crawler keeps only in `attributes`.
+  if (s?.dataTestId || el?.dataTestId || hasRawTestHook(el)) return 'dataTestId';
   if (s?.id || el?.id) return 'id';
   if (s?.name || el?.name) return 'name';
   if (s?.role || el?.role || el?.ariaRole || el?.ariaLabel) return 'role';
@@ -277,6 +283,115 @@ function recommendedStrategy(el: any): keyof StrategyTally | null {
 }
 
 const STABLE_STRATEGIES = new Set(['dataTestId', 'id', 'name', 'role']);
+
+/* -------------------------------------------------------------------------- */
+/*  Saved-locator resolution                                                  */
+/*  Turns a crawled element into the concrete, copy-ready locator the         */
+/*  generated scripts actually use — so users can SEE (and trust) exactly     */
+/*  what LevelUp saved for their app.                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Test-hook attribute synonyms, in preference order (matches the backend). */
+const TEST_HOOK_ATTRS = [
+  'data-testid', 'data-test-id', 'data-test', 'data-qa', 'data-cy',
+  'data-test-selector', 'data-automation-id', 'data-automationid', 'data-auto',
+];
+
+/** Read the real test-hook attribute (name + value) straight from the DOM. */
+function readTestHook(el: any): { attr: string; value: string } | null {
+  const attrs = (el?.attributes || {}) as Record<string, string>;
+  const lower: Record<string, string> = {};
+  for (const k of Object.keys(attrs)) lower[k.toLowerCase()] = attrs[k];
+  for (const a of TEST_HOOK_ATTRS) {
+    if (lower[a]) return { attr: a, value: lower[a] };
+  }
+  // Fall back to the normalized selector field the crawler may expose.
+  const fromField = el?.selectors?.dataTestId || el?.dataTestId;
+  if (fromField) {
+    const m = String(fromField).match(/\[([\w-]+)\s*=\s*["']?([^"'\]]+)/);
+    if (m) return { attr: m[1], value: m[2] };
+    return { attr: 'data-testid', value: String(fromField) };
+  }
+  return null;
+}
+
+/** True when the element carries a raw test-hook attribute in its DOM attrs. */
+function hasRawTestHook(el: any): boolean {
+  return readTestHook(el) !== null;
+}
+
+/** Escape a value for use inside a double-quoted attribute selector. */
+function q(v: string): string {
+  return String(v).replace(/"/g, '\\"');
+}
+
+/**
+ * Build the concrete CSS/Playwright locator for an element following the
+ * recommended strategy, mirroring how the generator grounds selectors.
+ */
+function resolveConcreteSelector(el: any, strategy: keyof StrategyTally | null): string {
+  const s = el?.selectors || {};
+  switch (strategy) {
+    case 'dataTestId': {
+      const hook = readTestHook(el);
+      if (hook) return `[${hook.attr}="${q(hook.value)}"]`;
+      break;
+    }
+    case 'id': {
+      const id = s.id || el?.id;
+      if (id) return `#${id}`;
+      break;
+    }
+    case 'name': {
+      const name = s.name || el?.name;
+      if (name) return `[name="${q(name)}"]`;
+      break;
+    }
+    case 'role': {
+      const aria = el?.ariaLabel || s.ariaLabel;
+      if (aria) return `[aria-label="${q(aria)}"]`;
+      const role = el?.role || el?.ariaRole || s.role;
+      const tag = String(el?.tag || '').toLowerCase();
+      if (role) return `role=${role}`;
+      if (tag) return tag;
+      break;
+    }
+    case 'text': {
+      const t = s.text || el?.textContent;
+      if (t) return `text=${String(t).trim().slice(0, 40)}`;
+      break;
+    }
+    case 'css':
+      if (s.css) return String(s.css);
+      break;
+    case 'xpath':
+      if (s.xpath) return String(s.xpath);
+      break;
+  }
+  // Best-effort fallback so a row is never blank.
+  return (
+    s.css || s.xpath ||
+    (s.id || el?.id ? `#${s.id || el?.id}` : '') ||
+    String(el?.tag || 'element').toLowerCase()
+  );
+}
+
+/** Human-friendly label for a locator row. */
+function elementLabel(el: any): string {
+  const txt = (el?.textContent || el?.text || '').toString().trim();
+  const candidate =
+    el?.ariaLabel ||
+    (txt && txt.length <= 40 ? txt : '') ||
+    el?.placeholder ||
+    el?.name ||
+    el?.id ||
+    el?.selectors?.dataTestId ||
+    '';
+  if (candidate) return String(candidate).trim().slice(0, 60);
+  const tag = String(el?.tag || 'element').toLowerCase();
+  const type = el?.type ? ` [${el.type}]` : '';
+  return `${tag}${type}`;
+}
 
 const ELEMENT_META: Record<string, { label: string; icon: any; color: string; bar: string }> = {
   button: { label: 'Buttons', icon: MousePointerClick, color: 'text-violet-300', bar: 'bg-violet-500' },
@@ -446,6 +561,58 @@ export function ProfileDetail({
     const pct = captured > 0 ? Math.round((stable / captured) * 100) : 0;
     return { strategyRows: rows, stablePct: pct, capturedCount: captured };
   }, [elements]);
+
+  /* ---------------------------------------------------------------------- */
+  /*  Saved Locators — the full, searchable catalogue of grounded selectors  */
+  /*  LevelUp persisted for this app. Gives users confidence + visibility    */
+  /*  into exactly what the generated scripts target.                        */
+  /*  (Future: inline editing — see the section footer note.)                */
+  /* ---------------------------------------------------------------------- */
+  const [locatorQuery, setLocatorQuery] = useState('');
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  const savedLocators = useMemo(() => {
+    const rows = elements.map((el) => {
+      const category = classifyElement(el);
+      const strategy = recommendedStrategy(el);
+      const selector = resolveConcreteSelector(el, strategy);
+      return {
+        label: elementLabel(el),
+        category,
+        categoryMeta: ELEMENT_META[category] || ELEMENT_META.other,
+        strategy,
+        strategyMeta: strategy ? STRATEGY_META[strategy] : null,
+        stable: strategy ? STABLE_STRATEGIES.has(strategy) : false,
+        selector,
+        tag: String(el?.tag || '').toLowerCase(),
+      };
+    });
+    // Stable strategies first, then alphabetically by label — most trustworthy on top.
+    rows.sort((a, b) => Number(b.stable) - Number(a.stable) || a.label.localeCompare(b.label));
+    return rows;
+  }, [elements]);
+
+  const filteredLocators = useMemo(() => {
+    const query = locatorQuery.trim().toLowerCase();
+    if (!query) return savedLocators;
+    return savedLocators.filter((r) =>
+      r.label.toLowerCase().includes(query) ||
+      r.selector.toLowerCase().includes(query) ||
+      r.tag.includes(query) ||
+      (r.categoryMeta?.label || '').toLowerCase().includes(query) ||
+      (r.strategyMeta?.label || '').toLowerCase().includes(query)
+    );
+  }, [savedLocators, locatorQuery]);
+
+  const copyLocator = useCallback((text: string, idx: number) => {
+    try {
+      navigator.clipboard?.writeText(text);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx((cur) => (cur === idx ? null : cur)), 1400);
+    } catch {
+      /* clipboard unavailable — no-op */
+    }
+  }, []);
 
   const maxType = Math.max(1, ...typeBreakdown.map(t => t.count));
   const totalElements = profile.total_elements || elements.length;
@@ -722,6 +889,82 @@ export function ProfileDetail({
           {forms.length > 12 && (
             <p className="text-[10px] text-slate-500 mt-2">+ {forms.length - 12} more form{forms.length - 12 !== 1 ? 's' : ''}</p>
           )}
+        </div>
+      )}
+
+      {/* Saved Locators — searchable catalogue of every grounded selector. */}
+      {savedLocators.length > 0 && (
+        <div className="bg-[#141a28] border border-[#2a3040] rounded-xl p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <SectionHeader icon={Crosshair} title="Saved Locators" accent="text-violet-400" count={savedLocators.length.toLocaleString()} />
+            <div className="relative sm:w-64">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={locatorQuery}
+                onChange={(e) => setLocatorQuery(e.target.value)}
+                placeholder="Search label, selector, type…"
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0f172a] border border-[#2a3040] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/40"
+              />
+            </div>
+          </div>
+
+          {filteredLocators.length > 0 ? (
+            <div className="space-y-1.5 max-h-80 overflow-auto pr-1">
+              {filteredLocators.map((r, i) => {
+                const Icon = r.categoryMeta?.icon || Boxes;
+                return (
+                  <div
+                    key={`${r.selector}-${i}`}
+                    className="group flex items-center gap-2.5 bg-[#0f172a] rounded-lg px-2.5 py-2 border border-transparent hover:border-[#2a3040] transition-colors"
+                  >
+                    <div className="p-1.5 bg-[#141a28] rounded-md flex-shrink-0">
+                      <Icon size={13} className={r.categoryMeta?.color || 'text-slate-300'} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-slate-200 truncate" title={r.label}>{r.label}</p>
+                        {r.strategyMeta && (
+                          <span
+                            className={`hidden sm:inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                              r.stable
+                                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                            }`}
+                            title={r.strategyMeta.tip}
+                          >
+                            {r.stable ? <ShieldCheck size={9} /> : <ShieldAlert size={9} />}
+                            {r.strategyMeta.label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-violet-300/90 truncate font-mono" title={r.selector}>{r.selector}</p>
+                    </div>
+                    <button
+                      onClick={() => copyLocator(r.selector, i)}
+                      className="p-1.5 rounded-md text-slate-500 hover:text-violet-300 hover:bg-[#141a28] transition-colors flex-shrink-0"
+                      title="Copy selector"
+                      aria-label="Copy selector"
+                    >
+                      {copiedIdx === i ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-slate-500 py-6 justify-center">
+              <Search size={13} />
+              No locators match “{locatorQuery}”.
+            </div>
+          )}
+
+          <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+            Every selector LevelUp grounded for this app, ranked with the most stable strategies first. Search across
+            {' '}{savedLocators.length.toLocaleString()} saved locators and copy any one for reuse.
+            <span className="text-violet-300"> Inline editing is coming soon</span> — you&apos;ll be able to refine a
+            selector and have generated scripts pick it up automatically.
+          </p>
         </div>
       )}
 
