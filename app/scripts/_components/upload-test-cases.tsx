@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 
-interface ParsedTestCase {
+export interface ParsedTestCase {
   id: string;
   title: string;
   steps: string;
@@ -42,10 +42,15 @@ interface ParseResult {
 
 interface UploadTestCasesProps {
   projectContext: ProjectContext;
-  onScenariosReady: (scenarios: string[]) => void;
+  /**
+   * Hand the full structured test cases (not just flattened scenario strings)
+   * up to the generator so they reach the deterministic, grounded engine path.
+   * The scenario strings are still passed for the textarea preview.
+   */
+  onTestCasesReady: (testCases: ParsedTestCase[], scenarios: string[]) => void;
 }
 
-export function UploadTestCases({ projectContext, onScenariosReady }: UploadTestCasesProps) {
+export function UploadTestCases({ projectContext, onTestCasesReady }: UploadTestCasesProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [parsing, setParsing] = useState(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
@@ -114,7 +119,11 @@ export function UploadTestCases({ projectContext, onScenariosReady }: UploadTest
     if (!parseResult?.data) return;
     const selected = parseResult.data.testCases.filter(tc => selectedCases.has(tc.id));
     const scenarios = selected.map(tc => tc.scenario);
-    onScenariosReady(scenarios);
+    // Pass the full structured test cases through (steps, expected result,
+    // priority, module) so the backend routes them into the deterministic,
+    // grounded engine — NOT just the flattened scenario strings, which fell
+    // back to the ungrounded LLM discovery path (0% grounded locators).
+    onTestCasesReady(selected, scenarios);
   };
 
   const getPriorityColor = (priority: string) => {

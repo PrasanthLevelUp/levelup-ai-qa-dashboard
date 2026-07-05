@@ -7,6 +7,7 @@ import { ScriptHistoryTab } from './script-history-tab';
 import { ScriptHealthTab } from './script-health-tab';
 import { MigrationAssistant } from './migration-assistant';
 import { UploadTestCases } from './upload-test-cases';
+import type { ParsedTestCase } from './upload-test-cases';
 import {
   Settings,
   Pencil,
@@ -431,8 +432,10 @@ function InputModes({
 }) {
   const [mode, setMode] = useState<InputMode>('scenario');
   const [uploadScenarios, setUploadScenarios] = useState<string[] | null>(null);
+  const [uploadTestCases, setUploadTestCases] = useState<ParsedTestCase[] | null>(null);
 
-  const handleScenariosReady = (scenarios: string[]) => {
+  const handleTestCasesReady = (testCases: ParsedTestCase[], scenarios: string[]) => {
+    setUploadTestCases(testCases);
     setUploadScenarios(scenarios);
     setMode('scenario'); // Switch to scenario mode with pre-filled scenarios
   };
@@ -471,7 +474,8 @@ function InputModes({
           projectContext={projectContext}
           onGenerated={onGenerated}
           prefillScenarios={uploadScenarios}
-          onPrefillConsumed={() => setUploadScenarios(null)}
+          prefillTestCases={uploadTestCases}
+          onPrefillConsumed={() => { setUploadScenarios(null); setUploadTestCases(null); }}
           requirementId={deepLink?.requirementId ?? null}
           testCaseId={deepLink?.testCaseId ?? null}
         />
@@ -480,7 +484,7 @@ function InputModes({
       {mode === 'upload' && (
         <UploadTestCases
           projectContext={projectContext}
-          onScenariosReady={handleScenariosReady}
+          onTestCasesReady={handleTestCasesReady}
         />
       )}
     </div>
