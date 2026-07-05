@@ -38,6 +38,13 @@ import {
   MinusCircle,
   RefreshCw,
   ArrowRightLeft,
+  Search,
+  Copy,
+  Check,
+  Crosshair,
+  ChevronRight,
+  Brain,
+  ListOrdered,
 } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
@@ -266,7 +273,9 @@ function recommendedStrategy(el: any): keyof StrategyTally | null {
     if (r === 'xpath') return 'xpath';
   }
   // Derive from available selectors / raw attributes (best → worst).
-  if (s?.dataTestId || el?.dataTestId) return 'dataTestId';
+  // Read the raw DOM attributes too: many apps (e.g. SauceDemo) expose their
+  // test hook as `data-test` which the crawler keeps only in `attributes`.
+  if (s?.dataTestId || el?.dataTestId || hasRawTestHook(el)) return 'dataTestId';
   if (s?.id || el?.id) return 'id';
   if (s?.name || el?.name) return 'name';
   if (s?.role || el?.role || el?.ariaRole || el?.ariaLabel) return 'role';
@@ -277,6 +286,239 @@ function recommendedStrategy(el: any): keyof StrategyTally | null {
 }
 
 const STABLE_STRATEGIES = new Set(['dataTestId', 'id', 'name', 'role']);
+
+/* -------------------------------------------------------------------------- */
+/*  Saved-locator resolution                                                  */
+/*  Turns a crawled element into the concrete, copy-ready locator the         */
+/*  generated scripts actually use — so users can SEE (and trust) exactly     */
+/*  what LevelUp saved for their app.                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Test-hook attribute synonyms, in preference order (matches the backend). */
+const TEST_HOOK_ATTRS = [
+  'data-testid', 'data-test-id', 'data-test', 'data-qa', 'data-cy',
+  'data-test-selector', 'data-automation-id', 'data-automationid', 'data-auto',
+];
+
+/** Read the real test-hook attribute (name + value) straight from the DOM. */
+function readTestHook(el: any): { attr: string; value: string } | null {
+  const attrs = (el?.attributes || {}) as Record<string, string>;
+  const lower: Record<string, string> = {};
+  for (const k of Object.keys(attrs)) lower[k.toLowerCase()] = attrs[k];
+  for (const a of TEST_HOOK_ATTRS) {
+    if (lower[a]) return { attr: a, value: lower[a] };
+  }
+  // Fall back to the normalized selector field the crawler may expose.
+  const fromField = el?.selectors?.dataTestId || el?.dataTestId;
+  if (fromField) {
+    const m = String(fromField).match(/\[([\w-]+)\s*=\s*["']?([^"'\]]+)/);
+    if (m) return { attr: m[1], value: m[2] };
+    return { attr: 'data-testid', value: String(fromField) };
+  }
+  return null;
+}
+
+/** True when the element carries a raw test-hook attribute in its DOM attrs. */
+function hasRawTestHook(el: any): boolean {
+  return readTestHook(el) !== null;
+}
+
+/** Escape a value for use inside a double-quoted attribute selector. */
+function q(v: string): string {
+  return String(v).replace(/"/g, '\\"');
+}
+
+/**
+ * Build the concrete CSS/Playwright locator for an element following the
+ * recommended strategy, mirroring how the generator grounds selectors.
+ */
+function resolveConcreteSelector(el: any, strategy: keyof StrategyTally | null): string {
+  const s = el?.selectors || {};
+  switch (strategy) {
+    case 'dataTestId': {
+      const hook = readTestHook(el);
+      if (hook) return `[${hook.attr}="${q(hook.value)}"]`;
+      break;
+    }
+    case 'id': {
+      const id = s.id || el?.id;
+      if (id) return `#${id}`;
+      break;
+    }
+    case 'name': {
+      const name = s.name || el?.name;
+      if (name) return `[name="${q(name)}"]`;
+      break;
+    }
+    case 'role': {
+      const aria = el?.ariaLabel || s.ariaLabel;
+      if (aria) return `[aria-label="${q(aria)}"]`;
+      const role = el?.role || el?.ariaRole || s.role;
+      const tag = String(el?.tag || '').toLowerCase();
+      if (role) return `role=${role}`;
+      if (tag) return tag;
+      break;
+    }
+    case 'text': {
+      const t = s.text || el?.textContent;
+      if (t) return `text=${String(t).trim().slice(0, 40)}`;
+      break;
+    }
+    case 'css':
+      if (s.css) return String(s.css);
+      break;
+    case 'xpath':
+      if (s.xpath) return String(s.xpath);
+      break;
+  }
+  // Best-effort fallback so a row is never blank.
+  return (
+    s.css || s.xpath ||
+    (s.id || el?.id ? `#${s.id || el?.id}` : '') ||
+    String(el?.tag || 'element').toLowerCase()
+  );
+}
+
+/** Human-friendly label for a locator row. */
+function elementLabel(el: any): string {
+  const txt = (el?.textContent || el?.text || '').toString().trim();
+  const candidate =
+    el?.ariaLabel ||
+    (txt && txt.length <= 40 ? txt : '') ||
+    el?.placeholder ||
+    el?.name ||
+    el?.id ||
+    el?.selectors?.dataTestId ||
+    '';
+  if (candidate) return String(candidate).trim().slice(0, 60);
+  const tag = String(el?.tag || 'element').toLowerCase();
+  const type = el?.type ? ` [${el.type}]` : '';
+  return `${tag}${type}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Element Intelligence — client mirror of the backend's single, canonical   */
+/*  locator-ranking brain (src/intelligence/element-intelligence.ts). Both    */
+/*  Script Generation and Self-Healing consume this SAME ranking, so the      */
+/*  dashboard shows users EXACTLY what the engines resolve: one primary       */
+/*  locator plus confidence-scored, reasoned alternatives — never invented.   */
+/* -------------------------------------------------------------------------- */
+
+/** A single ranked candidate locator (mirrors backend LocatorCandidate). */
+interface RankedCandidate {
+  /** Ready-to-copy Playwright locator. */
+  playwright: string;
+  /** Raw CSS / attribute selector (compact display + copy). */
+  css: string;
+  strategy: keyof StrategyTally | 'placeholder' | 'label';
+  /** 0–1 confidence, matching the backend weights. */
+  confidence: number;
+  reasoning: string;
+  stable: boolean;
+}
+
+/** Looks like a framework-generated / unstable id — never target it. */
+function isDynamicIdClient(id: string | undefined): boolean {
+  if (!id) return true;
+  return (
+    /\d{4,}/.test(id) ||
+    /[a-f0-9]{8,}/i.test(id) ||
+    /^:r[0-9a-z]+:?$/i.test(id) ||
+    /(ember|react|ng-|mui-|css-)/i.test(id)
+  );
+}
+
+/** Case-insensitive raw-attribute lookup. */
+function rawAttr(el: any, key: string): string | undefined {
+  const attrs = (el?.attributes || {}) as Record<string, string>;
+  if (attrs[key]) return attrs[key];
+  const lower = key.toLowerCase();
+  for (const k of Object.keys(attrs)) if (k.toLowerCase() === lower && attrs[k]) return attrs[k];
+  return undefined;
+}
+
+/** Infer a stable ARIA-ish role (mirrors backend inferRole). */
+function inferRoleClient(el: any): string {
+  if (el?.role) return String(el.role).toLowerCase();
+  if (el?.ariaRole) return String(el.ariaRole).toLowerCase();
+  const tag = String(el?.tag || '').toLowerCase();
+  const t = String(el?.type || rawAttr(el, 'type') || '').toLowerCase();
+  if (tag === 'a') return 'link';
+  if (tag === 'button') return 'button';
+  if (tag === 'input') {
+    if (t === 'submit' || t === 'button') return 'button';
+    if (t === 'checkbox') return 'checkbox';
+    if (t === 'radio') return 'radio';
+    return 'textbox';
+  }
+  if (tag === 'select') return 'combobox';
+  if (tag === 'textarea') return 'textbox';
+  return '';
+}
+
+/**
+ * Produce the ranked candidate locators for an element, mirroring the backend
+ * `rankLocatorCandidates` priority + confidence exactly (data-test 0.96 →
+ * data-testid 0.95 → data-cy 0.93 → data-qa 0.92 → role+name 0.90 → stable id
+ * 0.85 → name 0.83 → placeholder/label 0.80 → text 0.75).
+ */
+function rankCandidatesClient(el: any): RankedCandidate[] {
+  const out: RankedCandidate[] = [];
+  const seen = new Set<string>();
+  const push = (playwright: string, css: string, strategy: RankedCandidate['strategy'], confidence: number, reasoning: string) => {
+    if (!playwright || seen.has(playwright)) return;
+    seen.add(playwright);
+    out.push({ playwright, css, strategy, confidence, reasoning, stable: STABLE_STRATEGIES.has(strategy as string) });
+  };
+
+  const dataTest = rawAttr(el, 'data-test');
+  const dataTestId = rawAttr(el, 'data-testid') || rawAttr(el, 'data-test-id') || el?.dataTestId || el?.selectors?.dataTestId;
+  const dataCy = rawAttr(el, 'data-cy');
+  const dataQa = rawAttr(el, 'data-qa');
+  const role = inferRoleClient(el);
+  const text = String(el?.textContent || el?.text || el?.ariaLabel || el?.nearbyLabel || el?.label || rawAttr(el, 'value') || '').trim();
+  const name = el?.name || rawAttr(el, 'name');
+  const id = el?.id || rawAttr(el, 'id');
+  const placeholder = el?.placeholder || rawAttr(el, 'placeholder');
+  const labelText = el?.nearbyLabel || el?.ariaLabel || el?.label || rawAttr(el, 'aria-label');
+
+  if (dataTest) push(`page.locator('[data-test="${q(dataTest)}"]')`, `[data-test="${dataTest}"]`, 'dataTestId', 0.96, `data-test="${dataTest}" — dedicated automation contract`);
+  if (dataTestId) {
+    const v = String(dataTestId).replace(/^\[[\w-]+\s*=\s*["']?/, '').replace(/["'\]]+$/, '');
+    push(`page.getByTestId('${q(v)}')`, `[data-testid="${v}"]`, 'dataTestId', 0.95, `data-testid="${v}" — dedicated automation contract`);
+  }
+  if (dataCy) push(`page.locator('[data-cy="${q(dataCy)}"]')`, `[data-cy="${dataCy}"]`, 'dataTestId', 0.93, `data-cy="${dataCy}" — dedicated automation hook`);
+  if (dataQa) push(`page.locator('[data-qa="${q(dataQa)}"]')`, `[data-qa="${dataQa}"]`, 'dataTestId', 0.92, `data-qa="${dataQa}" — dedicated automation hook`);
+  if (role && text) push(`page.getByRole('${role}', { name: '${q(text)}' })`, `role=${role}[name="${text}"]`, 'role', 0.9, `${role} with accessible name "${text}" — resilient to markup changes`);
+  if (id && !isDynamicIdClient(id)) push(`page.locator('#${q(id)}')`, `#${id}`, 'id', 0.85, `stable id #${id}`);
+  if (name) push(`page.locator('[name="${q(name)}"]')`, `[name="${name}"]`, 'name', 0.83, `name="${name}" — stable for form fields`);
+  if (placeholder) push(`page.getByPlaceholder('${q(placeholder)}')`, `[placeholder="${placeholder}"]`, 'placeholder', 0.8, `placeholder "${placeholder}"`);
+  if (labelText) push(`page.getByLabel('${q(labelText)}')`, `label="${labelText}"`, 'label', 0.8, `associated label "${labelText}"`);
+  if (text && !role) push(`page.getByText('${q(text)}')`, `text=${text}`, 'text', 0.75, `visible text "${text}" — breaks on copy changes`);
+
+  return out;
+}
+
+/** Derive a friendly semantic name (client mirror of backend deriveSemanticName). */
+function deriveSemanticNameClient(el: any): string {
+  const raw =
+    rawAttr(el, 'data-test') || rawAttr(el, 'data-testid') || el?.dataTestId || el?.selectors?.dataTestId ||
+    el?.ariaLabel || rawAttr(el, 'aria-label') || el?.nearbyLabel || el?.label ||
+    String(el?.textContent || el?.text || '').trim() ||
+    el?.placeholder || rawAttr(el, 'placeholder') || el?.name || el?.id || '';
+  const humanized = String(raw)
+    .replace(/[#.\[\]'"`()]/g, ' ')
+    .replace(/[-_]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!humanized) return elementLabel(el);
+  const base = humanized.split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');
+  const cat = classifyElement(el);
+  const suffix = cat === 'button' ? ' Button' : cat === 'link' ? ' Link' : '';
+  const already = /\b(button|link)\b/i.test(base);
+  return (already ? base : `${base}${suffix}`).slice(0, 60);
+}
 
 const ELEMENT_META: Record<string, { label: string; icon: any; color: string; bar: string }> = {
   button: { label: 'Buttons', icon: MousePointerClick, color: 'text-violet-300', bar: 'bg-violet-500' },
@@ -446,6 +688,80 @@ export function ProfileDetail({
     const pct = captured > 0 ? Math.round((stable / captured) * 100) : 0;
     return { strategyRows: rows, stablePct: pct, capturedCount: captured };
   }, [elements]);
+
+  /* ---------------------------------------------------------------------- */
+  /*  Element Intelligence — the full, searchable catalogue of grounded selectors  */
+  /*  LevelUp persisted for this app. Gives users confidence + visibility    */
+  /*  into exactly what the generated scripts target.                        */
+  /*  (Future: inline editing — see the section footer note.)                */
+  /* ---------------------------------------------------------------------- */
+  const [locatorQuery, setLocatorQuery] = useState('');
+  const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
+
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  const savedLocators = useMemo(() => {
+    const rows = elements.map((el) => {
+      const category = classifyElement(el);
+      // The canonical ranked candidates — identical logic to the backend brain.
+      const candidates = rankCandidatesClient(el);
+      const primary = candidates[0] || null;
+      // Fall back to the legacy concrete selector only if nothing ranked (rare).
+      const fallbackStrategy = recommendedStrategy(el);
+      const primaryStrategy = primary ? primary.strategy : fallbackStrategy;
+      return {
+        label: deriveSemanticNameClient(el),
+        category,
+        categoryMeta: ELEMENT_META[category] || ELEMENT_META.other,
+        strategy: primaryStrategy,
+        strategyMeta: primaryStrategy && STRATEGY_META[primaryStrategy as keyof StrategyTally] ? STRATEGY_META[primaryStrategy as keyof StrategyTally] : null,
+        stable: primary ? primary.stable : (fallbackStrategy ? STABLE_STRATEGIES.has(fallbackStrategy) : false),
+        selector: primary ? primary.playwright : resolveConcreteSelector(el, fallbackStrategy),
+        css: primary ? primary.css : resolveConcreteSelector(el, fallbackStrategy),
+        confidence: primary ? primary.confidence : 0.5,
+        candidates,
+        tag: String(el?.tag || '').toLowerCase(),
+      };
+    });
+    // Highest-confidence (most trustworthy) elements first, then by name.
+    rows.sort((a, b) => b.confidence - a.confidence || a.label.localeCompare(b.label));
+    return rows;
+  }, [elements]);
+
+  const filteredLocators = useMemo(() => {
+    const query = locatorQuery.trim().toLowerCase();
+    if (!query) return savedLocators;
+    return savedLocators.filter((r) =>
+      r.label.toLowerCase().includes(query) ||
+      r.selector.toLowerCase().includes(query) ||
+      r.css.toLowerCase().includes(query) ||
+      r.tag.includes(query) ||
+      r.candidates.some((c) => c.playwright.toLowerCase().includes(query) || c.reasoning.toLowerCase().includes(query)) ||
+      (r.categoryMeta?.label || '').toLowerCase().includes(query) ||
+      (r.strategyMeta?.label || '').toLowerCase().includes(query)
+    );
+  }, [savedLocators, locatorQuery]);
+
+  // Portfolio-level confidence: mean primary confidence across addressable els.
+  const intelligenceStats = useMemo(() => {
+    const withPrimary = savedLocators.filter((r) => r.candidates.length > 0);
+    const addressable = withPrimary.length;
+    const avg = addressable > 0
+      ? Math.round((withPrimary.reduce((s, r) => s + r.confidence, 0) / addressable) * 100)
+      : 0;
+    const alts = withPrimary.reduce((s, r) => s + Math.max(0, r.candidates.length - 1), 0);
+    return { addressable, avg, alts };
+  }, [savedLocators]);
+
+  const copyLocator = useCallback((text: string, key: string) => {
+    try {
+      navigator.clipboard?.writeText(text);
+      setCopiedIdx(key);
+      setTimeout(() => setCopiedIdx((cur) => (cur === key ? null : cur)), 1400);
+    } catch {
+      /* clipboard unavailable — no-op */
+    }
+  }, []);
 
   const maxType = Math.max(1, ...typeBreakdown.map(t => t.count));
   const totalElements = profile.total_elements || elements.length;
@@ -722,6 +1038,153 @@ export function ProfileDetail({
           {forms.length > 12 && (
             <p className="text-[10px] text-slate-500 mt-2">+ {forms.length - 12} more form{forms.length - 12 !== 1 ? 's' : ''}</p>
           )}
+        </div>
+      )}
+
+      {/* Element Intelligence — the single source of truth for locators: one     */}
+      {/* primary + confidence-scored, reasoned ranked alternatives, the SAME      */}
+      {/* ranking Script Generation and Self-Healing consume server-side.          */}
+      {savedLocators.length > 0 && (
+        <div className="bg-[#141a28] border border-[#2a3040] rounded-xl p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <SectionHeader icon={Brain} title="Element Intelligence" accent="text-violet-400" count={intelligenceStats.addressable.toLocaleString()} />
+            <div className="relative sm:w-64">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={locatorQuery}
+                onChange={(e) => setLocatorQuery(e.target.value)}
+                placeholder="Search element, locator, reasoning…"
+                className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0f172a] border border-[#2a3040] text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/40"
+              />
+            </div>
+          </div>
+
+          {/* Portfolio confidence summary */}
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="bg-[#0f172a] rounded-lg px-3 py-2 border border-[#2a3040]">
+              <p className="text-[10px] text-slate-500">Addressable elements</p>
+              <p className="text-sm font-semibold text-slate-200">{intelligenceStats.addressable.toLocaleString()}</p>
+            </div>
+            <div className="bg-[#0f172a] rounded-lg px-3 py-2 border border-[#2a3040]">
+              <p className="text-[10px] text-slate-500">Avg. primary confidence</p>
+              <p className={`text-sm font-semibold ${intelligenceStats.avg >= 90 ? 'text-emerald-300' : intelligenceStats.avg >= 75 ? 'text-amber-300' : 'text-slate-200'}`}>{intelligenceStats.avg}%</p>
+            </div>
+            <div className="bg-[#0f172a] rounded-lg px-3 py-2 border border-[#2a3040]">
+              <p className="text-[10px] text-slate-500">Ranked fallbacks</p>
+              <p className="text-sm font-semibold text-slate-200">{intelligenceStats.alts.toLocaleString()}</p>
+            </div>
+          </div>
+
+          {filteredLocators.length > 0 ? (
+            <div className="space-y-1.5 max-h-96 overflow-auto pr-1">
+              {filteredLocators.map((r, i) => {
+                const Icon = r.categoryMeta?.icon || Boxes;
+                const pct = Math.round(r.confidence * 100);
+                const isOpen = expandedIdx === i;
+                const alternatives = r.candidates.slice(1);
+                return (
+                  <div
+                    key={`${r.selector}-${i}`}
+                    className="bg-[#0f172a] rounded-lg border border-transparent hover:border-[#2a3040] transition-colors"
+                  >
+                    {/* Primary row */}
+                    <div className="group flex items-center gap-2.5 px-2.5 py-2">
+                      <button
+                        onClick={() => setExpandedIdx(isOpen ? null : i)}
+                        disabled={alternatives.length === 0}
+                        className={`p-0.5 rounded flex-shrink-0 transition-transform ${alternatives.length === 0 ? 'opacity-20 cursor-default' : 'text-slate-500 hover:text-violet-300'} ${isOpen ? 'rotate-90' : ''}`}
+                        title={alternatives.length ? `${alternatives.length} ranked alternative${alternatives.length > 1 ? 's' : ''}` : 'No alternatives'}
+                        aria-label="Toggle alternatives"
+                      >
+                        <ChevronRight size={13} />
+                      </button>
+                      <div className="p-1.5 bg-[#141a28] rounded-md flex-shrink-0">
+                        <Icon size={13} className={r.categoryMeta?.color || 'text-slate-300'} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-slate-200 truncate" title={r.label}>{r.label}</p>
+                          <span
+                            className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                              pct >= 90 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                                : pct >= 75 ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                : 'bg-slate-500/10 text-slate-300 border-slate-500/20'
+                            }`}
+                            title="Primary locator confidence"
+                          >
+                            {r.stable ? <ShieldCheck size={9} /> : <ShieldAlert size={9} />}
+                            {pct}%
+                          </span>
+                          {r.strategyMeta && (
+                            <span className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded border border-[#2a3040] text-slate-400 flex-shrink-0" title={r.strategyMeta.tip}>
+                              {r.strategyMeta.label}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-violet-300/90 truncate font-mono" title={r.selector}>{r.selector}</p>
+                      </div>
+                      <button
+                        onClick={() => copyLocator(r.selector, `p-${i}`)}
+                        className="p-1.5 rounded-md text-slate-500 hover:text-violet-300 hover:bg-[#141a28] transition-colors flex-shrink-0"
+                        title="Copy primary locator"
+                        aria-label="Copy primary locator"
+                      >
+                        {copiedIdx === `p-${i}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      </button>
+                    </div>
+
+                    {/* Ranked alternatives (expandable) */}
+                    {isOpen && alternatives.length > 0 && (
+                      <div className="border-t border-[#2a3040] px-2.5 py-2 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[9px] text-slate-500 uppercase tracking-wide mb-1">
+                          <ListOrdered size={10} /> Ranked fallbacks — healing tries these in order
+                        </div>
+                        {alternatives.map((c, j) => {
+                          const cpct = Math.round(c.confidence * 100);
+                          return (
+                            <div key={`${c.playwright}-${j}`} className="group flex items-start gap-2 pl-6">
+                              <span className="text-[9px] text-slate-600 mt-1 w-3 flex-shrink-0">{j + 2}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-[10px] text-slate-300 truncate font-mono" title={c.playwright}>{c.playwright}</p>
+                                  <span className={`text-[9px] flex-shrink-0 ${cpct >= 90 ? 'text-emerald-400/80' : cpct >= 75 ? 'text-amber-400/80' : 'text-slate-500'}`}>{cpct}%</span>
+                                  {c.stable && <ShieldCheck size={8} className="text-emerald-400/60 flex-shrink-0" />}
+                                </div>
+                                <p className="text-[9px] text-slate-500 truncate" title={c.reasoning}>{c.reasoning}</p>
+                              </div>
+                              <button
+                                onClick={() => copyLocator(c.playwright, `${i}-${j}`)}
+                                className="p-1 rounded text-slate-600 hover:text-violet-300 hover:bg-[#141a28] transition-colors flex-shrink-0"
+                                title="Copy alternative locator"
+                                aria-label="Copy alternative locator"
+                              >
+                                {copiedIdx === `${i}-${j}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-slate-500 py-6 justify-center">
+              <Search size={13} />
+              No elements match "{locatorQuery}".
+            </div>
+          )}
+
+          <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+            LevelUp resolves one <span className="text-violet-300">primary locator</span> per element and ranks
+            confidence-scored fallbacks — <span className="text-slate-400">data-test hooks outrank ids</span>, matching the
+            app&apos;s real automation contract. Script Generation <em>and</em> Self-Healing consume this exact ranking, so
+            generated scripts never invent a selector and healing always knows the next-best option.
+            <span className="text-violet-300"> Inline editing is coming soon</span> — pin or override a primary and every
+            engine picks it up automatically.
+          </p>
         </div>
       )}
 
