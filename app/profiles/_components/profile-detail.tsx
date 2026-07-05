@@ -690,7 +690,7 @@ export function ProfileDetail({
   }, [elements]);
 
   /* ---------------------------------------------------------------------- */
-  /*  Saved Locators — the full, searchable catalogue of grounded selectors  */
+  /*  Element Intelligence — the full, searchable catalogue of grounded selectors  */
   /*  LevelUp persisted for this app. Gives users confidence + visibility    */
   /*  into exactly what the generated scripts target.                        */
   /*  (Future: inline editing — see the section footer note.)                */
