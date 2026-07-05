@@ -97,6 +97,16 @@ interface GenerationResult {
       validatedCount: number;
       avgConfidence: number;
       todoCount: number;
+      // App-Profile-grounding KPI (customer proof point): how many locators came
+      // from the App Profile vs curated fallback vs AI, so the UI can show
+      // "20 from App Profile · 2 healed by AI · 91% Repository Grounded · 9% AI".
+      appProfileCount?: number;
+      fallbackCount?: number;
+      aiCount?: number;
+      appProfilePct?: number;
+      aiPct?: number;
+      groundedPct?: number;
+      provenanceSummary?: string;
       locators?: Array<{
         element: string;
         selector: string;
@@ -2142,6 +2152,34 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                         <span className="text-amber-400">{lreport.todoCount} not found in crawl</span>
                       )}
                     </div>
+                    {/* App-Profile-grounding KPI — the customer proof point:
+                        how many locators came from the App Profile (repository)
+                        vs healed by AI. Goal: grow App-Profile %, shrink AI %. */}
+                    {typeof lreport.appProfileCount === 'number' && (
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] border-t border-white/5 pt-2">
+                        <span className="inline-flex items-center gap-1.5 text-slate-300">
+                          <Fingerprint size={12} className="text-violet-400 shrink-0" />
+                          Locator provenance
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-emerald-300">
+                          <CheckCircle2 size={12} className="shrink-0" />
+                          <span className="font-semibold">{lreport.appProfileCount}</span> from App Profile
+                        </span>
+                        {typeof lreport.fallbackCount === 'number' && lreport.fallbackCount > 0 && (
+                          <span className="text-slate-400">
+                            <span className="font-semibold text-slate-300">{lreport.fallbackCount}</span> curated fallback
+                          </span>
+                        )}
+                        <span className="text-slate-400">
+                          <span className="font-semibold text-blue-300">{lreport.aiCount ?? 0}</span> healed by AI
+                        </span>
+                        <span className="text-slate-500">
+                          <span className="font-semibold text-emerald-400">{lreport.appProfilePct ?? 0}%</span> Repository Grounded
+                          {' · '}
+                          <span className={`font-semibold ${(lreport.aiPct ?? 0) > 0 ? 'text-blue-300' : 'text-slate-500'}`}>{lreport.aiPct ?? 0}%</span> AI
+                        </span>
+                      </div>
+                    )}
                     {entries.length > 0 && (
                       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         {entries.map((loc, i) => {
