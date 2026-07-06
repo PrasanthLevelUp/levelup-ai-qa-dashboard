@@ -1755,60 +1755,87 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 </div>
               )}
 
-            {/* ── Generation Diagnostics (review issue) ──────────────────────
-                The real reason generation produced nothing (or produced only a
-                partial set) was previously only visible in the raw API response.
-                Surface the pipeline funnel + per-case reasons directly in the UI —
-                on total FAILURE (422, top-level fields) AND on PARTIAL success
-                (200, nested under `data`) — so the user can see WHERE
-                (canonicalization → parsing → grounding → emit) and WHY each case
-                dropped out, plus any non-fatal warnings. */}
+            {/* ── Generation Diagnostics ─────────────────────────────────────
+                Philosophy: stay quiet when things work. Only show the heavy
+                pipeline funnel + per-case reasons when something actually
+                FAILED (422) or was PARTIAL (some cases produced no script).
+                On full success we show at most a compact, de-duplicated
+                one-line warning summary — never a per-case dump. */}
             {(() => {
               // Pipeline/case data lives at the top level on failure (422) and
               // under `data` on success (200). Unify both.
               const pipeline = result.pipeline ?? result.data?.pipeline;
               const caseErrors = result.caseErrors;
-              const warnings = result.data?.testDataWarnings ?? [];
+              const rawWarnings = result.data?.testDataWarnings ?? [];
               const unmapped = result.data?.unmappedSteps ?? [];
-              const isPartial = !!pipeline && pipeline.generatedScripts < pipeline.inputTestCases;
-              // Show the panel when: generation failed with diagnostics, OR it
-              // succeeded but was partial, OR there are non-fatal warnings.
-              const show =
-                (!result.success && (pipeline || (caseErrors && caseErrors.length > 0))) ||
-                (result.success && (isPartial || warnings.length > 0 || unmapped.length > 0));
-              if (!show) return null;
               const failed = !result.success;
+              const isPartial =
+                !!pipeline && pipeline.generatedScripts < pipeline.inputTestCases;
+
+              // De-duplicate identical warnings (the backend emits one per case,
+              // so 14 cases → 14 copies of the same "Dataset valid_users…" line).
+              // Collapse to unique messages with an occurrence count.
+              const warnCounts = new Map<string, number>();
+              for (const w of rawWarnings) warnCounts.set(w, (warnCounts.get(w) ?? 0) + 1);
+              const warnings = Array.from(warnCounts.entries()); // [msg, count][]
+              const hasWarnings = warnings.length > 0 || unmapped.length > 0;
+
+              // Only the cases that did NOT produce a script are worth listing.
+              const failedCases = (pipeline?.cases ?? []).filter(
+                (c) => c.status && c.status !== 'OK'
+              );
+
+              // ── Full success (nothing failed / dropped) ──────────────────
+              // Show a minimal, collapsible warning summary only. No funnel,
+              // no per-case breakdown (every row would just say "Generated").
+              if (!failed && !isPartial) {
+                if (!hasWarnings) return null;
+                return (
+                  <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.04] overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2.5">
+                      <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+                      <h4 className="text-xs font-semibold text-amber-200">
+                        {warnings.length + unmapped.length} non-fatal warning{warnings.length + unmapped.length === 1 ? '' : 's'} to review
+                      </h4>
+                    </div>
+                    <div className="px-4 pb-3 space-y-1">
+                      {warnings.map(([msg, count], i) => (
+                        <div key={`w${i}`} className="flex items-start gap-2 text-[11px] text-amber-300/85 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-1.5">
+                          <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
+                          <span className="break-words">
+                            {msg}
+                            {count > 1 && (
+                              <span className="ml-1.5 text-amber-400/70">×{count}</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                      {unmapped.map((u, i) => (
+                        <div key={`u${i}`} className="flex items-start gap-2 text-[11px] text-amber-300/85 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-1.5">
+                          <AlertCircle size={12} className="text-amber-400 mt-0.5 shrink-0" />
+                          <span className="break-words">
+                            {u.testCaseId != null ? `#${u.testCaseId}: ` : ''}Step not auto-mapped — “{u.step}”
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── Failure (422) or partial success ─────────────────────────
+              // Now the detailed diagnostics genuinely help. Show the funnel
+              // (highlighting where cases dropped) + only the FAILED cases.
+              const show = pipeline || (caseErrors && caseErrors.length > 0);
+              if (!show) return null;
               return (
               <div className={`mt-4 rounded-xl border overflow-hidden ${failed ? 'border-red-500/25 bg-red-500/[0.04]' : 'border-amber-500/25 bg-amber-500/[0.04]'}`}>
                 <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${failed ? 'border-red-500/20 bg-red-500/[0.06]' : 'border-amber-500/20 bg-amber-500/[0.06]'}`}>
                   <AlertTriangle size={14} className={failed ? 'text-red-400' : 'text-amber-400'} />
                   <h4 className={`text-xs font-semibold ${failed ? 'text-red-200' : 'text-amber-200'}`}>
-                    {failed ? 'Generation Diagnostics' : isPartial ? 'Partial Generation — Diagnostics' : 'Generation Warnings'}
+                    {failed ? 'Generation failed — what went wrong' : 'Partial generation — what went wrong'}
                   </h4>
-                  <span className="text-[11px] text-slate-500 ml-auto">
-                    {failed ? 'Where the pipeline stopped' : isPartial ? 'Some cases did not produce scripts' : 'Non-fatal issues to review'}
-                  </span>
                 </div>
-
-                {/* Non-fatal warnings (test-data reshapes + unmapped steps). */}
-                {(warnings.length > 0 || unmapped.length > 0) && (
-                  <div className="px-4 pt-3 space-y-1">
-                    {warnings.map((w, i) => (
-                      <div key={`w${i}`} className="flex items-start gap-2 text-[11px] text-amber-300/85 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-1.5">
-                        <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
-                        <span className="break-words">{w}</span>
-                      </div>
-                    ))}
-                    {unmapped.map((u, i) => (
-                      <div key={`u${i}`} className="flex items-start gap-2 text-[11px] text-amber-300/85 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-1.5">
-                        <AlertCircle size={12} className="text-amber-400 mt-0.5 shrink-0" />
-                        <span className="break-words">
-                          {u.testCaseId != null ? `#${u.testCaseId}: ` : ''}Step not auto-mapped — “{u.step}”
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
 
                 {/* Pipeline funnel — each stage shows how many cases reached it.
                     The first stage where the count drops is the failure point. */}
@@ -1872,50 +1899,43 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   );
                 })()}
 
-                {/* Per-case trace — the deepest stage each case reached and why
-                    it stopped. This is the exact reason list that was only in the
-                    API JSON before. */}
-                {pipeline?.cases && pipeline.cases.length > 0 && (
+                {/* Per-case trace — ONLY the cases that failed, with the reason. */}
+                {failedCases.length > 0 && (
                   <div className="px-4 pb-3">
-                    <div className="text-[11px] font-medium text-slate-400 mb-1.5">Per-case breakdown</div>
+                    <div className="text-[11px] font-medium text-slate-400 mb-1.5">
+                      Failed case{failedCases.length === 1 ? '' : 's'} ({failedCases.length})
+                    </div>
                     <div className="space-y-1 max-h-64 overflow-y-auto">
-                      {pipeline.cases.map((c, i) => {
-                        const ok = c.status === 'OK';
-                        return (
-                          <div
-                            key={`${c.id ?? i}`}
-                            className="flex items-start gap-2 rounded-lg border border-[#334155] bg-[#0c1222] px-2.5 py-1.5"
-                          >
-                            {ok ? (
-                              <CheckCircle2 size={13} className="text-emerald-400 mt-0.5 shrink-0" />
-                            ) : (
-                              <XCircle size={13} className="text-red-400 mt-0.5 shrink-0" />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-medium text-slate-200 truncate">
-                                  {c.id != null ? `#${c.id} ` : ''}{c.title || 'Untitled case'}
+                      {failedCases.map((c, i) => (
+                        <div
+                          key={`${c.id ?? i}`}
+                          className="flex items-start gap-2 rounded-lg border border-[#334155] bg-[#0c1222] px-2.5 py-1.5"
+                        >
+                          <XCircle size={13} className="text-red-400 mt-0.5 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-medium text-slate-200 truncate">
+                                {c.id != null ? `#${c.id} ` : ''}{c.title || 'Untitled case'}
+                              </span>
+                              {c.reachedStage && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-300 shrink-0">
+                                  {c.reachedStage}
                                 </span>
-                                {c.reachedStage && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-300 shrink-0">
-                                    {c.reachedStage}
-                                  </span>
-                                )}
-                              </div>
-                              {c.reason && (
-                                <p className="text-[11px] text-red-300/70 mt-0.5 break-words">{c.reason}</p>
                               )}
                             </div>
+                            {c.reason && (
+                              <p className="text-[11px] text-red-300/70 mt-0.5 break-words">{c.reason}</p>
+                            )}
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
                 {/* Fallback: raw caseErrors when no structured per-case trace was
                     returned (older backend responses). */}
-                {(!pipeline?.cases || pipeline.cases.length === 0) &&
+                {failedCases.length === 0 &&
                   caseErrors && caseErrors.length > 0 && (
                     <div className="px-4 pb-3">
                       <div className="text-[11px] font-medium text-slate-400 mb-1.5">Reasons</div>
