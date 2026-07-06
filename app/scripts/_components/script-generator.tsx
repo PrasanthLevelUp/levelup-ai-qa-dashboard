@@ -66,6 +66,17 @@ interface GenerationResult {
     files: Array<{ path: string; size: number; type: string }>;
     testPlan: any;
     validationReport: any;
+    // Honest, decomposed reliability from the backend. `executionReadiness` is
+    // the weakest-link headline (code × grounding × coverage) and is what the UI
+    // must show — NOT validationReport.overallScore (code-only, which reported a
+    // misleading 100% while 0/14 locators were grounded). grounding/coverage are
+    // null when they don't apply (e.g. a pure URL run with no predefined cases).
+    reliability?: {
+      executionReadiness: number;
+      grounding: number | null;
+      coverage: number | null;
+      codeQuality: number;
+    };
     stats: {
       totalTests: number;
       totalAssertions: number;
@@ -142,6 +153,14 @@ interface GenerationResult {
     };
   };
   error?: string;
+  // Honest-failure metadata for the 422 responses. When a requirement/test-case
+  // generation cannot produce grounded scripts the backend refuses to emit
+  // generic ones and returns an actionable code + nextAction instead.
+  code?: string;
+  nextAction?: 'GENERATE_TEST_CASES' | 'REVIEW_TEST_CASES' | string;
+  requirementId?: string | null;
+  intendedTestCaseCount?: number;
+  resolvedTestCaseCount?: number;
 }
 
 /** Sprint 4 — requirement + test case context loaded from a deep link. */
@@ -1669,6 +1688,30 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             {result.error && (
               <p className="text-xs text-red-300/80 mt-1">{result.error}</p>
             )}
+            {/* Actionable next step for the honest 422s. Instead of dumping the
+                user at a dead-end "Generation Failed", route them to Test Case
+                Lab to create/review the cases that grounded generation needs.
+                REQUIREMENT_HAS_NO_TEST_CASES → generate; DETERMINISTIC_GENERATION_EMPTY
+                → review the existing (unautomatable) cases. */}
+            {!result.success &&
+              (result.code === 'REQUIREMENT_HAS_NO_TEST_CASES' ||
+                result.code === 'DETERMINISTIC_GENERATION_EMPTY') && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <a
+                    href={
+                      '/test-coverage' +
+                      (result.requirementId ? `?requirement_id=${encodeURIComponent(result.requirementId)}` : '')
+                    }
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 text-white text-xs font-medium transition-all"
+                  >
+                    <ListChecks size={13} />
+                    {result.nextAction === 'REVIEW_TEST_CASES' ? 'Review Test Cases' : 'Generate Test Cases'}
+                  </a>
+                  <span className="text-[11px] text-slate-500">
+                    Grounded scripts require test cases from Test Case Lab — the generator will not emit generic, ungrounded scripts.
+                  </span>
+                </div>
+              )}
           </div>
 
           {/* Push to GitHub Dialog */}
@@ -2252,35 +2295,67 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                 </div>
               )}
 
-              {/* Validation Report */}
-              {result.data.validationReport && (
-                <div className="bg-[#0c1222] rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">Reliability Score</p>
-                    <span className={`text-sm font-bold ${
-                      result.data.validationReport.overallScore >= 80
-                        ? 'text-emerald-400'
-                        : result.data.validationReport.overallScore >= 60
-                          ? 'text-amber-400'
-                          : 'text-red-400'
-                    }`}>
-                      {result.data.validationReport.overallScore}%
-                    </span>
+              {/* Reliability Score — HONEST execution readiness.
+                  Headlines `reliability.executionReadiness` (weakest-link of
+                  code × grounding × coverage), NOT validationReport.overallScore
+                  (code-only). The old code-only score reported 100% while 0/14
+                  locators were grounded — the exact dishonesty the user flagged.
+                  Falls back to overallScore only for responses from an older
+                  backend that doesn't yet return `reliability`. */}
+              {(() => {
+                const rel = result.data.reliability;
+                const score = rel
+                  ? rel.executionReadiness
+                  : (result.data.validationReport?.overallScore ?? null);
+                if (score == null) return null;
+                const tone = (n: number) =>
+                  n >= 80 ? 'text-emerald-400' : n >= 60 ? 'text-amber-400' : 'text-red-400';
+                const bar = (n: number) =>
+                  n >= 80 ? 'bg-emerald-400' : n >= 60 ? 'bg-amber-400' : 'bg-red-400';
+                const dims: Array<{ label: string; value: number | null }> = rel
+                  ? [
+                      { label: 'Code', value: rel.codeQuality },
+                      { label: 'Grounding', value: rel.grounding },
+                      { label: 'Coverage', value: rel.coverage },
+                    ]
+                  : [];
+                return (
+                  <div className="bg-[#0c1222] rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider">
+                        {rel ? 'Execution Readiness' : 'Reliability Score'}
+                      </p>
+                      <span className={`text-sm font-bold ${tone(score)}`}>{score}%</span>
+                    </div>
+                    <div className="w-full bg-[#1e293b] rounded-full h-1.5">
+                      <div
+                        className={`h-1.5 rounded-full transition-all ${bar(score)}`}
+                        style={{ width: `${score}%` }}
+                      />
+                    </div>
+                    {/* Decomposed dimensions so a perfect code score can never
+                        masquerade as overall reliability when grounding/coverage
+                        are zero. */}
+                    {dims.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2 mt-3">
+                        {dims.map((d) => (
+                          <div key={d.label} className="bg-[#1a1f2e] rounded-md px-2 py-1.5">
+                            <p className="text-[9px] text-slate-500 uppercase tracking-wider">{d.label}</p>
+                            <p className={`text-xs font-semibold ${d.value == null ? 'text-slate-500' : tone(d.value)}`}>
+                              {d.value == null ? 'n/a' : `${d.value}%`}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {rel && rel.executionReadiness < 60 && (
+                      <p className="text-[10px] text-amber-300/70 mt-2 leading-relaxed">
+                        Weakest-link score: low grounding or coverage collapses execution readiness even when the code is syntactically perfect.
+                      </p>
+                    )}
                   </div>
-                  <div className="w-full bg-[#1e293b] rounded-full h-1.5">
-                    <div
-                      className={`h-1.5 rounded-full transition-all ${
-                        result.data.validationReport.overallScore >= 80
-                          ? 'bg-emerald-400'
-                          : result.data.validationReport.overallScore >= 60
-                            ? 'bg-amber-400'
-                            : 'bg-red-400'
-                      }`}
-                      style={{ width: `${result.data.validationReport.overallScore}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Generated Files */}
               {result.data.files && result.data.files.length > 0 && (
