@@ -151,6 +151,26 @@ interface GenerationResult {
       bySource: Record<string, number>;
       summary: string;
     };
+    // Pipeline funnel + per-case trace on SUCCESS too (partial generation), plus
+    // non-fatal warnings — so the UI can surface issues even when generation
+    // otherwise succeeded (e.g. 8/12 cases emitted, unmapped steps).
+    pipeline?: {
+      inputTestCases: number;
+      canonicalized: number;
+      parsed: number;
+      grounded: number;
+      generatedScripts: number;
+      cases?: Array<{
+        id?: number | string | null;
+        title?: string | null;
+        reachedStage?: string;
+        status?: string;
+        reason?: string;
+        stepCount?: number;
+      }>;
+    };
+    testDataWarnings?: string[];
+    unmappedSteps?: Array<{ testCaseId?: number; step: string }>;
   };
   error?: string;
   // Honest-failure metadata for the 422 responses. When a requirement/test-case
@@ -161,6 +181,28 @@ interface GenerationResult {
   requirementId?: string | null;
   intendedTestCaseCount?: number;
   resolvedTestCaseCount?: number;
+  // Per-case failure reasons surfaced by the honest 422 (review issue: the real
+  // reason each case failed was previously only visible in the raw API JSON, not
+  // the UI). Rendered in the diagnostics panel below the error.
+  caseErrors?: string[];
+  // Pipeline funnel + per-case trace — pinpoints WHERE the count dropped to zero
+  // (canonicalization → parsing → grounding → emit). Returned by the backend on
+  // DETERMINISTIC_GENERATION_EMPTY so "nothing generated" is localizable in the UI.
+  pipeline?: {
+    inputTestCases: number;
+    canonicalized: number;
+    parsed: number;
+    grounded: number;
+    generatedScripts: number;
+    cases?: Array<{
+      id?: number | string | null;
+      title?: string | null;
+      reachedStage?: string;
+      status?: string;
+      reason?: string;
+      stepCount?: number;
+    }>;
+  };
 }
 
 /** Sprint 4 — requirement + test case context loaded from a deep link. */
@@ -1712,6 +1754,187 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   </span>
                 </div>
               )}
+
+            {/* ── Generation Diagnostics (review issue) ──────────────────────
+                The real reason generation produced nothing (or produced only a
+                partial set) was previously only visible in the raw API response.
+                Surface the pipeline funnel + per-case reasons directly in the UI —
+                on total FAILURE (422, top-level fields) AND on PARTIAL success
+                (200, nested under `data`) — so the user can see WHERE
+                (canonicalization → parsing → grounding → emit) and WHY each case
+                dropped out, plus any non-fatal warnings. */}
+            {(() => {
+              // Pipeline/case data lives at the top level on failure (422) and
+              // under `data` on success (200). Unify both.
+              const pipeline = result.pipeline ?? result.data?.pipeline;
+              const caseErrors = result.caseErrors;
+              const warnings = result.data?.testDataWarnings ?? [];
+              const unmapped = result.data?.unmappedSteps ?? [];
+              const isPartial = !!pipeline && pipeline.generatedScripts < pipeline.inputTestCases;
+              // Show the panel when: generation failed with diagnostics, OR it
+              // succeeded but was partial, OR there are non-fatal warnings.
+              const show =
+                (!result.success && (pipeline || (caseErrors && caseErrors.length > 0))) ||
+                (result.success && (isPartial || warnings.length > 0 || unmapped.length > 0));
+              if (!show) return null;
+              const failed = !result.success;
+              return (
+              <div className={`mt-4 rounded-xl border overflow-hidden ${failed ? 'border-red-500/25 bg-red-500/[0.04]' : 'border-amber-500/25 bg-amber-500/[0.04]'}`}>
+                <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${failed ? 'border-red-500/20 bg-red-500/[0.06]' : 'border-amber-500/20 bg-amber-500/[0.06]'}`}>
+                  <AlertTriangle size={14} className={failed ? 'text-red-400' : 'text-amber-400'} />
+                  <h4 className={`text-xs font-semibold ${failed ? 'text-red-200' : 'text-amber-200'}`}>
+                    {failed ? 'Generation Diagnostics' : isPartial ? 'Partial Generation — Diagnostics' : 'Generation Warnings'}
+                  </h4>
+                  <span className="text-[11px] text-slate-500 ml-auto">
+                    {failed ? 'Where the pipeline stopped' : isPartial ? 'Some cases did not produce scripts' : 'Non-fatal issues to review'}
+                  </span>
+                </div>
+
+                {/* Non-fatal warnings (test-data reshapes + unmapped steps). */}
+                {(warnings.length > 0 || unmapped.length > 0) && (
+                  <div className="px-4 pt-3 space-y-1">
+                    {warnings.map((w, i) => (
+                      <div key={`w${i}`} className="flex items-start gap-2 text-[11px] text-amber-300/85 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-1.5">
+                        <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
+                        <span className="break-words">{w}</span>
+                      </div>
+                    ))}
+                    {unmapped.map((u, i) => (
+                      <div key={`u${i}`} className="flex items-start gap-2 text-[11px] text-amber-300/85 rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-2.5 py-1.5">
+                        <AlertCircle size={12} className="text-amber-400 mt-0.5 shrink-0" />
+                        <span className="break-words">
+                          {u.testCaseId != null ? `#${u.testCaseId}: ` : ''}Step not auto-mapped — “{u.step}”
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Pipeline funnel — each stage shows how many cases reached it.
+                    The first stage where the count drops is the failure point. */}
+                {pipeline && (() => {
+                  const p = pipeline;
+                  const stages: Array<{ label: string; value: number }> = [
+                    { label: 'Input', value: p.inputTestCases },
+                    { label: 'Canonicalized', value: p.canonicalized },
+                    { label: 'Parsed', value: p.parsed },
+                    { label: 'Grounded', value: p.grounded },
+                    { label: 'Scripts', value: p.generatedScripts },
+                  ];
+                  // Index of the first stage where the count fell vs the prior one.
+                  let dropAt = -1;
+                  for (let i = 1; i < stages.length; i++) {
+                    if (stages[i].value < stages[i - 1].value) { dropAt = i; break; }
+                  }
+                  return (
+                    <div className="px-4 py-3">
+                      <div className="flex items-stretch gap-1.5">
+                        {stages.map((s, i) => {
+                          const isDrop = i === dropAt;
+                          const zero = s.value === 0;
+                          return (
+                            <div key={s.label} className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <div
+                                className={
+                                  'flex-1 rounded-lg border px-2 py-2 text-center min-w-0 ' +
+                                  (isDrop
+                                    ? 'border-red-500/50 bg-red-500/10'
+                                    : zero
+                                      ? 'border-slate-700 bg-slate-800/40'
+                                      : 'border-emerald-500/30 bg-emerald-500/[0.06]')
+                                }
+                              >
+                                <div
+                                  className={
+                                    'text-sm font-bold ' +
+                                    (isDrop ? 'text-red-300' : zero ? 'text-slate-500' : 'text-emerald-300')
+                                  }
+                                >
+                                  {s.value}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">{s.label}</div>
+                              </div>
+                              {i < stages.length - 1 && (
+                                <ArrowRight size={12} className="text-slate-600 shrink-0" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {dropAt > 0 && (
+                        <p className="text-[11px] text-red-300/80 mt-2 flex items-center gap-1.5">
+                          <XCircle size={12} className="shrink-0" />
+                          {stages[dropAt - 1].value - stages[dropAt].value} of {stages[dropAt - 1].value} case(s) dropped at
+                          the <span className="font-semibold">{stages[dropAt].label}</span> stage.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Per-case trace — the deepest stage each case reached and why
+                    it stopped. This is the exact reason list that was only in the
+                    API JSON before. */}
+                {pipeline?.cases && pipeline.cases.length > 0 && (
+                  <div className="px-4 pb-3">
+                    <div className="text-[11px] font-medium text-slate-400 mb-1.5">Per-case breakdown</div>
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                      {pipeline.cases.map((c, i) => {
+                        const ok = c.status === 'OK';
+                        return (
+                          <div
+                            key={`${c.id ?? i}`}
+                            className="flex items-start gap-2 rounded-lg border border-[#334155] bg-[#0c1222] px-2.5 py-1.5"
+                          >
+                            {ok ? (
+                              <CheckCircle2 size={13} className="text-emerald-400 mt-0.5 shrink-0" />
+                            ) : (
+                              <XCircle size={13} className="text-red-400 mt-0.5 shrink-0" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-medium text-slate-200 truncate">
+                                  {c.id != null ? `#${c.id} ` : ''}{c.title || 'Untitled case'}
+                                </span>
+                                {c.reachedStage && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-300 shrink-0">
+                                    {c.reachedStage}
+                                  </span>
+                                )}
+                              </div>
+                              {c.reason && (
+                                <p className="text-[11px] text-red-300/70 mt-0.5 break-words">{c.reason}</p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fallback: raw caseErrors when no structured per-case trace was
+                    returned (older backend responses). */}
+                {(!pipeline?.cases || pipeline.cases.length === 0) &&
+                  caseErrors && caseErrors.length > 0 && (
+                    <div className="px-4 pb-3">
+                      <div className="text-[11px] font-medium text-slate-400 mb-1.5">Reasons</div>
+                      <ul className="space-y-1">
+                        {caseErrors.map((e, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 text-[11px] text-red-300/80 rounded-lg border border-[#334155] bg-[#0c1222] px-2.5 py-1.5"
+                          >
+                            <XCircle size={12} className="text-red-400 mt-0.5 shrink-0" />
+                            <span className="break-words">{e}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+              </div>
+              );
+            })()}
           </div>
 
           {/* Push to GitHub Dialog */}
