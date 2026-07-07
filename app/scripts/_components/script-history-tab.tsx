@@ -639,10 +639,17 @@ export function ScriptHistoryTab() {
         setScripts([]);
       } else {
         const data = await res.json();
-        const list: HistoryScript[] = data.data || data.scripts || (Array.isArray(data) ? data : []);
-        // Parse intelligence_metadata on each script
+        const list: any[] = data.data || data.scripts || (Array.isArray(data) ? data : []);
+        // Map snake_case API response to camelCase component fields
         setScripts(list.map(s => ({
           ...s,
+          // Map snake_case to camelCase for fields used in the UI
+          tokensUsed: s.tokensUsed ?? s.tokens_used ?? null,
+          createdAt: s.createdAt ?? s.created_at ?? null,
+          reliabilityScore: s.reliabilityScore ?? s.reliability_score ?? null,
+          validationStatus: s.validationStatus ?? s.validation_status ?? null,
+          generationTimeMs: s.generationTimeMs ?? s.generation_time_ms ?? null,
+          filesGenerated: s.filesGenerated ?? s.files_generated ?? null,
           intelligence_metadata: parseIntel(s.intelligence_metadata),
         })));
       }
