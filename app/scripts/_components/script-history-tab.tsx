@@ -884,20 +884,46 @@ export function ScriptHistoryTab() {
                             {script.reliabilityScore}% reliable
                           </span>
                         )}
-                        {script.tokensUsed != null && script.tokensUsed > 0 ? (
-                          <span className="flex items-center gap-1">
-                            <Sparkles size={10} />
-                            {script.tokensUsed.toLocaleString()} tokens
-                          </span>
-                        ) : String(script.model || '').startsWith('deterministic') ? (
-                          <span
-                            className="flex items-center gap-1 text-slate-600"
-                            title="Generated deterministically from a structured test case — the steps were translated directly into code, so no LLM tokens were spent."
-                          >
-                            <Zap size={10} />
-                            0 tokens · deterministic
-                          </span>
-                        ) : null}
+                        {(() => {
+                          const intel: any = script.intelligence_metadata || {};
+                          const attributed = intel.tokenSource === 'test-case-attributed';
+                          const attr = intel.tokenAttribution;
+                          if (script.tokensUsed != null && script.tokensUsed > 0) {
+                            if (attributed) {
+                              return (
+                                <span
+                                  className="flex items-center gap-1"
+                                  title={
+                                    attr
+                                      ? `Deterministic generation spends 0 LLM tokens — this figure is this script's attributed share of its source test case's generation cost (${attr.totalTokens.toLocaleString()} tokens ÷ ${attr.testCaseCount} case${attr.testCaseCount === 1 ? '' : 's'} = ${attr.perCaseTokens.toLocaleString()}/case).`
+                                      : "This script's attributed share of its source test case's generation cost. Deterministic code generation itself spends 0 LLM tokens."
+                                  }
+                                >
+                                  <Zap size={10} />
+                                  {script.tokensUsed.toLocaleString()} tokens · from test case
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="flex items-center gap-1">
+                                <Sparkles size={10} />
+                                {script.tokensUsed.toLocaleString()} tokens
+                              </span>
+                            );
+                          }
+                          if (String(script.model || '').startsWith('deterministic')) {
+                            return (
+                              <span
+                                className="flex items-center gap-1 text-slate-600"
+                                title="Generated deterministically from a structured test case — the steps were translated directly into code, so no LLM tokens were spent."
+                              >
+                                <Zap size={10} />
+                                0 tokens · deterministic
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                         <span>{formatTime(script.createdAt)}</span>
                       </div>
                     </div>
