@@ -884,12 +884,20 @@ export function ScriptHistoryTab() {
                             {script.reliabilityScore}% reliable
                           </span>
                         )}
-                        {script.tokensUsed != null && script.tokensUsed > 0 && (
+                        {script.tokensUsed != null && script.tokensUsed > 0 ? (
                           <span className="flex items-center gap-1">
                             <Sparkles size={10} />
                             {script.tokensUsed.toLocaleString()} tokens
                           </span>
-                        )}
+                        ) : String(script.model || '').startsWith('deterministic') ? (
+                          <span
+                            className="flex items-center gap-1 text-slate-600"
+                            title="Generated deterministically from a structured test case — the steps were translated directly into code, so no LLM tokens were spent."
+                          >
+                            <Zap size={10} />
+                            0 tokens · deterministic
+                          </span>
+                        ) : null}
                         <span>{formatTime(script.createdAt)}</span>
                       </div>
                     </div>
