@@ -624,6 +624,18 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [showTestCasePicker, setShowTestCasePicker] = useState(false);
   const [loadingTestCase, setLoadingTestCase] = useState(false);
 
+  // Sprint 4 — adopt the deep-link requirement into the picker.
+  // The parent reads the deep link (`/scripts?requirement_id=…`) inside a mount
+  // effect, so `requirementId` is null on ScriptGenerator's first render and the
+  // `useState(requirementId || '')` seed misses it. Without this sync the
+  // dropdown stays on "No requirement", the requirement's test cases never load,
+  // and handleGenerate omits requirementId (it gates on selectedReqId). Adopt the
+  // id once it arrives, but never clobber a manual dropdown change the user made.
+  useEffect(() => {
+    if (requirementId && !selectedReqId) setSelectedReqId(requirementId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requirementId]);
+
   // Fetch the requirement list (with test-case counts) for the picker.
   // GET /api/requirements already returns test_case_count / automated_count.
   useEffect(() => {
