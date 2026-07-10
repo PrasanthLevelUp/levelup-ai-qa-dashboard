@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
 import { useWorkspaceHeaders, useProjectEnvironments } from '@/lib/workspace-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
+import { resolveTokenDisplay } from '@/lib/token-display';
 import { IntelligenceScore as IntelligenceScoreComponent } from '@/components/intelligence-score';
 import {
   Play,
@@ -81,6 +82,21 @@ interface GenerationResult {
       totalTests: number;
       totalAssertions: number;
       tokensUsed: number;
+      model: string;
+    };
+    // Structured token/usage telemetry captured from the provider's own `usage`
+    // object (never estimated). Present once the backend Generation Cost Tracker
+    // is deployed; the UI falls back to `stats` heuristics until then. `null`
+    // totals = provider returned no usage (unknown); `0` + cacheHit = a genuine
+    // deterministic/cached run (no LLM call).
+    generationMetrics?: {
+      llmCalls: number;
+      promptTokens: number | null;
+      completionTokens: number | null;
+      totalTokens: number | null;
+      durationMs: number;
+      cacheHit: boolean;
+      provider: string;
       model: string;
     };
     generationTimeMs: number;
@@ -2239,12 +2255,31 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
                   value={`${(result.data.generationTimeMs / 1000).toFixed(1)}s`}
                   color="text-blue-400"
                 />
-                <StatCard
-                  icon={Sparkles}
-                  label="Tokens"
-                  value={result.data.stats.tokensUsed.toLocaleString()}
-                  color="text-amber-400"
-                />
+                {(() => {
+                  // Honest token display: a genuine no-LLM (deterministic/cached)
+                  // run shows a "Deterministic" badge, not a scary bare "0".
+                  const td = resolveTokenDisplay({
+                    tokensUsed: result.data.stats.tokensUsed,
+                    model: result.data.stats.model,
+                    metrics: result.data.generationMetrics,
+                  });
+                  const color =
+                    td.kind === 'deterministic'
+                      ? 'text-slate-400'
+                      : td.kind === 'unknown'
+                        ? 'text-slate-500'
+                        : 'text-amber-400';
+                  return (
+                    <StatCard
+                      icon={Sparkles}
+                      label="AI Tokens"
+                      value={td.value}
+                      sub={td.sub}
+                      title={td.tooltip}
+                      color={color}
+                    />
+                  );
+                })()}
               </div>
 
               {/* Phase 5: Intelligence Score — signature transparency metric */}
@@ -2657,19 +2692,26 @@ function StatCard({
   label,
   value,
   color,
+  sub,
+  title,
 }: {
   icon: typeof FileCode;
   label: string;
   value: string;
   color: string;
+  /** Optional muted sub-label shown under the value (e.g. "AI Tokens"). */
+  sub?: string;
+  /** Optional tooltip on hover. */
+  title?: string;
 }) {
   return (
-    <div className="bg-[#0c1222] rounded-lg p-3">
+    <div className="bg-[#0c1222] rounded-lg p-3" title={title}>
       <div className="flex items-center gap-1.5 mb-1">
         <Icon size={10} className={color} />
         <p className="text-[10px] text-slate-500 uppercase tracking-wider">{label}</p>
       </div>
       <p className={`text-lg font-bold ${color}`}>{value}</p>
+      {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
 }

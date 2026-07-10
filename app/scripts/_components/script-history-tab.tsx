@@ -31,6 +31,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ScriptMaintenanceActions } from './script-maintenance-actions';
+import { resolveTokenDisplay } from '@/lib/token-display';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -886,43 +887,35 @@ export function ScriptHistoryTab() {
                         )}
                         {(() => {
                           const intel: any = script.intelligence_metadata || {};
-                          const attributed = intel.tokenSource === 'test-case-attributed';
                           const attr = intel.tokenAttribution;
-                          if (script.tokensUsed != null && script.tokensUsed > 0) {
-                            if (attributed) {
-                              return (
-                                <span
-                                  className="flex items-center gap-1"
-                                  title={
-                                    attr
-                                      ? `Deterministic generation spends 0 LLM tokens — this figure is this script's attributed share of its source test case's generation cost (${attr.totalTokens.toLocaleString()} tokens ÷ ${attr.testCaseCount} case${attr.testCaseCount === 1 ? '' : 's'} = ${attr.perCaseTokens.toLocaleString()}/case).`
-                                      : "This script's attributed share of its source test case's generation cost. Deterministic code generation itself spends 0 LLM tokens."
-                                  }
-                                >
-                                  <Zap size={10} />
-                                  {script.tokensUsed.toLocaleString()} tokens · from test case
-                                </span>
-                              );
-                            }
-                            return (
-                              <span className="flex items-center gap-1">
-                                <Sparkles size={10} />
-                                {script.tokensUsed.toLocaleString()} tokens
-                              </span>
-                            );
-                          }
-                          if (String(script.model || '').startsWith('deterministic')) {
-                            return (
-                              <span
-                                className="flex items-center gap-1 text-slate-600"
-                                title="Generated deterministically from a structured test case — the steps were translated directly into code, so no LLM tokens were spent."
-                              >
-                                <Zap size={10} />
-                                0 tokens · deterministic
-                              </span>
-                            );
-                          }
-                          return null;
+                          const td = resolveTokenDisplay({
+                            tokensUsed: script.tokensUsed,
+                            model: script.model,
+                            metrics: (script as any).generationMetrics,
+                            tokenSource: intel.tokenSource,
+                          });
+                          // Preserve the detailed per-case attribution math in the tooltip.
+                          const tooltip =
+                            td.sub.includes('from test case') && attr
+                              ? `Deterministic generation spends 0 LLM tokens — this figure is this script's attributed share of its source test case's generation cost (${attr.totalTokens.toLocaleString()} tokens ÷ ${attr.testCaseCount} case${attr.testCaseCount === 1 ? '' : 's'} = ${attr.perCaseTokens.toLocaleString()}/case).`
+                              : td.tooltip;
+                          const Icon = td.kind === 'ai' ? Sparkles : Zap;
+                          const cls =
+                            td.kind === 'deterministic'
+                              ? 'flex items-center gap-1 text-slate-600'
+                              : 'flex items-center gap-1';
+                          const text =
+                            td.kind === 'deterministic'
+                              ? '0 AI tokens · deterministic'
+                              : td.kind === 'unknown'
+                                ? 'AI tokens · unknown'
+                                : `${td.value} ${td.sub}`;
+                          return (
+                            <span className={cls} title={tooltip}>
+                              <Icon size={10} />
+                              {text}
+                            </span>
+                          );
                         })()}
                         <span>{formatTime(script.createdAt)}</span>
                       </div>
