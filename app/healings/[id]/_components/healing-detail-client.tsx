@@ -2,11 +2,53 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, CheckCircle2, XCircle, Cpu, Brain, Sparkles, Shield, Eye,
-  MousePointerClick, Code, FileSearch, Fingerprint, Lock, DollarSign,
+  ArrowLeft, CheckCircle2, XCircle, Cpu, Brain, Sparkles, Shield,
+  MousePointerClick, Code, FileSearch, Fingerprint, DollarSign,
   GitBranch, Github, ExternalLink, Rocket, Loader2, ArrowRight,
 } from 'lucide-react';
 import { useProject } from '@/lib/project-context';
+
+/* ------------------------------------------------------------------ *
+ * The REAL, explainable healing result the engine produced (Sprint 4.1–4.3),
+ * now persisted (Sprint 4.4) and returned verbatim by GET /api/healings/:id.
+ * These shapes mirror `HealingResult` in the engine's `healing-result.ts`.
+ * Nothing here is fabricated in the UI — every value is passed through.
+ * ------------------------------------------------------------------ */
+interface HealingEvidence {
+  dimension: string;
+  score: number; // 0..1
+  detail: string;
+}
+interface RankedHealingCandidate {
+  selector: string;
+  score: number;
+  rank: number;
+  chosen: boolean;
+  source: string;
+  evidence?: HealingEvidence[];
+}
+interface HealingAlternative {
+  selector: string;
+  confidence: number; // 0..1
+  source: string;
+  reasoning?: string;
+}
+interface HealingResult {
+  originalSelector: string;
+  healedSelector: string | null;
+  healed: boolean;
+  strategy: string | null;
+  confidence: number; // 0..1
+  grade?: string;
+  autoApply: boolean;
+  reasonCode: string;
+  reason: string;
+  evidence: HealingEvidence[];
+  chosenCandidate: string | null;
+  rankedCandidates: RankedHealingCandidate[];
+  alternatives: HealingAlternative[];
+  risk: 'low' | 'medium' | 'high';
+}
 
 interface HealingDetail {
   id: number;
@@ -18,7 +60,9 @@ interface HealingDetail {
   failedLocator: string;
   healedLocator: string;
   confidence: number;
-  validationChecks: Record<string, { passed: boolean; score: number }>;
+  // Sprint 4.4 — the real engine result (null for legacy rows healed before
+  // it was persisted). Replaces the previously fabricated `validationChecks`.
+  healingResult: HealingResult | null;
   codeChanges: { before: string; after: string | null };
   validationReason: string;
   tokensUsed: number;
@@ -32,14 +76,10 @@ const STRATEGY_INFO: Record<string, { label: string; description: string; icon: 
   ai: { label: 'AI Engine (Level 3)', description: 'OpenAI-powered intelligent healing', icon: Sparkles, color: 'amber' },
 };
 
-const VALIDATION_LABELS: Record<string, { label: string; icon: any }> = {
-  syntax: { label: 'Syntax Valid', icon: Code },
-  semantic: { label: 'Semantic Match', icon: FileSearch },
-  exists: { label: 'Element Exists', icon: Eye },
-  unique: { label: 'Unique Selector', icon: Fingerprint },
-  visible: { label: 'Visible on Page', icon: Eye },
-  interactable: { label: 'Interactable', icon: MousePointerClick },
-  security: { label: 'Security Safe', icon: Lock },
+const RISK_INFO: Record<string, { label: string; emoji: string; classes: string }> = {
+  low: { label: 'Low risk', emoji: '🟢', classes: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  medium: { label: 'Medium risk', emoji: '🟡', classes: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  high: { label: 'High risk', emoji: '🔴', classes: 'bg-red-500/10 text-red-400 border-red-500/20' },
 };
 
 export function HealingDetailClient({ id }: { id: string }) {
@@ -80,7 +120,8 @@ export function HealingDetailClient({ id }: { id: string }) {
   const stratInfo = STRATEGY_INFO[detail?.strategy ?? ''] ?? STRATEGY_INFO.rule_based;
   const StratIcon = stratInfo?.icon ?? Cpu;
   const confidence = (detail?.confidence ?? 0) * 100;
-  const checks = detail?.validationChecks ?? {};
+  const hr = detail?.healingResult ?? null;
+  const risk = hr?.risk ? RISK_INFO[hr.risk] ?? null : null;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -155,49 +196,162 @@ export function HealingDetailClient({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* Confidence Breakdown */}
-      <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
-        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-          <Shield size={16} className="text-emerald-400" /> Confidence Score Breakdown ({confidence?.toFixed?.(0) ?? '0'}%)
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {Object.entries(checks).map(([key, check]: [string, any]) => {
-            const info = VALIDATION_LABELS[key] ?? { label: key, icon: CheckCircle2 };
-            const Icon = info.icon;
-            const score = check?.score ?? 0;
-            return (
-              <div key={key} className="flex items-center gap-3 p-3 rounded-lg bg-[#0f172a]/50">
-                <div className={`p-1.5 rounded ${
-                  check?.passed ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                }`}>
-                  <Icon size={14} />
-                </div>
-                <div className="flex-1 min-w-0">
+      {/* ── Decision (Reason + Risk) ─────────────────────────────────
+          Sprint 4.4 — the real reason & risk the engine produced. */}
+      {hr && (
+        <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <FileSearch size={16} className="text-emerald-400" /> Why LevelUp made this decision
+          </h3>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-[11px] font-mono px-2 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+              {hr.reasonCode}
+            </span>
+            {risk && (
+              <span className={`text-[11px] font-medium px-2 py-1 rounded border ${risk.classes}`}>
+                {risk.emoji} {risk.label}
+              </span>
+            )}
+            {hr.autoApply && (
+              <span className="text-[11px] font-medium px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Auto-apply eligible
+              </span>
+            )}
+            {hr.grade && (
+              <span className="text-[11px] font-mono px-2 py-1 rounded bg-slate-500/10 text-slate-300 border border-slate-500/20">
+                Grade {hr.grade}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-slate-300 leading-relaxed">{hr.reason}</p>
+        </div>
+      )}
+
+      {/* ── Evidence ─────────────────────────────────────────────────
+          Sprint 4.4 — the REAL per-signal evidence that produced the
+          confidence score (from the engine, not fabricated). */}
+      {hr && hr.evidence && hr.evidence.length > 0 && (
+        <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
+          <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+            <Shield size={16} className="text-emerald-400" /> Evidence
+          </h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Signals the engine weighed to reach {confidence?.toFixed?.(0) ?? '0'}% confidence.
+          </p>
+          <div className="space-y-3">
+            {hr.evidence.map((ev: HealingEvidence, i: number) => {
+              const pct = Math.round((ev?.score ?? 0) * 100);
+              return (
+                <div key={i} className="p-3 rounded-lg bg-[#0f172a]/50">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-300">{info?.label ?? key}</span>
+                    <span className="text-xs font-medium text-slate-300 font-mono">{ev.dimension}</span>
                     <span className={`text-xs font-mono font-semibold ${
-                      score >= 90 ? 'text-emerald-400' : score >= 70 ? 'text-amber-400' : 'text-red-400'
-                    }`}>{score}%</span>
+                      pct >= 90 ? 'text-emerald-400' : pct >= 70 ? 'text-amber-400' : 'text-red-400'
+                    }`}>{pct}%</span>
                   </div>
                   <div className="h-1.5 bg-[#1e293b] rounded-full mt-1.5 overflow-hidden">
                     <div
                       className={`h-full rounded-full ${
-                        score >= 90 ? 'bg-emerald-500' : score >= 70 ? 'bg-amber-500' : 'bg-red-500'
+                        pct >= 90 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-500' : 'bg-red-500'
                       }`}
-                      style={{ width: `${score}%` }}
+                      style={{ width: `${pct}%` }}
                     />
                   </div>
+                  {ev.detail && <p className="text-xs text-slate-500 mt-2">{ev.detail}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Ranked Candidates ────────────────────────────────────────
+          Sprint 4.4 — every candidate the engine evaluated, in its own
+          ranked order. Read-only; the chosen one is marked. */}
+      {hr && hr.rankedCandidates && hr.rankedCandidates.length > 0 && (
+        <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
+          <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+            <Fingerprint size={16} className="text-emerald-400" /> Ranked Candidates
+          </h3>
+          <p className="text-xs text-slate-500 mb-4">
+            The engine weighed {hr.rankedCandidates.length} option{hr.rankedCandidates.length === 1 ? '' : 's'} before choosing.
+          </p>
+          <div className="space-y-2">
+            {hr.rankedCandidates.map((c: RankedHealingCandidate, i: number) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3 p-3 rounded-lg border ${
+                  c.chosen
+                    ? 'bg-emerald-500/5 border-emerald-500/30'
+                    : 'bg-[#0f172a]/50 border-transparent'
+                }`}
+              >
+                <span className="text-xs font-mono text-slate-500 w-6 shrink-0">#{c.rank}</span>
+                <div className="flex-1 min-w-0">
+                  <code className="text-xs font-mono text-slate-200 break-all">{c.selector}</code>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">{c.source}</span>
+                    {c.chosen && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 inline-flex items-center gap-1">
+                        <CheckCircle2 size={10} /> Chosen
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-semibold text-slate-300 shrink-0">
+                  {typeof c.score === 'number' ? c.score.toFixed(3) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Alternatives ─────────────────────────────────────────────
+          Sprint 4.4 — recovery options surfaced to the user. */}
+      {hr && hr.alternatives && hr.alternatives.length > 0 && (
+        <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <MousePointerClick size={16} className="text-emerald-400" /> Alternatives
+          </h3>
+          <div className="space-y-2">
+            {hr.alternatives.map((alt: HealingAlternative, i: number) => (
+              <div key={i} className="p-3 rounded-lg bg-[#0f172a]/50">
+                <div className="flex items-center justify-between gap-3">
+                  <code className="text-xs font-mono text-slate-200 break-all flex-1 min-w-0">{alt.selector}</code>
+                  <span className="text-xs font-mono font-semibold text-slate-300 shrink-0">
+                    {Math.round((alt?.confidence ?? 0) * 100)}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">{alt.source}</span>
+                  {alt.reasoning && <span className="text-xs text-slate-500">{alt.reasoning}</span>}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Code Changes */}
+      {/* Legacy rows (healed before Sprint 4.4) carry no persisted result. */}
+      {!hr && (
+        <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
+          <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+            <Shield size={16} className="text-slate-400" /> Decision detail
+          </h3>
+          <p className="text-xs text-slate-500">
+            This healing was recorded before decision transparency was captured, so
+            no evidence, ranked candidates, or risk band are available for it.
+          </p>
+        </div>
+      )}
+
+      {/* Selector Replacement — the honest before/after the heal made.
+          Sprint 4.4: this is the real broken → healed locator, not a
+          synthesized `await page.click(...)` template. */}
       <div className="rounded-xl border border-[#1e293b] bg-[#1e293b]/30 p-6">
         <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-          🔄 Code Changes (Before → After)
+          🔄 Selector Replacement (Before → After)
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
