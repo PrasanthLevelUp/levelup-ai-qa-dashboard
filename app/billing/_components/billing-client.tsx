@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  CreditCard, Check, ArrowRight, Zap, Rocket, Crown, Building2,
-  Star, Globe, AlertTriangle, Download, Calendar, Receipt,
+  CreditCard, ArrowRight, Zap, Rocket, Crown, Building2,
+  Globe, AlertTriangle, Download, Calendar, Receipt,
   ChevronDown, ChevronUp, Sparkles, Shield, Clock, RefreshCw,
-  BadgeCheck, Info, ExternalLink, Gauge, Loader2
+  BadgeCheck, Gauge, Loader2
 } from 'lucide-react';
 
 type BillingCycle = 'monthly' | 'annually';
@@ -18,36 +18,24 @@ interface Invoice {
   plan: string;
 }
 
-/* ─── Fallback demo data (used when backend is unavailable) ─── */
-const DEMO_CURRENT_PLAN = {
-  id: 'growth',
-  name: 'Growth',
-  monthlyPrice: '$999',
-  annualPrice: '$799',
+/* Neutral default shown until the live subscription loads. Zero usage — never
+   fabricated numbers. Real values come from GET /api/billing/subscription. */
+const DEFAULT_CURRENT_PLAN = {
+  id: 'free',
+  name: 'Free POC',
+  monthlyPrice: '$0',
+  annualPrice: '$0',
   billingCycle: 'monthly' as BillingCycle,
-  nextBillingDate: '2026-06-19',
-  creditsTotal: 5000,
-  creditsUsed: 3247,
-  usersTotal: 25,
-  usersActive: 12,
-  reposTotal: -1,
-  reposUsed: 8,
-  retentionDays: 90,
-  startDate: '2026-04-19',
+  nextBillingDate: '',
+  creditsTotal: 50,
+  creditsUsed: 0,
+  usersTotal: 1,
+  usersActive: 1,
+  reposTotal: 1,
+  reposUsed: 0,
+  retentionDays: 7,
+  startDate: '',
 };
-
-const DEMO_INVOICES: Invoice[] = [
-  { id: 'INV-2026-005', date: '2026-05-19', amount: '$999.00', status: 'paid', plan: 'Growth' },
-  { id: 'INV-2026-004', date: '2026-04-19', amount: '$999.00', status: 'paid', plan: 'Growth' },
-  { id: 'INV-2026-003', date: '2026-03-19', amount: '$149.00', status: 'paid', plan: 'Starter' },
-  { id: 'INV-2026-002', date: '2026-02-19', amount: '$149.00', status: 'paid', plan: 'Starter' },
-  { id: 'INV-2026-001', date: '2026-01-19', amount: '$0.00', status: 'paid', plan: 'Free POC' },
-];
-
-const DEMO_PAYMENT_METHODS = [
-  { type: 'card', last4: '4242', brand: 'Visa', expiry: '12/28', isDefault: true },
-  { type: 'card', last4: '8888', brand: 'Mastercard', expiry: '06/27', isDefault: false },
-];
 
 /* Plan display config */
 const PLAN_CONFIG: Record<string, { icon: any; gradient: string; border: string; color: string; popular?: boolean }> = {
@@ -55,6 +43,18 @@ const PLAN_CONFIG: Record<string, { icon: any; gradient: string; border: string;
   starter: { icon: Rocket, gradient: 'from-blue-500/10', border: 'border-blue-500/20', color: 'blue' },
   growth: { icon: Crown, gradient: 'from-emerald-500/10', border: 'border-emerald-500/30', color: 'emerald', popular: true },
   enterprise: { icon: Building2, gradient: 'from-amber-500/10', border: 'border-amber-500/20', color: 'amber' },
+};
+
+/* Operation → display label/icon/color. Keys match backend CREDIT_COSTS operation names. */
+const OP_META: Record<string, { label: string; icon: any; color: string }> = {
+  ai_reasoning: { label: 'AI-powered healing', icon: Sparkles, color: 'amber' },
+  database_pattern: { label: 'Pattern healing', icon: Shield, color: 'slate' },
+  rule_based: { label: 'Rule healing', icon: Shield, color: 'slate' },
+  script_generation: { label: 'Script generation', icon: Zap, color: 'blue' },
+  coverage_generation: { label: 'Coverage generation', icon: Shield, color: 'purple' },
+  rca_analysis: { label: 'RCA analysis', icon: AlertTriangle, color: 'red' },
+  release_signoff: { label: 'Release signoff', icon: BadgeCheck, color: 'emerald' },
+  pr_automation: { label: 'PR automation', icon: Globe, color: 'cyan' },
 };
 
 async function fetchBillingData(endpoint: string) {
@@ -74,20 +74,18 @@ export default function BillingClient() {
   const [isLive, setIsLive] = useState(false);
 
   // Live data state
-  const [currentPlan, setCurrentPlan] = useState(DEMO_CURRENT_PLAN);
+  const [currentPlan, setCurrentPlan] = useState(DEFAULT_CURRENT_PLAN);
   const [plans, setPlans] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>(DEMO_INVOICES);
-  const [paymentMethods, setPaymentMethods] = useState(DEMO_PAYMENT_METHODS);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [usageBreakdown, setUsageBreakdown] = useState<any[]>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [subData, plansData, invoicesData, pmData, breakdownData] = await Promise.all([
+      const [subData, plansData, invoicesData, breakdownData] = await Promise.all([
         fetchBillingData('subscription'),
         fetchBillingData('plans'),
         fetchBillingData('invoices'),
-        fetchBillingData('payment-methods'),
         fetchBillingData('usage/breakdown'),
       ]);
 
@@ -100,7 +98,7 @@ export default function BillingClient() {
           monthlyPrice: `$${sub.price_usd_monthly || 0}`,
           annualPrice: `$${Math.round((sub.price_usd_annually || 0) / 12)}`,
           billingCycle: sub.billing_cycle || 'monthly',
-          nextBillingDate: sub.current_period_end ? new Date(sub.current_period_end).toISOString().split('T')[0] : DEMO_CURRENT_PLAN.nextBillingDate,
+          nextBillingDate: sub.current_period_end ? new Date(sub.current_period_end).toISOString().split('T')[0] : DEFAULT_CURRENT_PLAN.nextBillingDate,
           creditsTotal: usage.creditsAllowed || sub.credits_monthly || 50,
           creditsUsed: usage.creditsUsed || 0,
           usersTotal: sub.max_users === -1 ? -1 : (sub.max_users || 1),
@@ -108,7 +106,7 @@ export default function BillingClient() {
           reposTotal: sub.max_repos === -1 ? -1 : (sub.max_repos || 1),
           reposUsed: 0,
           retentionDays: sub.retention_days || 7,
-          startDate: sub.current_period_start ? new Date(sub.current_period_start).toISOString().split('T')[0] : DEMO_CURRENT_PLAN.startDate,
+          startDate: sub.current_period_start ? new Date(sub.current_period_start).toISOString().split('T')[0] : DEFAULT_CURRENT_PLAN.startDate,
         });
         setIsLive(true);
       }
@@ -124,16 +122,6 @@ export default function BillingClient() {
           amount: `$${parseFloat(inv.amount || 0).toFixed(2)}`,
           status: inv.status === 'completed' ? 'paid' : inv.status,
           plan: inv.plan_name || 'Unknown',
-        })));
-      }
-
-      if (pmData && Array.isArray(pmData) && pmData.length > 0) {
-        setPaymentMethods(pmData.map((pm: any) => ({
-          type: pm.type || 'card',
-          last4: pm.last_four || '****',
-          brand: pm.brand || 'Card',
-          expiry: pm.exp_month && pm.exp_year ? `${String(pm.exp_month).padStart(2, '0')}/${String(pm.exp_year).slice(-2)}` : 'N/A',
-          isDefault: pm.is_default,
         })));
       }
 
@@ -395,49 +383,56 @@ export default function BillingClient() {
             </div>
           )}
 
-          {/* Credit Usage Breakdown */}
+          {/* Credit Usage Breakdown — real metered data only (no fabricated numbers) */}
           <div className="rounded-2xl bg-[#1e293b]/60 border border-slate-700/50 p-6">
             <h3 className="text-lg font-bold text-white mb-4">This Month&apos;s Credit Usage</h3>
-            <div className="space-y-3">
-              {[
-                { operation: 'AI-powered healing', credits: 1850, count: 370, icon: Sparkles, color: 'amber' },
-                { operation: 'Script generation', credits: 640, count: 64, icon: Zap, color: 'blue' },
-                { operation: 'Coverage generation', credits: 400, count: 50, icon: Shield, color: 'purple' },
-                { operation: 'RCA analysis', credits: 207, count: 69, icon: AlertTriangle, color: 'red' },
-                { operation: 'Release signoff', credits: 100, count: 20, icon: BadgeCheck, color: 'emerald' },
-                { operation: 'PR automation', credits: 50, count: 17, icon: Globe, color: 'cyan' },
-                { operation: 'Pattern healing', credits: 0, count: 843, icon: Shield, color: 'slate', free: true },
-                { operation: 'Rule healing', credits: 0, count: 2104, icon: Shield, color: 'slate', free: true },
-              ].map((item, i) => {
-                const pct = currentPlan.creditsTotal > 0 ? (item.credits / currentPlan.creditsTotal) * 100 : 0;
-                return (
-                  <div key={i} className="flex items-center gap-4">
-                    <div className="w-40 flex items-center gap-2 shrink-0">
-                      <item.icon size={14} className={`text-${item.color}-400`} />
-                      <span className="text-xs text-slate-300 truncate">{item.operation}</span>
-                    </div>
-                    <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${item.free ? 'bg-slate-600' : `bg-${item.color}-500`}`}
-                        style={{ width: `${Math.max(pct, item.free ? 0 : 0.5)}%` }}
-                      />
-                    </div>
-                    <div className="w-24 text-right shrink-0">
-                      {item.free ? (
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">FREE</span>
-                      ) : (
-                        <span className="text-xs font-semibold text-white">{item.credits.toLocaleString()} cr</span>
-                      )}
-                    </div>
-                    <span className="w-16 text-right text-[10px] text-slate-500 shrink-0">{item.count.toLocaleString()} ops</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-700/50 flex items-center justify-between">
-              <span className="text-sm text-slate-400">Total operations this month</span>
-              <span className="text-sm font-bold text-white">3,537 operations · 3,247 credits</span>
-            </div>
+            {usageBreakdown.length === 0 ? (
+              <div className="py-8 flex flex-col items-center justify-center text-center">
+                <Gauge size={28} className="text-slate-600 mb-3" />
+                <p className="text-sm font-medium text-slate-300">No usage yet</p>
+                <p className="text-xs text-slate-500 mt-1">Credit usage will appear here once your team runs AI operations.</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {usageBreakdown.map((row, i) => {
+                    const meta = OP_META[row.operation] || { label: row.operation, icon: Sparkles, color: 'slate' };
+                    const credits = Number(row.credits) || 0;
+                    const count = Number(row.count) || 0;
+                    const isFree = credits === 0;
+                    const pct = currentPlan.creditsTotal > 0 ? (credits / currentPlan.creditsTotal) * 100 : 0;
+                    return (
+                      <div key={i} className="flex items-center gap-4">
+                        <div className="w-40 flex items-center gap-2 shrink-0">
+                          <meta.icon size={14} className={`text-${meta.color}-400`} />
+                          <span className="text-xs text-slate-300 truncate">{meta.label}</span>
+                        </div>
+                        <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${isFree ? 'bg-slate-600' : `bg-${meta.color}-500`}`}
+                            style={{ width: `${Math.max(pct, isFree ? 0 : 0.5)}%` }}
+                          />
+                        </div>
+                        <div className="w-24 text-right shrink-0">
+                          {isFree ? (
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">FREE</span>
+                          ) : (
+                            <span className="text-xs font-semibold text-white">{credits.toLocaleString()} cr</span>
+                          )}
+                        </div>
+                        <span className="w-16 text-right text-[10px] text-slate-500 shrink-0">{count.toLocaleString()} ops</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 pt-4 border-t border-slate-700/50 flex items-center justify-between">
+                  <span className="text-sm text-slate-400">Total operations this month</span>
+                  <span className="text-sm font-bold text-white">
+                    {usageBreakdown.reduce((s, r) => s + (Number(r.count) || 0), 0).toLocaleString()} operations · {usageBreakdown.reduce((s, r) => s + (Number(r.credits) || 0), 0).toLocaleString()} credits
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Invoice History */}
@@ -453,7 +448,14 @@ export default function BillingClient() {
               {showInvoices ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
             </button>
 
-            {showInvoices && (
+            {showInvoices && invoices.length === 0 && (
+              <div className="mt-4 py-6 flex flex-col items-center justify-center text-center">
+                <Receipt size={24} className="text-slate-600 mb-2" />
+                <p className="text-sm font-medium text-slate-300">No invoices yet</p>
+                <p className="text-xs text-slate-500 mt-1">Invoices appear here after your first billing event.</p>
+              </div>
+            )}
+            {showInvoices && invoices.length > 0 && (
               <div className="mt-4 space-y-2">
                 {invoices.map((inv) => (
                   <div key={inv.id} className="flex items-center justify-between p-3 rounded-xl bg-[#0f172a]/60 border border-slate-700/40">
@@ -484,88 +486,11 @@ export default function BillingClient() {
           </div>
         </div>
 
-        {/* ─── Right column: Payment Methods + Quick Stats ─── */}
+        {/* ─── Right column ─── */}
+        {/* Payment methods, saved cards, payment-gateway badges, GST/tax and the
+            MRR summary were intentionally removed: billing is handled manually
+            (no gateway yet) and we do not display fabricated numbers. */}
         <div className="space-y-6">
-          {/* Payment Methods */}
-          <div className="rounded-2xl bg-[#1e293b]/60 border border-slate-700/50 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Payment Methods</h3>
-              <button className="text-xs text-emerald-400 hover:text-emerald-300 font-medium">+ Add</button>
-            </div>
-            <div className="space-y-3">
-              {paymentMethods.map((pm, i) => (
-                <div key={i} className={`rounded-xl p-4 border transition-colors ${
-                  pm.isDefault ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-[#0f172a]/60 border-slate-700/40'
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-7 rounded bg-slate-800 flex items-center justify-center text-[10px] font-bold text-white">
-                        {pm.brand === 'Visa' ? 'VISA' : 'MC'}
-                      </div>
-                      <div>
-                        <span className="text-sm text-white font-medium">···· {pm.last4}</span>
-                        <p className="text-[10px] text-slate-500">Expires {pm.expiry}</p>
-                      </div>
-                    </div>
-                    {pm.isDefault && (
-                      <span className="text-[9px] font-bold uppercase text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">Default</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Payment gateway badges */}
-            <div className="mt-4 pt-4 border-t border-slate-700/50">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Supported Gateways</p>
-              <div className="flex items-center gap-2">
-                <div className="px-3 py-1.5 rounded-lg bg-[#0f172a]/60 border border-slate-700/40 text-[10px] font-bold text-blue-400">Stripe</div>
-                <div className="px-3 py-1.5 rounded-lg bg-[#0f172a]/60 border border-slate-700/40 text-[10px] font-bold text-blue-400">Razorpay</div>
-                <div className="px-3 py-1.5 rounded-lg bg-[#0f172a]/60 border border-slate-700/40 text-[10px] font-bold text-slate-500">UPI</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Billing Summary */}
-          <div className="rounded-2xl bg-[#1e293b]/60 border border-slate-700/50 p-6">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Billing Summary</h3>
-            <div className="space-y-3">
-              {[
-                { label: 'Current MRR', value: '$999', color: 'emerald' },
-                { label: 'Total Paid', value: '$2,296', color: 'blue' },
-                { label: 'Credits Avg/Day', value: '108', color: 'amber' },
-                { label: 'Cost Per Operation', value: '$0.28', color: 'purple' },
-                { label: 'AI Savings Rate', value: '94%', color: 'emerald' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-slate-800/50 last:border-0">
-                  <span className="text-xs text-slate-400">{item.label}</span>
-                  <span className={`text-sm font-bold text-${item.color}-400`}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* GST / Tax Info */}
-          <div className="rounded-2xl bg-[#1e293b]/60 border border-slate-700/50 p-6">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Tax & Compliance</h3>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">GST Number</span>
-                <span className="text-xs text-slate-300 font-mono">29AADCL0123A1ZP</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">Billing Country</span>
-                <span className="text-xs text-slate-300">India</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">Tax Rate</span>
-                <span className="text-xs text-slate-300">18% GST</span>
-              </div>
-            </div>
-            <button className="mt-3 text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
-              <ExternalLink size={11} /> Update billing details
-            </button>
-          </div>
 
           {/* Enterprise CTA */}
           <div className="rounded-2xl bg-gradient-to-b from-amber-500/5 to-transparent border border-amber-500/20 p-5">
