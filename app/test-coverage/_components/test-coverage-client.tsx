@@ -503,7 +503,10 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState<number[]>([]);
   const [useRepoIntelligence, setUseRepoIntelligence] = useState(false);
   const [selectedRepoId, setSelectedRepoId] = useState('');
-  const [includeCoverageGaps, setIncludeCoverageGaps] = useState(true);
+  // Sprint 5.2 — Deep Coverage. OFF (default) = Standard Coverage (happy path +
+  // required negative + core validation). ON = generate MORE real committed
+  // test cases (negative, boundary, edge, authorization, business rules, …).
+  const [deepCoverage, setDeepCoverage] = useState(false);
 
   // App Profile — the highest-priority intelligence source (real crawled DOM data).
   // On by default; '' selectedProfileId means "auto-pick the latest crawl".
@@ -813,7 +816,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
           knowledgeItemIds: selectedKnowledgeIds.length > 0 ? selectedKnowledgeIds : undefined,
           useRepoIntelligence: useRepoIntelligence && selectedRepoId ? true : undefined,
           repoId: useRepoIntelligence && selectedRepoId ? parseInt(selectedRepoId, 10) : undefined,
-          includeCoverageGaps,
+          deepCoverage,
           // App Profile grounding: only send useAppProfile:false when explicitly off
           // (keeps backend default behaviour). Pin a specific crawl when one is chosen.
           useAppProfile: useAppProfile ? undefined : false,
@@ -906,7 +909,7 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     (useAppProfile && appProfiles.length > 0 ? 1 : 0) +
     (selectedKnowledgeIds.length > 0 ? 1 : 0) +
     (useRepoIntelligence && selectedRepoId ? 1 : 0) +
-    (includeCoverageGaps ? 1 : 0);
+    (deepCoverage ? 1 : 0);
 
   // Status label for the App Profile card header.
   const appProfileStatus = (() => {
@@ -1080,20 +1083,20 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
       ),
     },
     {
-      id: 'coverage-gaps',
+      id: 'deep-coverage',
       render: () => (
         <IntelligenceSourceCard
           accent="amber"
           icon={Shield}
-          title="Coverage Gap Analysis"
-          badge={includeCoverageGaps ? 'Gap Analysis' : 'Standard'}
+          title="Deep Coverage"
+          badge={deepCoverage ? 'Deep Coverage' : 'Standard Coverage'}
           description={
-            includeCoverageGaps
-              ? 'ON = Gap Analysis. Everything in Standard, PLUS assumption-based "Suggested Additional Coverage" and "Potential Missing Requirements" for scenarios your requirement and context don\'t state.'
-              : 'OFF = Standard mode (default). Generates committed test cases grounded in your requirement AND App Knowledge, App Profile and Test Data. No assumptions.'
+            deepCoverage
+              ? 'ON = Deep Coverage. Generates MORE real committed test cases — negative, boundary, edge, authorization, business-rule, integration and security checks — beyond the happy path. Domain best-practice cases are clearly tagged so you always know what came from your requirement vs. QA best practice.'
+              : 'OFF = Standard Coverage (default). Happy path + required negative + core validation, all grounded in your requirement, App Knowledge, App Profile and Test Data. Turn ON to generate deeper coverage.'
           }
-          enabled={includeCoverageGaps}
-          onToggle={() => setIncludeCoverageGaps(v => !v)}
+          enabled={deepCoverage}
+          onToggle={() => setDeepCoverage(v => !v)}
         />
       ),
     },
@@ -1588,9 +1591,9 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
                 <Cpu className="w-3 h-3" /> Repo intelligence
               </span>
             )}
-            {includeCoverageGaps && (
+            {deepCoverage && (
               <span className="flex items-center gap-1 text-amber-400">
-                <Shield className="w-3 h-3" /> Gap analysis
+                <Shield className="w-3 h-3" /> Deep Coverage
               </span>
             )}
           </div>
@@ -1636,6 +1639,9 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const suggestedTestCases = result.suggestedTestCases || [];
   const missingRequirements = result.missingRequirements || [];
   const stats = result.stats || {};
+  // Sprint 5.1 — Requirement Coverage KPI. The headline trust metric: every
+  // explicit requirement step (X/Y, guaranteed 100%) with a per-step checklist.
+  const requirementCoverage = result.requirementCoverage || null;
   const isSaved = result.requirementId != null;
   const warning = result._warning;
   const knowledgeUsed = result.knowledgeUsed || [];
@@ -1731,7 +1737,7 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
                     ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
                     : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                 }`}>
-                  {mode === 'expanded' ? 'Gap Analysis' : 'Standard Coverage'}
+                  {mode === 'expanded' ? 'Deep Coverage' : 'Standard Coverage'}
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -1811,6 +1817,52 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           </div>
         </div>
       </div>
+
+      {/* Sprint 5.1 — Requirement Coverage KPI: the headline trust metric.
+          Proves NO requirement step was left without a test case (X/Y, 100%). */}
+      {requirementCoverage && requirementCoverage.total > 0 && (
+        <div className="bg-slate-800/50 rounded-xl border border-emerald-500/30 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              Requirement Coverage
+              <span className="text-xs font-normal text-slate-500">— every requirement step has at least one test case</span>
+            </h3>
+            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${
+              requirementCoverage.percent >= 100
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+            }`}>
+              {requirementCoverage.covered}/{requirementCoverage.total} ({requirementCoverage.percent}%)
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div className="w-full h-2 bg-slate-900/60 rounded-full overflow-hidden mb-3">
+            <div
+              className={`h-full rounded-full transition-all ${requirementCoverage.percent >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+              style={{ width: `${Math.min(requirementCoverage.percent, 100)}%` }}
+            />
+          </div>
+          {/* Per-step checklist */}
+          <ul className="space-y-1.5">
+            {requirementCoverage.steps.map((step: any, i: number) => (
+              <li key={step.id || i} className="flex items-start gap-2 text-xs">
+                {step.covered ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                )}
+                <span className="text-slate-300">
+                  <span className="text-slate-500">Step {i + 1}:</span> {step.text}
+                  {step.scenarioIds?.length > 0 && (
+                    <span className="text-slate-500"> — {step.scenarioIds.length} test case{step.scenarioIds.length !== 1 ? 's' : ''}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Phase 5: Intelligence Score — signature transparency metric */}
       {intelligenceScore && (
@@ -2675,7 +2727,7 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
                 ? 'bg-sky-500/20 text-sky-300 border-sky-500/30'
                 : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
             }`}>
-              {histMode === 'expanded' ? 'Gap Analysis' : 'Standard Coverage'}
+              {histMode === 'expanded' ? 'Deep Coverage' : 'Standard Coverage'}
             </span>
           </h3>
           <p className="text-xs text-slate-400">{req.jira_id && `${req.jira_id} • `}{req.module && `${req.module} • `}{new Date(req.created_at).toLocaleString()}</p>
