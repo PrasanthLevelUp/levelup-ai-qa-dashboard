@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
           error: 'Generation timed out',
           details:
             'The backend took too long to generate test cases. Try fewer coverage types, ' +
-            'turn off Coverage Gap Analysis, or split the requirement into smaller parts.',
+            'turn off Deep Coverage, or split the requirement into smaller parts.',
         },
         { status: 504 },
       );
