@@ -107,6 +107,10 @@ export default function RequirementsClient() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedRequirement, setSelectedRequirement] = useState<Requirement | null>(null);
 
+  // Keys just imported from Jira — surfaced as a "Recently Imported" banner so
+  // the user gets immediate feedback on what landed.
+  const [recentlyImported, setRecentlyImported] = useState<{ key: string; title: string }[]>([]);
+
   const fetchRequirements = useCallback(async () => {
     try {
       setLoading(true);
@@ -336,6 +340,43 @@ export default function RequirementsClient() {
             <div className="text-3xl font-bold text-orange-400">{summary.not_covered || 0}</div>
           </Card>
         </div>
+      )}
+
+      {/* Recently Imported — immediate feedback after a Jira import */}
+      {recentlyImported.length > 0 && (
+        <Card className="p-4 bg-green-500/5 border-green-500/30">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="h-4 w-4 text-green-400 shrink-0" />
+                <span className="text-sm font-semibold text-green-300">
+                  Recently Imported ({recentlyImported.length})
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {recentlyImported.map((r) => (
+                  <Badge
+                    key={r.key}
+                    variant="outline"
+                    className="text-green-200 border-green-500/40 bg-green-500/10 max-w-xs truncate"
+                    title={`${r.key} ${r.title}`}
+                  >
+                    {r.key}
+                    {r.title ? <span className="text-green-300/70"> · {r.title}</span> : null}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRecentlyImported([])}
+              className="text-slate-400 hover:text-slate-200 shrink-0"
+              aria-label="Dismiss"
+            >
+              <XCircle className="h-4 w-4" />
+            </button>
+          </div>
+        </Card>
       )}
 
       {/* Filters */}
@@ -642,8 +683,9 @@ export default function RequirementsClient() {
 
       <JiraImportDialog
         open={importDialogOpen}
-        onClose={(refresh: boolean) => {
+        onClose={(refresh: boolean, imported) => {
           setImportDialogOpen(false);
+          if (imported && imported.length) setRecentlyImported(imported);
           if (refresh) {
             fetchRequirements();
             fetchSummary();

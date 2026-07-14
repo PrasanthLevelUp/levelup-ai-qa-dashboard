@@ -21,13 +21,22 @@ interface JiraIssueType {
   subtask?: boolean;
 }
 
+/** A requirement we just imported/updated, surfaced back to the page so it can
+ *  show a "Recently Imported" highlight. */
+export interface ImportedRequirement {
+  key: string;
+  title: string;
+}
+
 interface JiraImportDialogProps {
   open: boolean;
-  onClose: (refresh: boolean) => void;
+  onClose: (refresh: boolean, imported?: ImportedRequirement[]) => void;
   /** Full workspace headers (project + environment + sprint) so imported
    *  requirements are stamped with the active project/env/sprint. */
   workspaceHeaders: Record<string, string>;
 }
+
+type ImportMode = 'all' | 'byKey';
 
 export default function JiraImportDialog({ open, onClose, workspaceHeaders }: JiraImportDialogProps) {
   // Connection / load state
@@ -39,10 +48,16 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
   const [projects, setProjects] = useState<JiraProject[]>([]);
   const [issueTypes, setIssueTypes] = useState<JiraIssueType[]>([]);
 
+  // Mode — import a whole project/type set, or a specific list of keys.
+  const [mode, setMode] = useState<ImportMode>('all');
+
   // Selections
   const [selectedProject, setSelectedProject] = useState('');
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+
+  // Import-by-key input (comma / newline separated, or pasted Jira URLs).
+  const [issueKeysInput, setIssueKeysInput] = useState('');
 
   // Import
   const [importing, setImporting] = useState(false);
@@ -52,6 +67,8 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
     setIssueTypes([]);
     setSelectedProject('');
     setSelectedTypes([]);
+    setMode('all');
+    setIssueKeysInput('');
     setNotConnected(false);
     setLoadError(null);
     setImporting(false);
@@ -139,7 +156,17 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
     );
   };
 
-  const handleImport = async () => {
+  /** Pull { key, title } out of the requirement rows the backend returns so the
+   *  page can highlight what just landed. Handles a few field-name shapes. */
+  const toImportedList = (rows: any[]): ImportedRequirement[] =>
+    (Array.isArray(rows) ? rows : [])
+      .map((r) => ({
+        key: r?.metadata?.jira?.key || r?.sourceId || r?.source_id || '',
+        title: r?.title || '',
+      }))
+      .filter((r) => r.key);
+
+  const handleImportAll = async () => {
     if (!selectedProject) {
       toast.error('Select a Jira project');
       return;
@@ -148,8 +175,8 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
       toast.error('Select at least one issue type');
       return;
     }
+    setImporting(true);
     try {
-      setImporting(true);
       const res = await fetch('/api/requirements/jira/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
@@ -159,19 +186,67 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
       if (!res.ok || data?.success === false) {
         throw new Error(data?.error || 'Import failed');
       }
-      const imported = data.imported ?? data.data?.imported ?? 0;
-      const updated = data.updated ?? data.data?.updated ?? 0;
-      const skipped = data.skipped ?? data.data?.skipped ?? 0;
+      const d = data.data ?? data;
+      const imported = d.imported ?? 0;
+      const updated = d.updated ?? 0;
+      const skipped = d.skipped ?? 0;
       toast.success(
         `Imported ${imported}, updated ${updated}${skipped ? `, skipped ${skipped}` : ''}`
       );
-      onClose(true);
+      onClose(true, toImportedList(d.requirements));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to import from Jira');
     } finally {
       setImporting(false);
     }
   };
+
+  const handleImportByKeys = async () => {
+    if (!issueKeysInput.trim()) {
+      toast.error('Enter at least one Jira issue key');
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await fetch('/api/requirements/jira/import-by-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
+        body: JSON.stringify({ issueKeys: issueKeysInput }),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.success === false) {
+        // Surface the validation detail (invalid keys) when the backend rejects.
+        const invalid: string[] = data?.data?.invalid || [];
+        throw new Error(
+          data?.error ||
+            (invalid.length ? `No valid issue keys. Invalid: ${invalid.join(', ')}` : 'Import failed')
+        );
+      }
+      const d = data.data ?? data;
+      const imported = d.imported ?? 0;
+      const updated = d.updated ?? 0;
+      const notFound: string[] = d.notFound ?? [];
+      const invalid: string[] = d.invalid ?? [];
+      const failed = notFound.length + invalid.length;
+
+      const parts = [`Imported ${imported}`, `updated ${updated}`];
+      if (failed) parts.push(`failed ${failed}`);
+      const msg = parts.join(', ');
+      if (failed) {
+        const detail = [...notFound, ...invalid].join(', ');
+        toast.warning(`${msg} — not found/invalid: ${detail}`);
+      } else {
+        toast.success(msg);
+      }
+      onClose(true, toImportedList(d.requirements));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to import from Jira');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleImport = () => (mode === 'byKey' ? handleImportByKeys() : handleImportAll());
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose(false)}>
@@ -221,6 +296,60 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
           </div>
         ) : (
           <div className="space-y-5 py-1">
+            {/* Mode toggle — Import All vs Import by Issue Key */}
+            <div className="flex gap-2">
+              {([
+                { id: 'all', label: 'Import All' },
+                { id: 'byKey', label: 'Import by Issue Key' },
+              ] as { id: ImportMode; label: string }[]).map((opt) => {
+                const active = mode === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setMode(opt.id)}
+                    disabled={importing}
+                    className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                      active
+                        ? 'border-violet-500 bg-violet-500/10 text-violet-200'
+                        : 'border-slate-700 bg-[#0f172a] text-slate-300 hover:border-slate-600'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                        active ? 'border-violet-400' : 'border-slate-600'
+                      }`}
+                    >
+                      {active && <span className="h-2 w-2 rounded-full bg-violet-400" />}
+                    </span>
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ── Import by Issue Key ── */}
+            {mode === 'byKey' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="jira-issue-keys">Jira Issue Keys</Label>
+                <textarea
+                  id="jira-issue-keys"
+                  value={issueKeysInput}
+                  onChange={(e) => setIssueKeysInput(e.target.value)}
+                  rows={4}
+                  placeholder={'AUTH-123, AUTH-124\nPAY-88\nhttps://company.atlassian.net/browse/AUTH-125'}
+                  className="w-full px-3 py-2 bg-[#0f172a] border border-slate-700 rounded-lg text-sm text-slate-200 placeholder:text-slate-500 font-mono resize-y"
+                />
+                <p className="text-xs text-slate-500">
+                  Separate with commas or new lines. Pasted Jira URLs work too — we&apos;ll pull the
+                  key out. Keys are validated before we call Jira (e.g. <code>AUTH-123</code>).
+                </p>
+              </div>
+            )}
+
+            {/* ── Import All (project + issue types) ── */}
+            {mode === 'all' && (
+            <>
             {/* Step 1 — Project */}
             <div className="space-y-1.5">
               <Label>Jira Project</Label>
@@ -295,6 +424,8 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
                 )}
               </div>
             )}
+            </>
+            )}
 
             <p className="text-xs text-slate-500">
               Issues become requirements tagged with their Jira key. Re-importing updates existing
@@ -307,7 +438,12 @@ export default function JiraImportDialog({ open, onClose, workspaceHeaders }: Ji
               </Button>
               <Button
                 onClick={handleImport}
-                disabled={importing || !selectedProject || selectedTypes.length === 0}
+                disabled={
+                  importing ||
+                  (mode === 'all'
+                    ? !selectedProject || selectedTypes.length === 0
+                    : !issueKeysInput.trim())
+                }
               >
                 {importing ? (
                   <>
