@@ -28,3 +28,7 @@ Thumbs.db
 # yarn
 .yarn/
 .yarnrc.yml
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo
+*.tsbuildinfo

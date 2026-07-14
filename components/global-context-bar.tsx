@@ -9,6 +9,8 @@
  *   WHAT   →  Project   ("Which app am I working on?")
  *   WHERE  →  Environment ("QA / Staging / Production")
  *   WHEN   →  Sprint     ("Which time period / sprint?")
+ *   SCOPE  →  Scope      ("What am I looking at?" — one global filter that
+ *                          every dashboard reads, replacing per-page date pickers)
  *
  * A compact set of "quick stats" (healing success rate, risk grade) trails on
  * the right. Renders nothing until a project is selected so it degrades
@@ -19,7 +21,8 @@ import { useProject } from '@/lib/project-context';
 import { useProjectContext } from '@/lib/workspace-context';
 import { EnvironmentSelector } from './environment-selector';
 import { SprintSelector } from './sprint-selector';
-import { Activity, ShieldCheck, FolderKanban, MapPin, CalendarClock } from 'lucide-react';
+import { ScopeSelector } from './scope-selector';
+import { Activity, ShieldCheck, FolderKanban, MapPin, CalendarClock, Telescope } from 'lucide-react';
 
 const RISK_COLORS: Record<string, string> = {
   A: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
@@ -75,6 +78,18 @@ export function GlobalContextBar() {
           <CalendarClock size={12} className="text-slate-500 flex-shrink-0 hidden xl:inline" />
           <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-500 hidden xl:inline">When</span>
           <SprintSelector compact />
+        </section>
+
+        <div className="w-px bg-[#1e293b] mx-1 flex-shrink-0" />
+
+        {/* ── SCOPE: global "what am I looking at?" selector ─ */}
+        <section
+          className="flex items-center gap-1.5 px-1 flex-shrink-0"
+          title="SCOPE: one global filter that every dashboard reads"
+        >
+          <Telescope size={12} className="text-slate-500 flex-shrink-0 hidden xl:inline" />
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-500 hidden xl:inline">Scope</span>
+          <ScopeSelector compact />
         </section>
 
         {/* Spacer */}
