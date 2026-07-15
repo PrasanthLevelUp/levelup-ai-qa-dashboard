@@ -6,9 +6,9 @@
  * A sticky workspace bar shown across all authenticated pages. It answers three
  * simple questions, left → right, each in its own clearly-labelled section:
  *
- *   WHAT   →  Project   ("Which app am I working on?")
- *   WHERE  →  Environment ("QA / Staging / Production")
- *   WHEN   →  Sprint     ("Which time period / sprint?")
+ *   PROJECT →  Project     ("Which app am I working on?")
+ *   WHERE   →  Environment ("QA / Staging / Production")
+ *   WHEN    →  Time        ("Which sprint or rolling window?")
  *
  * A compact set of "quick stats" (healing success rate, risk grade) trails on
  * the right. Renders nothing until a project is selected so it degrades
@@ -18,7 +18,7 @@
 import { useProject } from '@/lib/project-context';
 import { useProjectContext } from '@/lib/workspace-context';
 import { EnvironmentSelector } from './environment-selector';
-import { SprintSelector } from './sprint-selector';
+import { TimeSelector } from './time-selector';
 import { Activity, ShieldCheck, FolderKanban, MapPin, CalendarClock } from 'lucide-react';
 
 const RISK_COLORS: Record<string, string> = {
@@ -67,14 +67,14 @@ export function GlobalContextBar() {
 
         <div className="w-px bg-[#1e293b] mx-1 flex-shrink-0" />
 
-        {/* ── WHEN: Sprint ──────────────────────────────── */}
+        {/* ── WHEN: Time ────────────────────────────────── */}
         <section
           className="flex items-center gap-1.5 px-1 flex-shrink-0"
-          title="WHEN: choose the sprint / time period to scope the data"
+          title="WHEN: choose the sprint or rolling time window to scope the data"
         >
           <CalendarClock size={12} className="text-slate-500 flex-shrink-0 hidden xl:inline" />
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-500 hidden xl:inline">When</span>
-          <SprintSelector compact />
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-slate-500 hidden xl:inline">Time</span>
+          <TimeSelector compact />
         </section>
 
         {/* Spacer */}
