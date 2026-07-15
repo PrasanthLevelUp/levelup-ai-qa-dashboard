@@ -8,9 +8,16 @@ export async function GET(request: Request) {
     const limit = searchParams?.get('limit') ?? '20';
     const projectId = searchParams?.get('projectId') ?? '';
     const status = searchParams?.get('status') ?? '';
-    const pid = projectId ? `&projectId=${projectId}` : '';
-    const st = status ? `&status=${status}` : '';
-    const result = await backendGet(`/api/dashboard/healings/recent?limit=${limit}${pid}${st}`);
+    // Workspace scope: environment (WHERE) + time window (WHEN).
+    const environmentId = searchParams?.get('environmentId') ?? '';
+    const startDate = searchParams?.get('startDate') ?? '';
+    const endDate = searchParams?.get('endDate') ?? '';
+    const pid = projectId ? `&projectId=${encodeURIComponent(projectId)}` : '';
+    const st = status ? `&status=${encodeURIComponent(status)}` : '';
+    const env = environmentId ? `&environmentId=${encodeURIComponent(environmentId)}` : '';
+    const sd = startDate ? `&startDate=${encodeURIComponent(startDate)}` : '';
+    const ed = endDate ? `&endDate=${encodeURIComponent(endDate)}` : '';
+    const result = await backendGet(`/api/dashboard/healings/recent?limit=${limit}${pid}${st}${env}${sd}${ed}`);
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('Recent healings API error:', error);

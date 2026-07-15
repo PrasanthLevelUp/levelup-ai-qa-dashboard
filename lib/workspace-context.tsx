@@ -73,6 +73,89 @@ export interface TimeRange {
   end?: string | null;
 }
 
+/**
+ * Workspace Time (WHEN) — the single time dimension. "Sprint" is just one kind
+ * of time, not a separate hierarchy level. Every mode resolves to a concrete
+ * window (start/end) plus an optional sprintId so the transport adapters can
+ * emit either a sprint id (header-aware routers) or a date range (query-based
+ * slice endpoints) without the page ever knowing which.
+ */
+export type TimeMode = 'current_sprint' | 'last_7_days' | 'last_14_days' | 'last_30_days' | 'custom';
+
+export interface WorkspaceTime {
+  mode: TimeMode;
+  start: string | null; // ISO (inclusive) — null when a sprint has no dates
+  end: string | null;   // ISO (inclusive)
+  sprintId: number | null; // set only in current_sprint mode when a sprint is active
+  label: string;        // human label, e.g. "Sprint 24" / "Last 7 Days"
+}
+
+/**
+ * WorkspaceAdapter — the ONLY place headers / query params are constructed from
+ * Workspace state. Pages call `toHeaders()` or `toQuery()` depending on the
+ * backend contract they already consume; they never hand-build either. Keeping
+ * both here means a future dashboard-API migration removes the query adapter
+ * without touching a single page.
+ */
+export interface WorkspaceAdapter {
+  /**
+   * Header transport (for the ~20 routers behind contextMiddleware). Emits
+   * x-project-id / x-environment-id and EITHER x-sprint-id (sprint mode) OR
+   * x-date-start / x-date-end (date modes). Set includeEnvironment=false for
+   * pages whose data has no environment dimension (e.g. Executions).
+   */
+  toHeaders: (opts?: { includeEnvironment?: boolean }) => Record<string, string>;
+  /**
+   * Query transport (for the query-based dashboard / rca slice endpoints).
+   * Always resolves Time to startDate/endDate (sprint → its date window).
+   */
+  toQuery: (opts?: { includeEnvironment?: boolean }) => Record<string, string>;
+}
+
+const DAYS_BY_MODE: Partial<Record<TimeMode, number>> = {
+  last_7_days: 7,
+  last_14_days: 14,
+  last_30_days: 30,
+};
+
+export const TIME_MODE_LABELS: Record<TimeMode, string> = {
+  current_sprint: 'Current Sprint',
+  last_7_days: 'Last 7 Days',
+  last_14_days: 'Last 14 Days',
+  last_30_days: 'Last 30 Days',
+  custom: 'Custom Range',
+};
+
+/** Resolve a TimeMode (+ active sprint / custom range) into a concrete window. */
+function computeTimeWindow(
+  mode: TimeMode,
+  activeSprint: ProjectSprint | null,
+  custom: { start: string | null; end: string | null },
+): WorkspaceTime {
+  if (mode === 'current_sprint') {
+    return {
+      mode,
+      start: activeSprint?.start_date ?? null,
+      end: activeSprint?.end_date ?? null,
+      sprintId: activeSprint?.id ?? null,
+      label: activeSprint?.name ?? 'Current Sprint',
+    };
+  }
+  if (mode === 'custom') {
+    return { mode, start: custom.start, end: custom.end, sprintId: null, label: 'Custom Range' };
+  }
+  const days = DAYS_BY_MODE[mode] ?? 30;
+  const now = new Date();
+  const start = new Date(now.getTime() - days * 86_400_000);
+  return {
+    mode,
+    start: start.toISOString(),
+    end: now.toISOString(),
+    sprintId: null,
+    label: TIME_MODE_LABELS[mode],
+  };
+}
+
 interface WorkspaceContextType {
   // environments
   environments: ProjectEnvironment[];
@@ -88,13 +171,21 @@ interface WorkspaceContextType {
   sprintProgress: SprintProgress | null;
   sprintsLoading: boolean;
   refreshSprints: () => Promise<void>;
-  // time range
+  // time range (legacy — retained for backward compat; derived from timeMode)
   timeRange: TimeRange;
   setTimeRange: (range: TimeRange) => void;
+  // time (WHEN) — the unified dimension
+  timeMode: TimeMode;
+  setTimeMode: (mode: TimeMode) => void;
+  customRange: { start: string | null; end: string | null };
+  setCustomRange: (range: { start: string | null; end: string | null }) => void;
+  time: WorkspaceTime;
   // quick stats
   quickStats: QuickStats | null;
-  // request headers for downstream fetches
+  // request headers for downstream fetches (legacy: project + env + sprint)
   workspaceHeaders: Record<string, string>;
+  // transport adapter — the single place headers/query are built from state
+  adapter: WorkspaceAdapter;
 }
 
 const noop = () => {};
@@ -102,13 +193,21 @@ const WorkspaceContext = createContext<WorkspaceContextType>({
   environments: [], activeEnvironment: null, setActiveEnvironment: noop, environmentsLoading: false, refreshEnvironments: async () => {},
   sprints: [], currentSprint: null, activeSprint: null, setActiveSprint: noop, sprintProgress: null, sprintsLoading: false, refreshSprints: async () => {},
   timeRange: { value: 'sprint' }, setTimeRange: noop,
+  timeMode: 'current_sprint', setTimeMode: noop, customRange: { start: null, end: null }, setCustomRange: noop,
+  time: { mode: 'current_sprint', start: null, end: null, sprintId: null, label: 'Current Sprint' },
   quickStats: null,
   workspaceHeaders: {},
+  adapter: { toHeaders: () => ({}), toQuery: () => ({}) },
 });
 
 const envKey = (pid: number) => `levelup_env_${pid}`;
 const sprintKey = (pid: number) => `levelup_sprint_${pid}`;
 const rangeKey = (pid: number) => `levelup_timerange_${pid}`;
+const timeModeKey = (pid: number) => `levelup_timemode_${pid}`;
+const customRangeKey = (pid: number) => `levelup_customrange_${pid}`;
+
+/** All valid time modes, for validating persisted values. */
+const TIME_MODES: TimeMode[] = ['current_sprint', 'last_7_days', 'last_14_days', 'last_30_days', 'custom'];
 
 function readLs(key: string): string | null {
   if (typeof window === 'undefined') return null;
@@ -134,6 +233,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [sprintsLoading, setSprintsLoading] = useState(false);
 
   const [timeRange, setTimeRangeState] = useState<TimeRange>({ value: 'sprint' });
+  const [timeMode, setTimeModeState] = useState<TimeMode>('current_sprint');
+  const [customRange, setCustomRangeState] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
   const [quickStats, setQuickStats] = useState<QuickStats | null>(null);
 
   // Avoid syncing to backend before the initial restore completes.
@@ -219,6 +320,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (projectId) {
       const savedRange = readLs(rangeKey(projectId));
       setTimeRangeState(savedRange ? { value: savedRange } : { value: 'sprint' });
+      // Restore unified time mode (WHEN)
+      const savedMode = readLs(timeModeKey(projectId));
+      setTimeModeState(savedMode && (TIME_MODES as string[]).includes(savedMode) ? (savedMode as TimeMode) : 'current_sprint');
+      const savedCustom = readLs(customRangeKey(projectId));
+      if (savedCustom) {
+        try {
+          const parsed = JSON.parse(savedCustom);
+          setCustomRangeState({ start: parsed.start ?? null, end: parsed.end ?? null });
+        } catch { setCustomRangeState({ start: null, end: null }); }
+      } else {
+        setCustomRangeState({ start: null, end: null });
+      }
     }
     refreshEnvironments();
     refreshSprints();
@@ -283,6 +396,40 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [projectId, activeEnvironment, activeSprint, syncContext]);
 
+  /* ── Unified Time (WHEN) — derive concrete window + setters ─────── */
+  const time = useMemo(
+    () => computeTimeWindow(timeMode, activeSprint, customRange),
+    [timeMode, activeSprint, customRange],
+  );
+
+  const setTimeMode = useCallback((mode: TimeMode) => {
+    setTimeModeState(mode);
+    if (projectId) {
+      writeLs(timeModeKey(projectId), mode);
+      // Keep the legacy time_range value roughly in sync for backend persistence.
+      const rangeValue = mode === 'current_sprint' ? 'sprint' : mode;
+      syncContext(
+        activeEnvironment ? activeEnvironment.id : null,
+        activeSprint ? activeSprint.id : null,
+        { value: rangeValue, start: mode === 'custom' ? customRange.start : null, end: mode === 'custom' ? customRange.end : null },
+      );
+    }
+  }, [projectId, activeEnvironment, activeSprint, customRange, syncContext]);
+
+  const setCustomRange = useCallback((range: { start: string | null; end: string | null }) => {
+    setCustomRangeState(range);
+    if (projectId) {
+      writeLs(customRangeKey(projectId), JSON.stringify(range));
+      if (timeMode === 'custom') {
+        syncContext(
+          activeEnvironment ? activeEnvironment.id : null,
+          activeSprint ? activeSprint.id : null,
+          { value: 'custom', start: range.start, end: range.end },
+        );
+      }
+    }
+  }, [projectId, activeEnvironment, activeSprint, timeMode, syncContext]);
+
   const workspaceHeaders = useMemo((): Record<string, string> => {
     const h: Record<string, string> = {};
     if (projectId) h['x-project-id'] = String(projectId);
@@ -291,12 +438,42 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return h;
   }, [projectId, activeEnvironment, activeSprint]);
 
+  /* ── Transport adapter — the ONLY place headers/query are built ──── */
+  const adapter = useMemo((): WorkspaceAdapter => {
+    const toHeaders = (opts?: { includeEnvironment?: boolean }): Record<string, string> => {
+      const includeEnv = opts?.includeEnvironment !== false;
+      const h: Record<string, string> = {};
+      if (projectId) h['x-project-id'] = String(projectId);
+      if (includeEnv && activeEnvironment) h['x-environment-id'] = String(activeEnvironment.id);
+      // Time transport: sprint id when in current-sprint mode with a live sprint,
+      // otherwise the resolved date window.
+      if (time.mode === 'current_sprint' && time.sprintId != null) {
+        h['x-sprint-id'] = String(time.sprintId);
+      }
+      if (time.start) h['x-date-start'] = time.start;
+      if (time.end) h['x-date-end'] = time.end;
+      return h;
+    };
+    const toQuery = (opts?: { includeEnvironment?: boolean }): Record<string, string> => {
+      const includeEnv = opts?.includeEnvironment !== false;
+      const q: Record<string, string> = {};
+      if (projectId) q.projectId = String(projectId);
+      if (includeEnv && activeEnvironment) q.environmentId = String(activeEnvironment.id);
+      if (time.start) q.startDate = time.start;
+      if (time.end) q.endDate = time.end;
+      return q;
+    };
+    return { toHeaders, toQuery };
+  }, [projectId, activeEnvironment, time]);
+
   const value: WorkspaceContextType = {
     environments, activeEnvironment, setActiveEnvironment, environmentsLoading, refreshEnvironments,
     sprints, currentSprint, activeSprint, setActiveSprint, sprintProgress, sprintsLoading, refreshSprints,
     timeRange, setTimeRange,
+    timeMode, setTimeMode, customRange, setCustomRange, time,
     quickStats,
     workspaceHeaders,
+    adapter,
   };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
@@ -339,4 +516,25 @@ export function useProjectContext() {
 /** Headers (project + environment + sprint) for client-side fetches. */
 export function useWorkspaceHeaders(): Record<string, string> {
   return useContext(WorkspaceContext).workspaceHeaders;
+}
+
+/** The unified Time (WHEN) dimension + its mode setters. */
+export function useWorkspaceTime() {
+  const c = useContext(WorkspaceContext);
+  return {
+    time: c.time,
+    timeMode: c.timeMode,
+    setTimeMode: c.setTimeMode,
+    customRange: c.customRange,
+    setCustomRange: c.setCustomRange,
+  };
+}
+
+/**
+ * The transport adapter — the single sanctioned way for a page to turn Workspace
+ * state into request headers or query params. Pages MUST use this instead of
+ * hand-building x-* headers or ?projectId=… strings.
+ */
+export function useWorkspaceAdapter(): WorkspaceAdapter {
+  return useContext(WorkspaceContext).adapter;
 }

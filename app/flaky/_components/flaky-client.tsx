@@ -24,6 +24,7 @@ import {
   ResponsiveContainer, CartesianGrid,
   BarChart, Bar, Cell,
 } from 'recharts';
+import { useWorkspaceAdapter, useWorkspaceTime, useProjectEnvironments } from '@/lib/workspace-context';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -119,6 +120,10 @@ function timeAgo(dateStr: string): string {
 /* ------------------------------------------------------------------ */
 
 export function FlakyClient() {
+  const adapter = useWorkspaceAdapter();
+  const { time } = useWorkspaceTime();
+  const { activeEnvironment } = useProjectEnvironments();
+
   const [tests, setTests] = useState<FlakyTest[]>([]);
   const [summary, setSummary] = useState<FlakySummary>({ totalFlaky: 0, totalAnalyses: 0, flakyRate: 0 });
   const [trend, setTrend] = useState<TrendPoint[]>([]);
@@ -130,9 +135,13 @@ export function FlakyClient() {
 
   const fetchData = useCallback(async () => {
     try {
+      // Scope both requests to the active project + environment + time window.
+      const scope = adapter.toQuery();
+      const flakyQs = new URLSearchParams(scope).toString();
+      const trendQs = new URLSearchParams({ days: '30', ...scope }).toString();
       const [flakyRes, trendRes] = await Promise.all([
-        fetch('/api/flaky'),
-        fetch('/api/flaky/trend?days=30'),
+        fetch(`/api/flaky${flakyQs ? `?${flakyQs}` : ''}`),
+        fetch(`/api/flaky/trend?${trendQs}`),
       ]);
       const flakyData = await flakyRes.json();
       const trendData = await trendRes.json();
@@ -147,9 +156,10 @@ export function FlakyClient() {
     } catch (err) {
       console.error('Failed to fetch flaky data:', err);
     }
-  }, []);
+  }, [adapter]);
 
   useEffect(() => {
+    setLoading(true);
     fetchData().finally(() => setLoading(false));
   }, [fetchData]);
 
@@ -218,6 +228,16 @@ export function FlakyClient() {
           <p className="text-sm text-slate-400 mt-1">
             Identify unreliable tests, understand root causes, and track resolution progress.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-violet-500/10 text-violet-300 border border-violet-500/20">
+              <Clock size={11} /> Time: {time.label}
+            </span>
+            {activeEnvironment && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                <Shield size={11} /> Env: {activeEnvironment.name}
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={() => { setLoading(true); fetchData().finally(() => setLoading(false)); }}

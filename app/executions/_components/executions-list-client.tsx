@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, XCircle, Clock, MinusCircle, ChevronRight, ScrollText } from 'lucide-react';
-import { useProject } from '@/lib/project-context';
+import { CheckCircle2, XCircle, Clock, MinusCircle, ChevronRight, ScrollText, Info } from 'lucide-react';
+import { useWorkspaceAdapter, useWorkspaceTime } from '@/lib/workspace-context';
 import { ExecutionSummary } from '@/components/execution-summary';
 
 interface ExecutionRow {
@@ -33,19 +33,29 @@ function fmtDuration(ms: number): string {
 }
 
 export function ExecutionsListClient() {
-  const { activeProject } = useProject();
+  const adapter = useWorkspaceAdapter();
+  const { time } = useWorkspaceTime();
   const [rows, setRows] = useState<ExecutionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Execution records carry no environment dimension (they predate per-environment
+  // scoping and are never re-written), so we explicitly opt OUT of the environment
+  // filter — rather than silently dropping it — and surface that below.
+  const queryString = useMemo(() => {
+    const q = adapter.toQuery({ includeEnvironment: false });
+    return new URLSearchParams({ limit: '100', ...q }).toString();
+  }, [adapter]);
+
   useEffect(() => {
-    const pid = activeProject?.id ? `&projectId=${activeProject.id}` : '';
-    fetch(`/api/executions?limit=100${pid}`)
+    setLoading(true);
+    setError(null);
+    fetch(`/api/executions?${queryString}`)
       .then((r: any) => r.json())
       .then((d: any) => setRows(Array.isArray(d?.executions) ? d.executions : []))
       .catch((e: any) => setError(e?.message ?? 'Failed to load'))
       .finally(() => setLoading(false));
-  }, [activeProject?.id]);
+  }, [queryString]);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -56,6 +66,18 @@ export function ExecutionsListClient() {
         <p className="text-sm text-slate-400 mt-1">
           Every test execution as a single canonical record — diagnosis, healing, validation and learning in one place.
         </p>
+        {/* Scope transparency: what this list IS and ISN'T filtered by. */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-violet-500/10 text-violet-300 border border-violet-500/20">
+            <Clock size={11} /> Time: {time.label}
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-slate-500/10 text-slate-400 border border-slate-500/20"
+            title="Execution records are not tagged with an environment, so the Environment selector does not filter this view. Use Healings or Flaky Tests for environment-scoped data."
+          >
+            <Info size={11} /> Environment filter not applicable
+          </span>
+        </div>
       </div>
 
       {loading ? (
