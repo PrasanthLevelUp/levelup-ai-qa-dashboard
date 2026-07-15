@@ -14,7 +14,6 @@ import {
   CheckCircle,
   Clock,
   XCircle,
-  FolderOpen,
   RefreshCw,
   FlaskConical,
   ChevronDown,
@@ -22,6 +21,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  GitBranch,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
@@ -78,6 +78,27 @@ interface CoverageSummary {
   in_progress: number;
   not_tested: number;
   avg_coverage: number;
+  // Requirements Hub header stats (added backend-side to stay accurate under filters)
+  manual_count: number;
+  imported_count: number;
+  last_synced_at: string | null;
+}
+
+/** Compact "5 min ago" / "2 h ago" formatter for the Last Sync stat. */
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return 'Never';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'Never';
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return 'just now';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 export default function RequirementsClient() {
@@ -202,6 +223,13 @@ export default function RequirementsClient() {
     return 'bg-green-500';
   };
 
+  const getCoverageTextColor = (percentage: number) => {
+    if (percentage === 0) return 'text-slate-400';
+    if (percentage <= 33) return 'text-yellow-400';
+    if (percentage <= 66) return 'text-blue-400';
+    return 'text-green-400';
+  };
+
   const getStatusBadge = (status: string) => {
     const configs: Record<string, { color: string; icon: any }> = {
       Passed: { color: 'bg-green-500/10 text-green-400 border-green-500/20', icon: CheckCircle },
@@ -295,13 +323,51 @@ export default function RequirementsClient() {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center gap-4 flex-wrap">
+      {/* Header — information-oriented: the page is the front door to the platform */}
+      <div className="flex justify-between items-start gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold mb-2 text-white">Requirements Hub</h1>
-          <p className="text-slate-400">
-            Centralize requirements from multiple sources and track test coverage
-          </p>
+          <h1 className="text-3xl font-bold text-white">Requirements</h1>
+          {/* Live stat strip — real numbers from the coverage summary (accurate
+              under any filter because they're computed server-side). */}
+          <div className="flex items-center flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
+            <span className="text-slate-300">
+              <span className="font-semibold text-white">{(summary?.total ?? 0).toLocaleString()}</span>{' '}
+              <span className="text-slate-400">Requirements</span>
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-400">
+              Imported{' '}
+              <span className="font-medium text-blue-300">
+                {(summary?.imported_count ?? 0).toLocaleString()}
+              </span>
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-400">
+              Manual{' '}
+              <span className="font-medium text-violet-300">
+                {(summary?.manual_count ?? 0).toLocaleString()}
+              </span>
+            </span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-400">
+              Coverage{' '}
+              <span className={`font-medium ${getCoverageTextColor(summary?.avg_coverage ?? 0)}`}>
+                {summary?.avg_coverage ?? 0}%
+              </span>
+            </span>
+            {summary?.imported_count ? (
+              <>
+                <span className="text-slate-600">·</span>
+                <span className="text-slate-400 inline-flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5 text-slate-500" />
+                  Last sync{' '}
+                  <span className="font-medium text-slate-300">
+                    {formatRelativeTime(summary?.last_synced_at ?? null)}
+                  </span>
+                </span>
+              </>
+            ) : null}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -315,18 +381,18 @@ export default function RequirementsClient() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {/* Unified "New Requirement" split button dropdown */}
+          {/* "Add Requirements" — a Requirement Source Hub. Manual + Jira are
+              live; other sources are on the roadmap and clearly marked "Soon"
+              (disabled) rather than faked. */}
           <div className="relative new-req-dropdown">
             <div className="flex">
-              <Button
-                onClick={() => setCreateDialogOpen(true)}
-                className="rounded-r-none"
-              >
+              <Button onClick={() => setCreateDialogOpen(true)} className="rounded-r-none">
                 <Plus className="h-4 w-4 mr-2" />
-                New Requirement
+                Add Requirements
               </Button>
               <button
                 type="button"
+                aria-label="More requirement sources"
                 className="h-full px-2 bg-violet-600 hover:bg-violet-700 text-white rounded-r-md border-l border-violet-500/30 transition-colors"
                 onClick={() => setNewReqDropdownOpen(!newReqDropdownOpen)}
               >
@@ -334,38 +400,65 @@ export default function RequirementsClient() {
               </button>
             </div>
             {newReqDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-[#1e293b] border border-slate-700 z-50">
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCreateDialogOpen(true);
-                      setNewReqDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700/50 flex items-start gap-3 transition-colors"
-                  >
-                    <FileText className="h-4 w-4 text-violet-400 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-white">Create Manual Requirement</div>
-                      <div className="text-xs text-slate-400 mt-0.5">Write a new requirement from scratch</div>
-                    </div>
-                  </button>
-                  <div className="border-t border-slate-700/50 my-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImportDialogOpen(true);
-                      setNewReqDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700/50 flex items-start gap-3 transition-colors"
-                  >
-                    <Download className="h-4 w-4 text-blue-400 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-white">Import from Jira</div>
-                      <div className="text-xs text-slate-400 mt-0.5">Sync existing Jira issues to this project</div>
-                    </div>
-                  </button>
+              <div className="absolute right-0 mt-2 w-72 rounded-md shadow-lg bg-[#1e293b] border border-slate-700 z-50 overflow-hidden">
+                <div className="px-4 pt-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Create
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateDialogOpen(true);
+                    setNewReqDropdownOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-700/50 flex items-start gap-3 transition-colors"
+                >
+                  <FileText className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-medium text-white">Create Manually</div>
+                    <div className="text-xs text-slate-400 mt-0.5">Write a new requirement from scratch</div>
+                  </div>
+                </button>
+                <div className="px-4 pt-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 border-t border-slate-700/50 mt-1">
+                  Import from source
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImportDialogOpen(true);
+                    setNewReqDropdownOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-700/50 flex items-start gap-3 transition-colors"
+                >
+                  <Download className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-medium text-white">Import from Jira</div>
+                    <div className="text-xs text-slate-400 mt-0.5">Sync existing Jira issues to this project</div>
+                  </div>
+                </button>
+                {/* Roadmap sources — clearly disabled, not faked */}
+                {[
+                  { label: 'Import from Azure DevOps', desc: 'Sync work items & user stories' },
+                  { label: 'Import from Linear', desc: 'Sync Linear issues' },
+                  { label: 'Upload Excel / CSV', desc: 'Bulk import from a spreadsheet' },
+                  { label: 'Import from API', desc: 'Push requirements programmatically' },
+                ].map((s) => (
+                  <div
+                    key={s.label}
+                    className="w-full text-left px-4 py-2.5 text-sm flex items-start gap-3 opacity-50 cursor-not-allowed"
+                    title="Coming soon"
+                  >
+                    <GitBranch className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <div className="font-medium text-slate-300 flex items-center gap-2">
+                        {s.label}
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-400/80 bg-amber-400/10 px-1.5 py-0.5 rounded">
+                          Soon
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">{s.desc}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
