@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject, useProjectHeaders } from '@/lib/project-context';
@@ -111,6 +112,9 @@ export default function RequirementsClient() {
   // the user gets immediate feedback on what landed.
   const [recentlyImported, setRecentlyImported] = useState<{ key: string; title: string }[]>([]);
 
+  // Dropdown state for "New Requirement" split button
+  const [newReqDropdownOpen, setNewReqDropdownOpen] = useState(false);
+
   const fetchRequirements = useCallback(async () => {
     try {
       setLoading(true);
@@ -157,6 +161,19 @@ export default function RequirementsClient() {
     fetchRequirements();
     fetchSummary();
   }, [fetchRequirements, fetchSummary]);
+
+  // Click-outside handler for "New Requirement" dropdown
+  useEffect(() => {
+    if (!newReqDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.new-req-dropdown')) {
+        setNewReqDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [newReqDropdownOpen]);
 
   const handleDelete = async (id: string) => {
     try {
@@ -283,16 +300,8 @@ export default function RequirementsClient() {
         <div>
           <h1 className="text-3xl font-bold mb-2 text-white">Requirements Hub</h1>
           <p className="text-slate-400">
-            Manage requirements from Jira and manual sources, and track test coverage
+            Centralize requirements from multiple sources and track test coverage
           </p>
-          {activeProject && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <FolderOpen size={12} className="text-violet-400" />
-              <span className="text-xs text-violet-300/80">
-                Project: <span className="font-medium text-violet-300">{activeProject.name}</span>
-              </span>
-            </div>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -306,14 +315,60 @@ export default function RequirementsClient() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-            <Download className="h-4 w-4 mr-2" />
-            Import from Jira
-          </Button>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Requirement
-          </Button>
+          {/* Unified "New Requirement" split button dropdown */}
+          <div className="relative new-req-dropdown">
+            <div className="flex">
+              <Button
+                onClick={() => setCreateDialogOpen(true)}
+                className="rounded-r-none"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Requirement
+              </Button>
+              <button
+                type="button"
+                className="h-full px-2 bg-violet-600 hover:bg-violet-700 text-white rounded-r-md border-l border-violet-500/30 transition-colors"
+                onClick={() => setNewReqDropdownOpen(!newReqDropdownOpen)}
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+            {newReqDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-md shadow-lg bg-[#1e293b] border border-slate-700 z-50">
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateDialogOpen(true);
+                      setNewReqDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700/50 flex items-start gap-3 transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-violet-400 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-white">Create Manual Requirement</div>
+                      <div className="text-xs text-slate-400 mt-0.5">Write a new requirement from scratch</div>
+                    </div>
+                  </button>
+                  <div className="border-t border-slate-700/50 my-1" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportDialogOpen(true);
+                      setNewReqDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700/50 flex items-start gap-3 transition-colors"
+                  >
+                    <Download className="h-4 w-4 text-blue-400 mt-0.5" />
+                    <div>
+                      <div className="font-medium text-white">Import from Jira</div>
+                      <div className="text-xs text-slate-400 mt-0.5">Sync existing Jira issues to this project</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
