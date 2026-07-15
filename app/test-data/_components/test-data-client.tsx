@@ -22,6 +22,7 @@ import {
   ShieldAlert, ListChecks, Boxes, Hash, FileText,
 } from 'lucide-react';
 import { useProject } from '@/lib/project-context';
+import { useWorkspaceHeaders } from '@/lib/workspace-context';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -132,6 +133,19 @@ export function TestDataClient() {
     if (activeProject) h['x-project-id'] = String(activeProject.id);
     return h;
   }, [activeProject]);
+
+  // Sprint 2: Test Data OWNS the Environment dimension. On CREATE, a new
+  // dataset inherits the active Workspace Environment (persisted as the
+  // numeric environment_id FK by the backend). We do NOT inject the env
+  // header into reads/deletes — the list keeps its own explicit env filter.
+  const workspaceHeaders = useWorkspaceHeaders();
+  const getCreateHeaders = useCallback((): Record<string, string> => {
+    const h: Record<string, string> = { ...getHeaders() };
+    if (workspaceHeaders['x-environment-id']) {
+      h['x-environment-id'] = workspaceHeaders['x-environment-id'];
+    }
+    return h;
+  }, [getHeaders, workspaceHeaders]);
 
   const [datasets, setDatasets] = useState<TestDataSet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -356,7 +370,7 @@ export function TestDataClient() {
             {mode === 'create' && (
               <DatasetForm
                 key="create"
-                getHeaders={getHeaders}
+                getHeaders={getCreateHeaders}
                 onCancel={() => setMode('view')}
                 onSaved={(id) => { setMode('view'); setSelectedId(id); loadDatasets(); flash('success', 'Dataset created'); }}
                 onError={(m) => flash('error', m)}
