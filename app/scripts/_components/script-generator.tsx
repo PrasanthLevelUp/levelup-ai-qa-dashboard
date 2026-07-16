@@ -551,6 +551,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [planning, setPlanning] = useState(false);
   const [planView, setPlanView] = useState<GenerationPlanView | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  // The approved plan's id — sent to /generate so it EXECUTES this exact plan
+  // instead of re-analyzing the repository (one analysis, one execution).
+  const [planId, setPlanId] = useState<string | null>(null);
 
   // Repo intelligence state
   const [selectedRepoId, setSelectedRepoId] = useState('');
@@ -1083,6 +1086,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     setResult(null);
     setPlanError(null);
     setPlanView(null);
+    setPlanId(null);
     setPlanning(true);
 
     // Minimum visible analyzing time so the sequence reads as genuine analysis.
@@ -1106,6 +1110,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
 
       if (data?.success && data.plan) {
         setPlanView(data.plan as GenerationPlanView);
+        // Keep the planId so approval executes THIS analysis (may be null for
+        // the GENERATE-all fallback, where there is nothing to reuse).
+        setPlanId(typeof data.planId === 'string' ? data.planId : null);
       } else {
         setPlanError(data?.error || 'The plan could not be built.');
       }
@@ -1120,6 +1127,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const handleCancelPlan = () => {
     setPlanView(null);
     setPlanError(null);
+    setPlanId(null);
     setPlanning(false);
   };
 
@@ -1178,6 +1186,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           // requirement chosen in the picker.
           ...(effectiveTestCaseId != null ? { testCaseId: Number(effectiveTestCaseId) } : {}),
           ...(selectedReqId ? { requirementId: selectedReqId } : {}),
+          // The approved plan — the backend reuses its cached analysis instead
+          // of re-running the intelligence pipeline (one analysis, one execution).
+          ...(planId ? { planId } : {}),
           // Inline structured test cases from a CSV/Excel upload — the backend
           // normalizes these and runs them through the deterministic, grounded
           // engine (real locators, page-consolidated) instead of the ungrounded
@@ -1198,6 +1209,7 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
         // Plan has been executed — clear it so the result takes over.
         setPlanView(null);
         setPlanError(null);
+        setPlanId(null);
         // Auto-generate branch name from scenario
         const slugScenario = scenario.trim().toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')

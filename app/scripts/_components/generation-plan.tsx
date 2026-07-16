@@ -70,6 +70,8 @@ function decisionMeta(decision: GenerationDecision) {
     case 'skip':
       return {
         label: 'SKIP',
+        // Plain-English decision — we lead with understanding, not the verb.
+        plain: 'Already fully covered — nothing to generate',
         text: 'text-emerald-300',
         bg: 'bg-emerald-500/10',
         ring: 'ring-emerald-500/30',
@@ -78,6 +80,7 @@ function decisionMeta(decision: GenerationDecision) {
     case 'extend':
       return {
         label: 'EXTEND',
+        plain: 'Generate only the missing automation',
         text: 'text-violet-300',
         bg: 'bg-violet-500/10',
         ring: 'ring-violet-500/30',
@@ -87,6 +90,7 @@ function decisionMeta(decision: GenerationDecision) {
     default:
       return {
         label: 'GENERATE',
+        plain: 'Generate the full automation set',
         text: 'text-amber-300',
         bg: 'bg-amber-500/10',
         ring: 'ring-amber-500/30',
@@ -298,41 +302,56 @@ export function GenerationPlanPanel({
               </p>
             </div>
           </div>
-          <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ring-1 text-[11px] font-semibold ${meta.bg} ${meta.text} ${meta.ring}`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-            {meta.label}
-          </span>
         </div>
       </div>
 
       <div className="p-5 space-y-5">
-        {/* Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <Metric
-            label="Repository Coverage"
-            value={`${plan.repositoryCoverage}%`}
-            accent="text-white"
-          />
-          <Metric label="Decision" value={meta.label} accent={meta.text} />
+        {/* Hero: lead with UNDERSTANDING, then the decision in plain English.
+            People buy understanding — not the word "EXTEND". */}
+        <div className="rounded-xl border border-[#2a3040] bg-gradient-to-br from-violet-500/[0.08] to-transparent px-5 py-4">
+          <div className="flex items-end justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Repository Understanding
+              </p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-4xl font-bold text-white leading-none">
+                  {plan.repositoryCoverage}%
+                </span>
+                <span className="text-xs text-slate-500">of required flows already covered</span>
+              </div>
+              <p className={`text-sm mt-2 font-medium ${meta.text}`}>{meta.plain}</p>
+            </div>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ring-1 text-[11px] font-semibold ${meta.bg} ${meta.text} ${meta.ring}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+              {meta.label}
+            </span>
+          </div>
+        </div>
+
+        {/* Supporting metrics */}
+        <div className="grid grid-cols-2 gap-2.5">
           <Metric label="Confidence" value={`${plan.confidence}%`} accent="text-white" />
           <Metric
-            label="Est. Token Savings"
+            label="Estimated Token Savings"
             value={plan.estimatedTokenSavings.toLocaleString()}
             accent="text-emerald-300"
-            sub={plan.savingsPercent > 0 ? `${plan.savingsPercent}% saved` : 'estimated'}
+            sub={plan.savingsPercent > 0 ? `${plan.savingsPercent}% saved (estimated)` : 'estimated'}
           />
         </div>
 
-        {/* Existing Automation */}
+        {/* Repository Understanding — the automation we already found and will
+            reuse. Named for the future: tests, helpers, page objects, fixtures,
+            APIs and utilities all belong here, not just scripts. */}
         {plan.existingAutomation.length > 0 ? (
           <div>
             <div className="flex items-center gap-2 mb-2">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Existing Automation
+                Repository Understanding
               </p>
-              <span className="text-[10px] text-slate-500">({plan.existingAutomation.length})</span>
+              <span className="text-[10px] text-slate-500">({plan.existingAutomation.length} covered)</span>
             </div>
             <div className="space-y-1.5">
               {plan.existingAutomation.map((item) => (
