@@ -112,6 +112,14 @@ interface RepoProfile {
       featureSource?: string;
     };
   }>;
+  // Coverage Summary — deterministic per-feature rollup of the Test Inventory
+  // (how many tests exist per feature area). Bridge into Coverage Intelligence.
+  coverageSummary?: Array<{
+    feature: string;
+    testCount: number;
+    percentage: number;
+    avgConfidence: number;
+  }>;
   preferredLocators: Array<{ pattern: string; count: number; example: string }>;
   avoidPatterns: string[];
   dependencies: Array<{ name: string; version: string; isDev: boolean }>;
@@ -229,7 +237,7 @@ export function RepoIntelligenceClient() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    profile: true, knowledge: true, helpers: true, workflows: true, inventory: true, quality: true,
+    profile: true, knowledge: true, helpers: true, workflows: true, inventory: true, coverage: true, quality: true,
   });
   const fetchingRef = useRef(false);
 
@@ -721,6 +729,18 @@ export function RepoIntelligenceClient() {
             onToggle={() => toggleSection('inventory')}
           >
             <TestInventoryPanel inventory={profile.testInventory || []} />
+          </CollapsibleSection>
+
+          {/* ── SECTION 5c: Coverage Summary ──────────────── */}
+          <CollapsibleSection
+            id="coverage"
+            title="Coverage Summary"
+            subtitle="Where the repository is heavily tested vs sparse"
+            icon={<BarChart3 className="w-5 h-5 text-indigo-400" />}
+            expanded={expandedSections.coverage}
+            onToggle={() => toggleSection('coverage')}
+          >
+            <CoverageSummaryPanel summary={profile.coverageSummary || []} />
           </CollapsibleSection>
 
           {/* ── SECTION 6: Generation Context Preview ─────── */}
@@ -1361,6 +1381,62 @@ function MetaChip({ label, value, color }: { label: string; value: string; color
     <span className={`text-[10px] px-1.5 py-0.5 rounded border ${colors[color] || colors.slate}`}>
       <span className="opacity-60">{label}:</span> {value}
     </span>
+  );
+}
+
+/* ── Coverage Summary Panel ──────────────────────────────────── */
+
+type CoverageRow = NonNullable<RepoProfile['coverageSummary']>[number];
+
+function CoverageSummaryPanel({ summary }: { summary: CoverageRow[] }) {
+  if (!summary || summary.length === 0) {
+    return <p className="text-sm text-slate-600 text-center py-4">No coverage data yet — run a scan to populate the Test Inventory.</p>;
+  }
+
+  const totalTests = summary.reduce((s, r) => s + r.testCount, 0);
+  const maxCount = Math.max(...summary.map((r) => r.testCount), 1);
+
+  return (
+    <div className="space-y-4">
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <ProfileCard label="Total Tests" value={String(totalTests)} />
+        <ProfileCard label="Feature Areas" value={String(summary.length)} />
+        <ProfileCard label="Most Tested" value={summary[0]?.feature || '—'} />
+      </div>
+
+      {/* Per-feature horizontal bars — heavily tested vs sparse at a glance. */}
+      <div className="space-y-2">
+        <h4 className="text-xs uppercase tracking-wider text-slate-500 mb-1 font-medium">
+          Tests per Feature <span className="text-indigo-400">({summary.length})</span>
+        </h4>
+        {summary.map((row) => (
+          <div key={row.feature} className="flex items-center gap-3">
+            <span className="text-xs text-slate-300 w-40 shrink-0 truncate" title={row.feature}>
+              {row.feature}
+            </span>
+            <div className="flex-1 h-4 rounded-full bg-slate-700/40 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 flex items-center justify-end pr-2"
+                style={{ width: `${Math.max(6, (row.testCount / maxCount) * 100)}%` }}
+              >
+                <span className="text-[10px] font-medium text-white/90">{row.testCount}</span>
+              </div>
+            </div>
+            <span className="text-xs text-slate-500 w-10 text-right">{row.percentage}%</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[11px] text-slate-600 flex items-start gap-1.5">
+        <BarChart3 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" />
+        <span>
+          Counts reflect tests already present in the repository — this is not requirements
+          coverage yet. Comparing these features against your requirements (covered / partial /
+          missing) is the next phase.
+        </span>
+      </p>
+    </div>
   );
 }
 
