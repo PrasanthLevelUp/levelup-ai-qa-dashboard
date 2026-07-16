@@ -253,15 +253,42 @@ export function GenerationPlanPanel({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if ((plan || analyzing) && panelRef.current) {
+    if ((plan || analyzing || executing) && panelRef.current) {
       panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-  }, [plan, analyzing]);
+  }, [plan, analyzing, executing]);
 
   if (analyzing) {
     return (
       <div ref={panelRef} className="scroll-mt-4">
         <AnalyzingSequence />
+      </div>
+    );
+  }
+
+  // Executing — show a dedicated card reinforcing that THIS approved plan is
+  // being executed, not a second analysis. This is the "Approved → Executing"
+  // state transition the user experiences before the result lands.
+  if (executing && plan) {
+    return (
+      <div ref={panelRef} className="scroll-mt-4 bg-[#1a1f2e] border border-violet-500/30 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-violet-500/15">
+            <Loader2 size={20} className="text-violet-300 animate-spin" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-white">Executing Approved Plan</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Generating scripts from your approved repository intelligence
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#151a26] border border-[#2a3040]">
+          <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+          <span className="text-xs text-slate-300">
+            Decision: <span className="font-medium text-white">{decisionMeta(plan.decision).plain}</span>
+          </span>
+        </div>
       </div>
     );
   }
