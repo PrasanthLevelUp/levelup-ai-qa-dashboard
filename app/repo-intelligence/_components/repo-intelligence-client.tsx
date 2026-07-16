@@ -91,6 +91,27 @@ interface RepoProfile {
   // Backend BusinessFlow exposes relatedFiles[]; filePath kept optional for back-compat.
   businessFlows: Array<{ name: string; filePath?: string; relatedFiles?: string[]; steps: string[]; category?: string; entryUrl?: string | null }>;
   testSuites: Array<{ name: string; filePath: string; testCount: number; tags?: string[] }>;
+  // Test Inventory — per-test facts folded onto the Repository Profile by the
+  // Repository Context Engine (one scan, many outputs). NOT a parallel subsystem.
+  testInventory?: Array<{
+    testName: string;
+    filePath: string;
+    feature: string;
+    flow: string | null;
+    page: string | null;
+    suite: string | null;
+    tags: string[];
+    assertions: string[];
+    pomMethods: string[];
+    framework: string;
+    confidence: number;
+    metadata?: {
+      line?: number;
+      assertionCount?: number;
+      pomMethodCount?: number;
+      featureSource?: string;
+    };
+  }>;
   preferredLocators: Array<{ pattern: string; count: number; example: string }>;
   avoidPatterns: string[];
   dependencies: Array<{ name: string; version: string; isDev: boolean }>;
@@ -208,7 +229,7 @@ export function RepoIntelligenceClient() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    profile: true, knowledge: true, helpers: true, workflows: true, quality: true,
+    profile: true, knowledge: true, helpers: true, workflows: true, inventory: true, quality: true,
   });
   const fetchingRef = useRef(false);
 
@@ -688,6 +709,18 @@ export function RepoIntelligenceClient() {
             onToggle={() => toggleSection('workflows')}
           >
             <WorkflowVisualization flows={profile.businessFlows} testSuites={profile.testSuites} />
+          </CollapsibleSection>
+
+          {/* ── SECTION 5b: Test Inventory ────────────────── */}
+          <CollapsibleSection
+            id="inventory"
+            title="Test Inventory"
+            subtitle={`${profile.testInventory?.length || 0} tests catalogued from the repository`}
+            icon={<BookOpen className="w-5 h-5 text-teal-400" />}
+            expanded={expandedSections.inventory}
+            onToggle={() => toggleSection('inventory')}
+          >
+            <TestInventoryPanel inventory={profile.testInventory || []} />
           </CollapsibleSection>
 
           {/* ── SECTION 6: Generation Context Preview ─────── */}
@@ -1175,6 +1208,159 @@ function WorkflowVisualization({
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Test Inventory Panel ────────────────────────────────────── */
+
+type InventoryEntry = NonNullable<RepoProfile['testInventory']>[number];
+
+function confidenceColor(score: number): string {
+  if (score >= 85) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+  if (score >= 65) return 'text-teal-400 bg-teal-500/10 border-teal-500/20';
+  if (score >= 45) return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
+  return 'text-slate-400 bg-slate-500/10 border-slate-500/20';
+}
+
+function TestInventoryPanel({ inventory }: { inventory: InventoryEntry[] }) {
+  const [openFeature, setOpenFeature] = useState<string | null>(null);
+
+  if (!inventory || inventory.length === 0) {
+    return <p className="text-sm text-slate-600 text-center py-4">No tests catalogued yet — run a scan to populate the inventory.</p>;
+  }
+
+  // Group by feature (deterministic ordering: by count desc, then name).
+  const groups = new Map<string, InventoryEntry[]>();
+  for (const t of inventory) {
+    const key = t.feature || 'Uncategorized';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(t);
+  }
+  const featureGroups = Array.from(groups.entries())
+    .map(([feature, tests]) => ({
+      feature,
+      tests,
+      avgConfidence: Math.round(tests.reduce((s, t) => s + (t.confidence || 0), 0) / tests.length),
+    }))
+    .sort((a, b) => b.tests.length - a.tests.length || a.feature.localeCompare(b.feature));
+
+  // Default-open the largest feature group.
+  const activeFeature = openFeature ?? featureGroups[0]?.feature ?? null;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <ProfileCard label="Total Tests" value={String(inventory.length)} />
+        <ProfileCard label="Features" value={String(featureGroups.length)} />
+        <ProfileCard
+          label="With Assertions"
+          value={String(inventory.filter((t) => (t.assertions?.length || 0) > 0).length)}
+        />
+        <ProfileCard
+          label="Avg Confidence"
+          value={`${Math.round(inventory.reduce((s, t) => s + (t.confidence || 0), 0) / inventory.length)}%`}
+        />
+      </div>
+
+      {/* Feature groups */}
+      <div className="space-y-2">
+        {featureGroups.map(({ feature, tests, avgConfidence }) => {
+          const isOpen = activeFeature === feature;
+          return (
+            <div key={feature} className="rounded-lg border border-slate-700/50 overflow-hidden">
+              <button
+                onClick={() => setOpenFeature(isOpen ? '' : feature)}
+                className="w-full flex items-center gap-3 p-3 hover:bg-slate-700/20 transition-colors text-left"
+              >
+                <BookOpen className="w-4 h-4 text-teal-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate">{feature}</p>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  {tests.length} {tests.length === 1 ? 'test' : 'tests'}
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${confidenceColor(avgConfidence)}`}>
+                  {avgConfidence}% avg
+                </span>
+                {isOpen
+                  ? <ChevronDown className="w-4 h-4 text-slate-500" />
+                  : <ChevronRight className="w-4 h-4 text-slate-500" />}
+              </button>
+              {isOpen && (
+                <div className="px-3 pb-3 space-y-2">
+                  {tests.map((t, i) => (
+                    <div key={i} className="rounded-lg bg-slate-900/40 border border-slate-700/30 p-3">
+                      <div className="flex items-start gap-3">
+                        <FileCode className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-200 break-words">{t.testName}</p>
+                          <p className="text-[10px] text-slate-600 font-mono truncate">
+                            {t.filePath}{t.metadata?.line ? `:${t.metadata.line}` : ''}
+                          </p>
+                        </div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${confidenceColor(t.confidence)}`}>
+                          {t.confidence}%
+                        </span>
+                      </div>
+                      {/* Classification chips */}
+                      <div className="flex flex-wrap gap-1.5 mt-2 ml-7">
+                        {t.flow && <MetaChip label="Flow" value={t.flow} color="amber" />}
+                        {t.page && <MetaChip label="Page" value={t.page} color="violet" />}
+                        {t.suite && <MetaChip label="Suite" value={t.suite} color="blue" />}
+                        <MetaChip label="Framework" value={t.framework} color="slate" />
+                        {(t.assertions?.length || 0) > 0 && (
+                          <MetaChip label="Assertions" value={String(t.assertions.length)} color="emerald" />
+                        )}
+                        {(t.pomMethods?.length || 0) > 0 && (
+                          <MetaChip label="POM" value={String(t.pomMethods.length)} color="teal" />
+                        )}
+                      </div>
+                      {/* Tags */}
+                      {t.tags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2 ml-7">
+                          {t.tags.map((tag, ti) => (
+                            <span key={ti} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300 font-mono">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* POM methods */}
+                      {t.pomMethods?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2 ml-7">
+                          {t.pomMethods.map((m, mi) => (
+                            <span key={mi} className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300 border border-teal-500/20 font-mono">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MetaChip({ label, value, color }: { label: string; value: string; color: string }) {
+  const colors: Record<string, string> = {
+    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    violet: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+    blue: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    teal: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
+    slate: 'bg-slate-700/40 text-slate-300 border-slate-600/30',
+  };
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${colors[color] || colors.slate}`}>
+      <span className="opacity-60">{label}:</span> {value}
+    </span>
   );
 }
 
