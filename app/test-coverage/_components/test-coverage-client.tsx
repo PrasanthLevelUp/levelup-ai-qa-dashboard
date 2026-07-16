@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/project-context';
+import { useWorkspaceHeaders } from '@/lib/workspace-context';
 import { KnowledgeSelector } from '@/components/knowledge-selector';
 import { IntelligenceScore as IntelligenceScoreComponent } from '@/components/intelligence-score';
 import { toast } from 'sonner';
@@ -483,6 +484,10 @@ export function TestCoverageClient() {
 
 function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
   const { activeProject } = useProject();
+  // Sprint 2 — generated artifacts auto-inherit the active Workspace Context
+  // (project + sprint). Test design is env-independent, so the backend persists
+  // only project + sprint on the root test_requirement; scenarios/cases inherit.
+  const workspaceHeaders = useWorkspaceHeaders();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -799,8 +804,11 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
     setError(null);
     setDuplicate(null);
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (activeProject?.id) headers['x-project-id'] = String(activeProject.id);
+      // Sprint 2: new requirements inherit the active Workspace Context.
+      // workspaceHeaders carries x-project-id + x-environment-id + x-sprint-id
+      // (active selection). The backend persists only what the requirement
+      // root owns (project + sprint); scenarios/cases inherit via FK.
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', ...workspaceHeaders };
 
       const res = await fetch('/api/test-coverage/generate', {
         method: 'POST',

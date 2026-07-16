@@ -11,6 +11,9 @@ export async function POST(req: NextRequest) {
       knowledgeItemIds, authConfig, additionalUrls, forceFreshCrawl,
       // ── Sprint 4: Enterprise Script Generation Enhancement ──
       testCaseId, requirementId, generationSource, locatorStrategy, folderStrategy,
+      // Approved Generation Plan id — forwarded so the backend executes that
+      // already-computed plan instead of re-analyzing the repository.
+      planId,
       // Inline structured test cases from a CSV/Excel upload — forwarded so the
       // backend runs them through the deterministic, grounded engine.
       testCases,
@@ -105,6 +108,7 @@ export async function POST(req: NextRequest) {
         // ── Sprint 4: Requirement → Test Case → Script context + strategies ──
         ...(testCaseId != null ? { testCaseId } : {}),
         ...(requirementId ? { requirementId } : {}),
+        ...(planId ? { planId } : {}),
         ...(hasInlineTestCases ? { testCases } : {}),
         ...(generationSource ? { generationSource } : {}),
         ...(locatorStrategy ? { locatorStrategy } : {}),

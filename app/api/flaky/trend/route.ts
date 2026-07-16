@@ -10,14 +10,23 @@ const headers = (): Record<string, string> => ({
   ...(API_KEY ? { 'Authorization': `Bearer ${API_KEY}` } : {}),
 });
 
+/** Workspace scope params forwarded to the backend (in addition to `days`). */
+const SCOPE_PARAMS = ['projectId', 'environmentId', 'startDate', 'endDate'] as const;
+
 /**
- * GET /api/flaky/trend?days=30 — Flaky trend over time (proxy to backend)
+ * GET /api/flaky/trend?days=30 — Flaky trend over time (proxy to backend),
+ * scoped to the active project + environment + time window.
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const days = searchParams.get('days') || '30';
-    const res = await fetch(`${BACKEND_URL}/api/rca/flaky/trend?days=${days}`, {
+    const out = new URLSearchParams();
+    out.set('days', searchParams.get('days') || '30');
+    for (const key of SCOPE_PARAMS) {
+      const v = searchParams.get(key);
+      if (v) out.set(key, v);
+    }
+    const res = await fetch(`${BACKEND_URL}/api/rca/flaky/trend?${out.toString()}`, {
       headers: headers(),
     });
     const data = await res.json();

@@ -7,6 +7,7 @@ import {
   Search, RefreshCw, TrendingUp, Coins, Zap, Activity,
 } from 'lucide-react';
 import { useProject } from '@/lib/project-context';
+import { useWorkspaceAdapter, useWorkspaceTime, useProjectEnvironments } from '@/lib/workspace-context';
 
 interface Healing {
   id: number;
@@ -60,6 +61,9 @@ function formatCost(cost?: number | null): string {
 
 export function HealingsClient() {
   const { projects, activeProject } = useProject();
+  const adapter = useWorkspaceAdapter();
+  const { time } = useWorkspaceTime();
+  const { activeEnvironment } = useProjectEnvironments();
 
   const [projectFilter, setProjectFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -80,9 +84,12 @@ export function HealingsClient() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
+      // Start from the workspace scope (environment + time window); the page's own
+      // project dropdown then overrides projectId (it can widen to "all projects").
+      const params = new URLSearchParams(adapter.toQuery());
       params.set('limit', '200');
       if (projectFilter !== 'all') params.set('projectId', projectFilter);
+      else params.delete('projectId');
       if (statusFilter !== 'all') params.set('status', statusFilter);
       const res = await fetch(`/api/healings/recent?${params.toString()}`);
       if (!res.ok) throw new Error(`Failed to load healings (${res.status})`);
@@ -98,8 +105,9 @@ export function HealingsClient() {
 
   useEffect(() => {
     loadHealings();
+    // Re-fetch when the page filters OR the workspace environment / time change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectFilter, statusFilter]);
+  }, [projectFilter, statusFilter, activeEnvironment?.id, time.start, time.end]);
 
   // Client-side strategy + search filtering (server handles project + status).
   const filtered = useMemo(() => {

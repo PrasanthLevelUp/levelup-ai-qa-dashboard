@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import type { ProjectContext } from './scripts-client';
 import type { ParsedTestCase } from './upload-test-cases';
+import { GenerationPlanPanel, type GenerationPlanView } from './generation-plan';
 
 interface ScriptGeneratorProps {
   projectContext: ProjectContext;
@@ -541,6 +542,18 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
   const [includeNegative, setIncludeNegative] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
+
+  // ── Generation Plan (pre-generation intelligence review) ──────────────────
+  // Clicking "Generate Script" first produces a PLAN (analyze only, no
+  // generation). The customer approves it with "Execute Generation Plan",
+  // which runs the existing generation. planning = the analyzing animation is
+  // showing; planView = the built plan awaiting approval.
+  const [planning, setPlanning] = useState(false);
+  const [planView, setPlanView] = useState<GenerationPlanView | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  // The approved plan's id — sent to /generate so it EXECUTES this exact plan
+  // instead of re-analyzing the repository (one analysis, one execution).
+  const [planId, setPlanId] = useState<string | null>(null);
 
   // Repo intelligence state
   const [selectedRepoId, setSelectedRepoId] = useState('');
@@ -1046,6 +1059,78 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
     selectedReqId || testCaseInfo?.id || testCaseId || requirementId,
   );
 
+  // Whether there is anything to generate from (shared by plan + generate).
+  const canGenerate = (): boolean => {
+    const effectiveTestCaseId = testCaseInfo?.id ?? testCaseId ?? null;
+    const hasUploadedTestCases = Boolean(uploadedTestCases && uploadedTestCases.length > 0);
+    return Boolean(scenario.trim() || selectedReqId || effectiveTestCaseId != null || hasUploadedTestCases);
+  };
+
+  /**
+   * Step 1 of generation — build the Generation Plan (analyze only, no
+   * generation). Runs the staged "analyzing" animation for a brief minimum so
+   * the platform visibly analyzes the repository rather than flashing cached
+   * numbers, then renders the plan for the customer to approve.
+   */
+  const handlePlan = async () => {
+    if (!canGenerate()) return;
+
+    const effectiveTestCaseId = testCaseInfo?.id ?? testCaseId ?? null;
+    const hasUploadedTestCases = Boolean(uploadedTestCases && uploadedTestCases.length > 0);
+    const selectedReq = requirements.find((r) => r.id === selectedReqId);
+    const effectiveScenario = scenario.trim()
+      || (selectedReqId
+        ? `Automate requirement ${selectedReq?.requirement_id || selectedReqId}${selectedReq?.title ? `: ${selectedReq.title}` : ''}`
+        : '');
+
+    setResult(null);
+    setPlanError(null);
+    setPlanView(null);
+    setPlanId(null);
+    setPlanning(true);
+
+    // Minimum visible analyzing time so the sequence reads as genuine analysis.
+    const minDelay = new Promise((resolve) => setTimeout(resolve, 1900));
+
+    try {
+      const planReq = fetch('/api/scripts/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...workspaceHeaders },
+        body: JSON.stringify({
+          scenario: effectiveScenario,
+          instructions: effectiveScenario,
+          ...(useRepoIntelligence && selectedRepoId ? { repoId: selectedRepoId } : {}),
+          ...(effectiveTestCaseId != null ? { testCaseId: Number(effectiveTestCaseId) } : {}),
+          ...(selectedReqId ? { requirementId: selectedReqId } : {}),
+          ...(hasUploadedTestCases ? { testCases: uploadedTestCases } : {}),
+        }),
+      }).then((r) => r.json());
+
+      const [data] = await Promise.all([planReq, minDelay]);
+
+      if (data?.success && data.plan) {
+        setPlanView(data.plan as GenerationPlanView);
+        // Keep the planId so approval executes THIS analysis (may be null for
+        // the GENERATE-all fallback, where there is nothing to reuse).
+        setPlanId(typeof data.planId === 'string' ? data.planId : null);
+      } else {
+        setPlanError(data?.error || 'The plan could not be built.');
+      }
+    } catch (err) {
+      setPlanError('Network error — backend may be unavailable');
+    } finally {
+      setPlanning(false);
+    }
+  };
+
+  // Dismiss the plan and return to the form.
+  const handleCancelPlan = () => {
+    setPlanView(null);
+    setPlanError(null);
+    setPlanId(null);
+    setPlanning(false);
+  };
+
   const handleGenerate = async () => {
     // Effective test-case id: an explicitly loaded test case (from the picker)
     // wins, then the deep-link prop. Drives generationSource + auto-marking.
@@ -1101,6 +1186,9 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
           // requirement chosen in the picker.
           ...(effectiveTestCaseId != null ? { testCaseId: Number(effectiveTestCaseId) } : {}),
           ...(selectedReqId ? { requirementId: selectedReqId } : {}),
+          // The approved plan — the backend reuses its cached analysis instead
+          // of re-running the intelligence pipeline (one analysis, one execution).
+          ...(planId ? { planId } : {}),
           // Inline structured test cases from a CSV/Excel upload — the backend
           // normalizes these and runs them through the deterministic, grounded
           // engine (real locators, page-consolidated) instead of the ungrounded
@@ -1118,6 +1206,10 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
       setResult(data);
 
       if (data.success && data.data?.id) {
+        // Plan has been executed — clear it so the result takes over.
+        setPlanView(null);
+        setPlanError(null);
+        setPlanId(null);
         // Auto-generate branch name from scenario
         const slugScenario = scenario.trim().toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
@@ -1674,26 +1766,33 @@ export function ScriptGenerator({ projectContext, onGenerated, prefillScenarios,
             </div>
           )}
 
-          {/* Generate Button */}
-          <button
-            onClick={handleGenerate}
-            disabled={generating || (!scenario.trim() && !selectedReqId && testCaseInfo?.id == null && testCaseId == null) || (!(targetUrl || projectContext.appUrl || activeEnvironment?.base_url))}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-all shadow-lg shadow-violet-500/20"
-          >
-            {generating ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Generating scripts — this may take 30–60 seconds...
-              </>
-            ) : (
-              <>
-                <Play size={16} />
-                Generate Test Scripts
-              </>
-            )}
-          </button>
+          {/* Generate Button — produces a Generation Plan first (analyze, then
+              the customer approves with "Execute Generation Plan"). Hidden while
+              the plan is analyzing / awaiting approval / executing. */}
+          {!planning && !planView && !generating ? (
+            <button
+              onClick={handlePlan}
+              disabled={!scenario.trim() && !selectedReqId && testCaseInfo?.id == null && testCaseId == null && !(uploadedTestCases && uploadedTestCases.length > 0)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-all shadow-lg shadow-violet-500/20"
+            >
+              <Sparkles size={16} />
+              Generate Script
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {/* Generation Plan — analyzing animation → plan card → Execute */}
+      {(planning || planView || planError) && (
+        <GenerationPlanPanel
+          plan={planView}
+          analyzing={planning}
+          executing={generating}
+          error={planError}
+          onExecute={handleGenerate}
+          onCancel={handleCancelPlan}
+        />
+      )}
 
       {/* Generation Result */}
       {result && (
