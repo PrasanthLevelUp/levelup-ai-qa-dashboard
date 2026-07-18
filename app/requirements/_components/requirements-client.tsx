@@ -216,20 +216,20 @@ export default function RequirementsClient() {
     }
   };
 
-  // Semantic coverage bands so a QA manager can read health at a glance:
-  //   90–100% green · 70–89% blue · 40–69% orange · 1–39% red · 0% neutral
+  // Semantic coverage bands (broad buckets a QA manager thinks in):
+  //   90–100% green · 60–89% blue · 30–59% orange · 1–29% red · 0% neutral
   const getCoverageColor = (percentage: number) => {
     if (percentage === 0) return 'bg-slate-500';
-    if (percentage < 40) return 'bg-red-500';
-    if (percentage < 70) return 'bg-orange-500';
+    if (percentage < 30) return 'bg-red-500';
+    if (percentage < 60) return 'bg-orange-500';
     if (percentage < 90) return 'bg-blue-500';
     return 'bg-green-500';
   };
 
   const getCoverageTextColor = (percentage: number) => {
     if (percentage === 0) return 'text-slate-400';
-    if (percentage < 40) return 'text-red-400';
-    if (percentage < 70) return 'text-orange-400';
+    if (percentage < 30) return 'text-red-400';
+    if (percentage < 60) return 'text-orange-400';
     if (percentage < 90) return 'text-blue-400';
     return 'text-green-400';
   };
@@ -267,13 +267,12 @@ export default function RequirementsClient() {
 
   // A requirement is a requirement — regardless of where it came from. Origins
   // render as small, MUTED chips (a neutral dot + label, identical style for every
-  // provider) so the origin never competes with the requirement title. "Manual"
-  // isn't really an origin — it's the absence of an external integration — so a
-  // requirement authored here reads as "LevelUp" (also cleaner for future
-  // "Created in LevelUp vs Imported" analytics).
+  // provider) so the origin never competes with the requirement title. A manually
+  // authored requirement reads as "Created" — it states the truth (created here,
+  // by hand) without implying AI generation, an import, or a system action.
   const ORIGIN_CONFIG: Record<string, { label: string; dot: string }> = {
-    manual: { label: 'LevelUp', dot: 'bg-emerald-400' },
-    levelup: { label: 'LevelUp', dot: 'bg-emerald-400' },
+    manual: { label: 'Created', dot: 'bg-emerald-400' },
+    created: { label: 'Created', dot: 'bg-emerald-400' },
     jira: { label: 'Jira', dot: 'bg-blue-400' },
     azure: { label: 'Azure DevOps', dot: 'bg-sky-400' },
     azure_devops: { label: 'Azure DevOps', dot: 'bg-sky-400' },
@@ -285,7 +284,7 @@ export default function RequirementsClient() {
 
   const getOriginConfig = (req: Requirement) => {
     const source = (req.source || 'manual').toLowerCase();
-    return ORIGIN_CONFIG[source] || { label: req.source || 'LevelUp', dot: 'bg-slate-400' };
+    return ORIGIN_CONFIG[source] || { label: req.source || 'Created', dot: 'bg-slate-400' };
   };
 
   // Muted origin chip — subtle, uniform, quietly informative.
@@ -572,7 +571,7 @@ export default function RequirementsClient() {
             className="px-4 py-2 bg-[#0f172a] border border-slate-700 rounded-lg text-sm text-slate-200"
           >
             <option value="">All Origins</option>
-            <option value="manual">LevelUp</option>
+            <option value="manual">Created</option>
             <option value="jira">Jira</option>
           </select>
 
@@ -619,12 +618,13 @@ export default function RequirementsClient() {
       {/* Requirements Table */}
       <Card className="bg-[#1a1f2e] border-slate-700">
         <div className="overflow-x-auto">
-          {/* The requirement is the content — Title is the only flexible column and
-              carries its own identity line (REQ-ID · Origin · issue key). ID and
-              Origin no longer get dedicated columns; that space goes to the title,
-              the way Linear / GitHub Projects / Notion present their rows. */}
+          {/* A slim REQ-ID column stays first — QA teams scan and reference
+              requirements by ID ("can you check REQ-045?"). Everything else about
+              a requirement's identity (Origin · issue key ↗) lives inside the
+              flexible Title column, which dominates the row. */}
           <table className="w-full table-fixed">
             <colgroup>
+              <col style={{ width: '104px' }} />{/* ID */}
               <col />{/* Requirement — flexible */}
               <col style={{ width: '104px' }} />{/* Priority */}
               <col style={{ width: '140px' }} />{/* Status */}
@@ -635,6 +635,7 @@ export default function RequirementsClient() {
             </colgroup>
             <thead>
               <tr className="border-b border-slate-700">
+                <th className="text-left p-4 font-semibold text-slate-300">ID</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Requirement</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Priority</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Status</th>
@@ -647,13 +648,13 @@ export default function RequirementsClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="text-center p-8 text-slate-400">
+                  <td colSpan={8} className="text-center p-8 text-slate-400">
                     Loading requirements...
                   </td>
                 </tr>
               ) : requirements.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center p-8">
+                  <td colSpan={8} className="text-center p-8">
                     <div className="flex flex-col items-center gap-3">
                       <AlertCircle className="h-12 w-12 text-slate-500" />
                       <p className="text-slate-400">No requirements found</p>
@@ -668,10 +669,10 @@ export default function RequirementsClient() {
                 requirements.map((req) => (
                   <Fragment key={req.id}>
                   <tr className="border-b border-slate-700 hover:bg-slate-800/50">
-                    {/* The whole story in one cell: title leads; a quiet identity
-                        line (REQ-ID · Origin · issue key ↗) supports it. */}
-                    <td className="p-4">
-                      <div className="flex items-start gap-2">
+                    {/* Slim ID column — scannable, and how QA teams reference
+                        requirements in conversation. */}
+                    <td className="p-4 align-top">
+                      <div className="flex items-start gap-1.5">
                         <button
                           type="button"
                           onClick={() => setExpandedId((prev) => (prev === req.id ? null : req.id))}
@@ -685,25 +686,26 @@ export default function RequirementsClient() {
                             <ChevronRight className="h-4 w-4" />
                           )}
                         </button>
-                        <div className="min-w-0">
-                          <div className="font-medium text-white">{req.title}</div>
-                          {req.description && (
-                            <div className="text-sm text-slate-400 mt-1 truncate">
-                              {req.description}
-                            </div>
-                          )}
-                          <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
-                            <span className="font-mono text-slate-400">{req.requirement_id}</span>
-                            <span className="text-slate-600">•</span>
-                            {getOriginChip(req)}
-                            {getIssueKeyLink(req) && (
-                              <>
-                                <span className="text-slate-600">•</span>
-                                {getIssueKeyLink(req)}
-                              </>
-                            )}
-                          </div>
+                        <span className="font-mono text-sm text-violet-400">{req.requirement_id}</span>
+                      </div>
+                    </td>
+                    {/* Title leads; a quiet identity line (Origin · issue key ↗)
+                        supports it. */}
+                    <td className="p-4">
+                      <div className="font-medium text-white">{req.title}</div>
+                      {req.description && (
+                        <div className="text-sm text-slate-400 mt-1 truncate">
+                          {req.description}
                         </div>
+                      )}
+                      <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
+                        {getOriginChip(req)}
+                        {getIssueKeyLink(req) && (
+                          <>
+                            <span className="text-slate-600">•</span>
+                            {getIssueKeyLink(req)}
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="p-4">{getPriorityBadge(req.priority)}</td>
@@ -720,6 +722,13 @@ export default function RequirementsClient() {
                           {req.coverage_percentage}%
                         </span>
                       </div>
+                      {/* On a requirements page the useful signal is the ACTION:
+                          which requirements still need coverage. */}
+                      {req.coverage_percentage < 100 && (
+                        <div className="mt-1 text-xs text-orange-400/90">
+                          {req.test_case_count === 0 ? 'No tests yet' : 'Needs tests'}
+                        </div>
+                      )}
                     </td>
                     <td className="p-4">
                       <div className="text-sm text-slate-400">
@@ -788,7 +797,7 @@ export default function RequirementsClient() {
                   </tr>
                   {expandedId === req.id && (
                     <tr className="border-b border-slate-700 bg-slate-900/40">
-                      <td colSpan={7} className="px-4 pb-4 pt-1">
+                      <td colSpan={8} className="px-4 pb-4 pt-1">
                         {req.source?.toLowerCase() === 'jira' && req.metadata?.jira && (
                           <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1.5 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs">
                             {req.metadata.jira.key && (
