@@ -261,39 +261,61 @@ export default function RequirementsClient() {
     );
   };
 
-  // Source badge: [Jira] AUTH-123 (links to Jira) or [Manual] REQ-001
+  // A requirement is a requirement — regardless of where it came from. Every
+  // source renders through ONE component with identical height, padding, radius
+  // and typography; only the dot colour and label change. This scales cleanly as
+  // new sources (Azure DevOps, Linear, CSV, API) come online, and it stops the UI
+  // from privileging Jira over manually-authored requirements.
+  const SOURCE_CONFIG: Record<string, { label: string; dot: string }> = {
+    manual: { label: 'Manual', dot: 'bg-violet-400' },
+    jira: { label: 'Jira', dot: 'bg-blue-400' },
+    azure: { label: 'Azure DevOps', dot: 'bg-sky-400' },
+    azure_devops: { label: 'Azure DevOps', dot: 'bg-sky-400' },
+    linear: { label: 'Linear', dot: 'bg-indigo-400' },
+    csv: { label: 'CSV', dot: 'bg-emerald-400' },
+    api: { label: 'API', dot: 'bg-amber-400' },
+  };
+
   const getSourceBadge = (req: Requirement) => {
     const source = (req.source || 'manual').toLowerCase();
-    if (source === 'jira') {
-      const key = req.metadata?.jira?.key || req.source_id || 'Jira';
-      const url = req.metadata?.jira?.url;
-      const badge = (
-        <Badge
-          variant="outline"
-          className="bg-blue-500/10 text-blue-300 border-blue-500/30 font-mono text-xs"
-        >
-          Jira · {key}
-          {url && <ExternalLink className="h-3 w-3 ml-1" />}
-        </Badge>
-      );
-      return url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          title="Open in Jira"
-        >
-          {badge}
-        </a>
-      ) : (
-        badge
-      );
-    }
+    const config = SOURCE_CONFIG[source] || {
+      label: req.source || 'Manual',
+      dot: 'bg-slate-400',
+    };
     return (
-      <Badge variant="outline" className="bg-slate-500/10 text-slate-300 border-slate-600 text-xs">
-        Manual
-      </Badge>
+      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-slate-700 bg-slate-800/40 text-xs font-medium text-slate-200 whitespace-nowrap">
+        <span className={`h-2 w-2 rounded-full ${config.dot} shrink-0`} />
+        {config.label}
+      </span>
+    );
+  };
+
+  // The external issue key + link is METADATA about a requirement, not part of
+  // the source identity — so it lives under the title, not inside the badge.
+  const getIssueKeyLink = (req: Requirement) => {
+    if ((req.source || 'manual').toLowerCase() !== 'jira') return null;
+    const key = req.metadata?.jira?.key || req.source_id;
+    if (!key) return null;
+    const url = req.metadata?.jira?.url;
+    const inner = (
+      <span className="inline-flex items-center gap-1 font-mono">
+        {key}
+        {url && <ExternalLink className="h-3 w-3" />}
+      </span>
+    );
+    return url ? (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title="Open in Jira"
+        className="text-slate-400 hover:text-blue-300 transition-colors"
+      >
+        {inner}
+      </a>
+    ) : (
+      <span className="text-slate-500">{inner}</span>
     );
   };
 
@@ -330,30 +352,26 @@ export default function RequirementsClient() {
           {/* Live stat strip — real numbers from the coverage summary (accurate
               under any filter because they're computed server-side). */}
           <div className="flex items-center flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
+            {/* Outcome-oriented summary — how much is covered and what's left,
+                not where requirements came from. Source distribution lives in the
+                Source filter, where a user acts on it. */}
             <span className="text-slate-300">
               <span className="font-semibold text-white">{(summary?.total ?? 0).toLocaleString()}</span>{' '}
               <span className="text-slate-400">Requirements</span>
             </span>
             <span className="text-slate-600">·</span>
             <span className="text-slate-400">
-              Imported{' '}
-              <span className="font-medium text-blue-300">
-                {(summary?.imported_count ?? 0).toLocaleString()}
-              </span>
+              <span className={`font-medium ${getCoverageTextColor(coveredPct)}`}>
+                {coveredPct}%
+              </span>{' '}
+              Covered
             </span>
             <span className="text-slate-600">·</span>
             <span className="text-slate-400">
-              Manual{' '}
-              <span className="font-medium text-violet-300">
-                {(summary?.manual_count ?? 0).toLocaleString()}
-              </span>
-            </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400">
-              Coverage{' '}
-              <span className={`font-medium ${getCoverageTextColor(summary?.avg_coverage ?? 0)}`}>
-                {summary?.avg_coverage ?? 0}%
-              </span>
+              <span className="font-medium text-orange-400">
+                {(summary?.not_covered ?? 0).toLocaleString()}
+              </span>{' '}
+              {(summary?.not_covered ?? 0) === 1 ? 'Gap' : 'Gaps'}
             </span>
             {summary?.imported_count ? (
               <>
@@ -595,13 +613,26 @@ export default function RequirementsClient() {
       {/* Requirements Table */}
       <Card className="bg-[#1a1f2e] border-slate-700">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          {/* Fixed column widths — Title is the ONLY flexible column so it always
+              dominates; every other column stays put and can't be squeezed into an
+              unreadable sliver (which is what clipped the Coverage bar before). */}
+          <table className="w-full table-fixed">
+            <colgroup>
+              <col style={{ width: '96px' }} />{/* ID */}
+              <col style={{ width: '132px' }} />{/* Source */}
+              <col />{/* Title — flexible */}
+              <col style={{ width: '104px' }} />{/* Priority */}
+              <col style={{ width: '140px' }} />{/* Status */}
+              <col style={{ width: '150px' }} />{/* Coverage */}
+              <col style={{ width: '128px' }} />{/* Tests */}
+              <col style={{ width: '124px' }} />{/* Sync */}
+              <col style={{ width: '112px' }} />{/* Actions */}
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-700">
                 <th className="text-left p-4 font-semibold text-slate-300">ID</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Source</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Title</th>
-                <th className="text-left p-4 font-semibold text-slate-300">Category</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Priority</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Status</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Coverage</th>
@@ -613,13 +644,13 @@ export default function RequirementsClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8 text-slate-400">
+                  <td colSpan={9} className="text-center p-8 text-slate-400">
                     Loading requirements...
                   </td>
                 </tr>
               ) : requirements.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8">
+                  <td colSpan={9} className="text-center p-8">
                     <div className="flex flex-col items-center gap-3">
                       <AlertCircle className="h-12 w-12 text-slate-500" />
                       <p className="text-slate-400">No requirements found</p>
@@ -652,31 +683,30 @@ export default function RequirementsClient() {
                         <span className="font-mono text-sm text-violet-400">{req.requirement_id}</span>
                       </div>
                     </td>
-                    <td className="p-4">{getSourceBadge(req)}</td>
+                    <td className="p-4 align-top">{getSourceBadge(req)}</td>
                     <td className="p-4">
+                      {/* Title dominates; metadata (issue key ↗) supports it. */}
                       <div className="font-medium text-white">{req.title}</div>
                       {req.description && (
-                        <div className="text-sm text-slate-400 mt-1 truncate max-w-md">
+                        <div className="text-sm text-slate-400 mt-1 truncate">
                           {req.description}
                         </div>
                       )}
-                    </td>
-                    <td className="p-4">
-                      <Badge variant="outline" className="text-slate-300 border-slate-600">
-                        {req.category || 'Uncategorized'}
-                      </Badge>
+                      {getIssueKeyLink(req) && (
+                        <div className="text-xs mt-1.5">{getIssueKeyLink(req)}</div>
+                      )}
                     </td>
                     <td className="p-4">{getPriorityBadge(req.priority)}</td>
                     <td className="p-4">{getStatusBadge(req.status)}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
                           <div
                             className={`h-full ${getCoverageColor(req.coverage_percentage)}`}
                             style={{ width: `${req.coverage_percentage}%` }}
                           />
                         </div>
-                        <span className="text-sm font-medium text-slate-200">
+                        <span className="text-sm font-medium text-slate-200 tabular-nums w-9 text-right shrink-0">
                           {req.coverage_percentage}%
                         </span>
                       </div>
@@ -748,7 +778,7 @@ export default function RequirementsClient() {
                   </tr>
                   {expandedId === req.id && (
                     <tr className="border-b border-slate-700 bg-slate-900/40">
-                      <td colSpan={10} className="px-4 pb-4 pt-1">
+                      <td colSpan={9} className="px-4 pb-4 pt-1">
                         {req.source?.toLowerCase() === 'jira' && req.metadata?.jira && (
                           <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1.5 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs">
                             {req.metadata.jira.key && (
