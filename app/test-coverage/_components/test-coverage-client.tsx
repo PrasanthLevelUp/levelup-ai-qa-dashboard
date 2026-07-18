@@ -1625,6 +1625,95 @@ function GenerateTab({ onViewHistory }: { onViewHistory: () => void }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Coverage Mix + Risk Score (Sprint 6.x Generation Quality Engine)   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Renders the deterministic Quality Report the backend attaches to every
+ * generation: the Coverage Mix (Positive / Negative / Edge counts + %) and an
+ * overall Risk Score (LOW / MEDIUM / HIGH) with plain-English recommendations.
+ * This is what makes the engine self-aware — a suite of 11 positives, 1 negative
+ * and 0 edge cases now shows a HIGH risk badge and "regenerate edge" guidance
+ * instead of silently shipping.
+ */
+function CoverageMixCard({ report }: { report: any }) {
+  const mix = report?.coverageMix;
+  const risk = report?.risk;
+  if (!mix || !risk) return null;
+
+  const RISK_STYLE: Record<string, { badge: string; dot: string; label: string }> = {
+    LOW: { badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', dot: 'bg-emerald-400', label: 'Low Risk' },
+    MEDIUM: { badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30', dot: 'bg-amber-400', label: 'Medium Risk' },
+    HIGH: { badge: 'bg-red-500/15 text-red-300 border-red-500/30', dot: 'bg-red-400', label: 'High Risk' },
+  };
+  const rs = RISK_STYLE[risk.score] || RISK_STYLE.MEDIUM;
+
+  const FAMILY: Array<{ key: string; label: string; accent: string }> = [
+    { key: 'positive', label: 'Positive', accent: 'text-emerald-300' },
+    { key: 'negative', label: 'Negative', accent: 'text-rose-300' },
+    { key: 'edge', label: 'Edge', accent: 'text-sky-300' },
+  ];
+  const byFamily = mix.byFamily || {};
+  const familyPercent = mix.familyPercent || {};
+  const dupes: any[] = report?.duplicates || [];
+  const recs: string[] = report?.recommendations || [];
+
+  return (
+    <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-violet-400" />
+          Coverage Mix
+          <span className="text-xs font-normal text-slate-500">— is this suite balanced?</span>
+        </h3>
+        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${rs.badge}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${rs.dot}`} />
+          {rs.label}
+        </span>
+      </div>
+
+      {/* Per-family counts + share of the suite */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {FAMILY.map(f => (
+          <div key={f.key} className="bg-slate-900/50 rounded-lg border border-slate-700/40 p-3 text-center">
+            <div className={`text-2xl font-bold ${f.accent}`}>{byFamily[f.key] ?? 0}</div>
+            <div className="text-xs text-slate-400 mt-0.5">{f.label}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{familyPercent[f.key] ?? 0}% of suite</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Duplicate clusters — the semantic dedup safety-net verdict */}
+      {dupes.length > 0 && (
+        <div className="flex items-start gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2 mb-2">
+          <Copy className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>
+            {dupes.length} near-duplicate cluster{dupes.length > 1 ? 's' : ''} detected — redundant business flows worth merging.
+          </span>
+        </div>
+      )}
+
+      {/* Recommendations / verdict */}
+      {recs.length > 0 && (
+        <ul className="space-y-1.5">
+          {recs.map((r, i) => {
+            const balanced = /^balanced/i.test(r);
+            return (
+              <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                {balanced
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                  : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />}
+                <span>{r}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Results Display                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -1659,6 +1748,9 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
   const intelligenceUsed = result.intelligenceUsed || null;
   // Phase 5: Intelligence Score — grounded% vs AI% transparency metric
   const intelligenceScore = result.intelligenceScore || null;
+  // Sprint 6.x: Generation Quality — the deterministic auditor's verdict for this
+  // suite (Coverage Mix + Risk Score). Makes the engine self-aware about balance.
+  const qualityReport = result.qualityReport || null;
 
   // Build coverage type lookup
   const labelMap: Record<string, { label: string; icon: string }> = {};
@@ -1871,6 +1963,11 @@ function ResultsDisplay({ result, onReset, onViewHistory }: { result: any; onRes
           </ul>
         </div>
       )}
+
+      {/* Sprint 6.x: Coverage Mix + Risk Score — the Generation Quality Engine's
+          deterministic verdict for this suite. Answers "is this balanced, or 11
+          happy-paths and no edge cases?" at a glance. */}
+      {qualityReport && <CoverageMixCard report={qualityReport} />}
 
       {/* Phase 5: Intelligence Score — signature transparency metric */}
       {intelligenceScore && (
@@ -2693,6 +2790,13 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
     if (typeof m === 'string') { try { return JSON.parse(m); } catch { return []; } }
     return Array.isArray(m) ? m : [];
   })();
+  // Sprint 6.x — persisted Generation Quality Report (Coverage Mix + Risk Score).
+  const histQualityReport = (() => {
+    const q = analysis.qualityReport;
+    if (!q) return null;
+    if (typeof q === 'string') { try { return JSON.parse(q); } catch { return null; } }
+    return q;
+  })();
 
   const toggleCase = (i: number) => {
     setExpandedCases(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
@@ -2789,6 +2893,9 @@ function RequirementDetail({ data, onBack, onDelete, loading }: { data: any; onB
           <p className="text-sm text-slate-300">{analysis.summary}</p>
         </div>
       )}
+
+      {/* Sprint 6.x — Coverage Mix + Risk Score for this saved suite */}
+      {histQualityReport && <CoverageMixCard report={histQualityReport} />}
 
       {/* Scenarios */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">

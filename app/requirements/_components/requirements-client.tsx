@@ -216,18 +216,32 @@ export default function RequirementsClient() {
     }
   };
 
+  // Semantic coverage bands (broad buckets a QA manager thinks in):
+  //   90–100% green · 60–89% blue · 30–59% orange · 1–29% red · 0% neutral
   const getCoverageColor = (percentage: number) => {
     if (percentage === 0) return 'bg-slate-500';
-    if (percentage <= 33) return 'bg-yellow-500';
-    if (percentage <= 66) return 'bg-blue-500';
+    if (percentage < 30) return 'bg-red-500';
+    if (percentage < 60) return 'bg-orange-500';
+    if (percentage < 90) return 'bg-blue-500';
     return 'bg-green-500';
   };
 
   const getCoverageTextColor = (percentage: number) => {
     if (percentage === 0) return 'text-slate-400';
-    if (percentage <= 33) return 'text-yellow-400';
-    if (percentage <= 66) return 'text-blue-400';
+    if (percentage < 30) return 'text-red-400';
+    if (percentage < 60) return 'text-orange-400';
+    if (percentage < 90) return 'text-blue-400';
     return 'text-green-400';
+  };
+
+  // Coverage-based wording — more informative than a generic "Needs tests", and
+  // honest without a backend gap count (derived purely from the percentage).
+  //   0% No test coverage · 1–59% Partial coverage · 60–99% Nearly covered · 100% Fully covered
+  const getCoverageLabel = (percentage: number) => {
+    if (percentage === 0) return { text: 'No test coverage', className: 'text-red-400/90' };
+    if (percentage < 60) return { text: 'Partial coverage', className: 'text-orange-400/90' };
+    if (percentage < 100) return { text: 'Nearly covered', className: 'text-blue-400/90' };
+    return { text: 'Fully covered', className: 'text-green-400/90' };
   };
 
   const getStatusBadge = (status: string) => {
@@ -261,39 +275,69 @@ export default function RequirementsClient() {
     );
   };
 
-  // Source badge: [Jira] AUTH-123 (links to Jira) or [Manual] REQ-001
-  const getSourceBadge = (req: Requirement) => {
+  // A requirement is a requirement — regardless of where it came from. Origins
+  // render as small, MUTED chips (a neutral dot + label, identical style for every
+  // provider) so the origin never competes with the requirement title. A manually
+  // authored requirement reads as "Created" — it states the truth (created here,
+  // by hand) without implying AI generation, an import, or a system action.
+  const ORIGIN_CONFIG: Record<string, { label: string; dot: string }> = {
+    manual: { label: 'Created', dot: 'bg-emerald-400' },
+    created: { label: 'Created', dot: 'bg-emerald-400' },
+    jira: { label: 'Jira', dot: 'bg-blue-400' },
+    azure: { label: 'Azure DevOps', dot: 'bg-sky-400' },
+    azure_devops: { label: 'Azure DevOps', dot: 'bg-sky-400' },
+    linear: { label: 'Linear', dot: 'bg-indigo-400' },
+    csv: { label: 'CSV', dot: 'bg-teal-400' },
+    api: { label: 'API', dot: 'bg-amber-400' },
+    ai: { label: 'AI', dot: 'bg-fuchsia-400' },
+  };
+
+  const getOriginConfig = (req: Requirement) => {
     const source = (req.source || 'manual').toLowerCase();
-    if (source === 'jira') {
-      const key = req.metadata?.jira?.key || req.source_id || 'Jira';
-      const url = req.metadata?.jira?.url;
-      const badge = (
-        <Badge
-          variant="outline"
-          className="bg-blue-500/10 text-blue-300 border-blue-500/30 font-mono text-xs"
-        >
-          Jira · {key}
-          {url && <ExternalLink className="h-3 w-3 ml-1" />}
-        </Badge>
-      );
-      return url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          title="Open in Jira"
-        >
-          {badge}
-        </a>
-      ) : (
-        badge
-      );
-    }
+    return ORIGIN_CONFIG[source] || { label: req.source || 'Created', dot: 'bg-slate-400' };
+  };
+
+  // Muted origin chip — subtle, uniform, quietly informative.
+  const getOriginChip = (req: Requirement) => {
+    const config = getOriginConfig(req);
     return (
-      <Badge variant="outline" className="bg-slate-500/10 text-slate-300 border-slate-600 text-xs">
-        Manual
-      </Badge>
+      <span className="inline-flex items-center gap-1.5 text-slate-400">
+        <span className={`h-1.5 w-1.5 rounded-full ${config.dot} shrink-0`} />
+        {config.label}
+      </span>
+    );
+  };
+
+  // The external issue key + link is METADATA about a requirement, not part of
+  // the origin identity — it sits in the title's supporting line.
+  const getIssueKeyLink = (req: Requirement) => {
+    if ((req.source || 'manual').toLowerCase() !== 'jira') return null;
+    const key = req.metadata?.jira?.key || req.source_id;
+    if (!key) return null;
+    const url = req.metadata?.jira?.url;
+    // GitHub-style: the key reads as quiet text; the external-link icon only
+    // appears on hover so it doesn't repeat as visual noise on every row.
+    const inner = (
+      <span className="inline-flex items-center gap-1 font-mono">
+        {key}
+        {url && (
+          <ExternalLink className="h-3 w-3 opacity-0 group-hover/issue:opacity-100 transition-opacity" />
+        )}
+      </span>
+    );
+    return url ? (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title="Open in Jira"
+        className="group/issue text-slate-500 hover:text-blue-300 transition-colors"
+      >
+        {inner}
+      </a>
+    ) : (
+      <span className="text-slate-500">{inner}</span>
     );
   };
 
@@ -330,30 +374,26 @@ export default function RequirementsClient() {
           {/* Live stat strip — real numbers from the coverage summary (accurate
               under any filter because they're computed server-side). */}
           <div className="flex items-center flex-wrap gap-x-5 gap-y-1 mt-2 text-sm">
+            {/* Outcome-oriented summary — how much is covered and what's left,
+                not where requirements came from. Source distribution lives in the
+                Source filter, where a user acts on it. */}
             <span className="text-slate-300">
               <span className="font-semibold text-white">{(summary?.total ?? 0).toLocaleString()}</span>{' '}
               <span className="text-slate-400">Requirements</span>
             </span>
             <span className="text-slate-600">·</span>
             <span className="text-slate-400">
-              Imported{' '}
-              <span className="font-medium text-blue-300">
-                {(summary?.imported_count ?? 0).toLocaleString()}
-              </span>
+              <span className={`font-medium ${getCoverageTextColor(coveredPct)}`}>
+                {coveredPct}%
+              </span>{' '}
+              Covered
             </span>
             <span className="text-slate-600">·</span>
             <span className="text-slate-400">
-              Manual{' '}
-              <span className="font-medium text-violet-300">
-                {(summary?.manual_count ?? 0).toLocaleString()}
-              </span>
-            </span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400">
-              Coverage{' '}
-              <span className={`font-medium ${getCoverageTextColor(summary?.avg_coverage ?? 0)}`}>
-                {summary?.avg_coverage ?? 0}%
-              </span>
+              <span className="font-medium text-orange-400">
+                {(summary?.not_covered ?? 0).toLocaleString()}
+              </span>{' '}
+              Needs Tests
             </span>
             {summary?.imported_count ? (
               <>
@@ -465,26 +505,23 @@ export default function RequirementsClient() {
         </div>
       </div>
 
-      {/* Coverage Summary Cards */}
+      {/* Summary cards — requirements-page metrics only. "Passed" is an
+          execution-side metric and lives on the coverage/results views, not here. */}
       {summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <Card className="p-6 bg-[#1a1f2e] border-slate-700">
-            <div className="text-sm text-slate-400 mb-1">Total Requirements</div>
+            <div className="text-sm text-slate-400 mb-1">Requirements</div>
             <div className="text-3xl font-bold text-white">{summary.total || 0}</div>
           </Card>
           <Card className="p-6 bg-[#1a1f2e] border-slate-700">
-            <div className="text-sm text-slate-400 mb-1">Covered</div>
-            <div className="text-3xl font-bold text-green-400">
-              {summary.covered || 0}
-              <span className="text-lg text-slate-400 ml-2">({coveredPct}%)</span>
+            <div className="text-sm text-slate-400 mb-1">Coverage</div>
+            <div className={`text-3xl font-bold ${getCoverageTextColor(coveredPct)}`}>
+              {coveredPct}%
+              <span className="text-lg text-slate-400 ml-2">({summary.covered || 0}/{summary.total || 0})</span>
             </div>
           </Card>
           <Card className="p-6 bg-[#1a1f2e] border-slate-700">
-            <div className="text-sm text-slate-400 mb-1">Passed</div>
-            <div className="text-3xl font-bold text-green-400">{summary.passed || 0}</div>
-          </Card>
-          <Card className="p-6 bg-[#1a1f2e] border-slate-700">
-            <div className="text-sm text-slate-400 mb-1">Gaps</div>
+            <div className="text-sm text-slate-400 mb-1">Needs Tests</div>
             <div className="text-3xl font-bold text-orange-400">{summary.not_covered || 0}</div>
           </Card>
         </div>
@@ -547,8 +584,8 @@ export default function RequirementsClient() {
             onChange={(e) => setSourceFilter(e.target.value)}
             className="px-4 py-2 bg-[#0f172a] border border-slate-700 rounded-lg text-sm text-slate-200"
           >
-            <option value="">All Sources</option>
-            <option value="manual">Manual</option>
+            <option value="">All Origins</option>
+            <option value="manual">Created</option>
             <option value="jira">Jira</option>
           </select>
 
@@ -595,31 +632,44 @@ export default function RequirementsClient() {
       {/* Requirements Table */}
       <Card className="bg-[#1a1f2e] border-slate-700">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          {/* A slim REQ-ID column stays first — QA teams scan and reference
+              requirements by ID ("can you check REQ-045?"). Everything else about
+              a requirement's identity (Origin · issue key) lives inside the
+              flexible Title column, which dominates the row. Coverage is the KPI
+              everyone scans, so it sits LAST with room for the bar to breathe. */}
+          <table className="w-full table-fixed">
+            <colgroup>
+              <col style={{ width: '104px' }} />{/* ID */}
+              <col />{/* Requirement — flexible */}
+              <col style={{ width: '104px' }} />{/* Priority */}
+              <col style={{ width: '140px' }} />{/* Status */}
+              <col style={{ width: '112px' }} />{/* Tests */}
+              <col style={{ width: '124px' }} />{/* Sync */}
+              <col style={{ width: '108px' }} />{/* Actions */}
+              <col style={{ width: '180px' }} />{/* Coverage — KPI, last, roomy */}
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-700">
                 <th className="text-left p-4 font-semibold text-slate-300">ID</th>
-                <th className="text-left p-4 font-semibold text-slate-300">Source</th>
-                <th className="text-left p-4 font-semibold text-slate-300">Title</th>
-                <th className="text-left p-4 font-semibold text-slate-300">Category</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Requirement</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Priority</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Status</th>
-                <th className="text-left p-4 font-semibold text-slate-300">Coverage</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Tests</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Sync</th>
                 <th className="text-right p-4 font-semibold text-slate-300">Actions</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Coverage</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8 text-slate-400">
+                  <td colSpan={8} className="text-center p-8 text-slate-400">
                     Loading requirements...
                   </td>
                 </tr>
               ) : requirements.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8">
+                  <td colSpan={8} className="text-center p-8">
                     <div className="flex flex-col items-center gap-3">
                       <AlertCircle className="h-12 w-12 text-slate-500" />
                       <p className="text-slate-400">No requirements found</p>
@@ -634,12 +684,14 @@ export default function RequirementsClient() {
                 requirements.map((req) => (
                   <Fragment key={req.id}>
                   <tr className="border-b border-slate-700 hover:bg-slate-800/50">
-                    <td className="p-4">
-                      <div className="flex items-center gap-1.5">
+                    {/* Slim ID column — scannable, and how QA teams reference
+                        requirements in conversation. */}
+                    <td className="p-4 align-top">
+                      <div className="flex items-start gap-1.5">
                         <button
                           type="button"
                           onClick={() => setExpandedId((prev) => (prev === req.id ? null : req.id))}
-                          className="text-slate-500 hover:text-violet-400"
+                          className="text-slate-500 hover:text-violet-400 mt-0.5 shrink-0"
                           title="Toggle traceability flow"
                           aria-label="Toggle traceability flow"
                         >
@@ -652,35 +704,27 @@ export default function RequirementsClient() {
                         <span className="font-mono text-sm text-violet-400">{req.requirement_id}</span>
                       </div>
                     </td>
-                    <td className="p-4">{getSourceBadge(req)}</td>
+                    {/* Title leads; a quiet identity line (Origin · issue key ↗)
+                        supports it. */}
                     <td className="p-4">
                       <div className="font-medium text-white">{req.title}</div>
                       {req.description && (
-                        <div className="text-sm text-slate-400 mt-1 truncate max-w-md">
+                        <div className="text-sm text-slate-400 mt-1 truncate">
                           {req.description}
                         </div>
                       )}
-                    </td>
-                    <td className="p-4">
-                      <Badge variant="outline" className="text-slate-300 border-slate-600">
-                        {req.category || 'Uncategorized'}
-                      </Badge>
+                      <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1.5 text-xs text-slate-500">
+                        {getOriginChip(req)}
+                        {getIssueKeyLink(req) && (
+                          <>
+                            <span className="text-slate-600">·</span>
+                            {getIssueKeyLink(req)}
+                          </>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4">{getPriorityBadge(req.priority)}</td>
                     <td className="p-4">{getStatusBadge(req.status)}</td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${getCoverageColor(req.coverage_percentage)}`}
-                            style={{ width: `${req.coverage_percentage}%` }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium text-slate-200">
-                          {req.coverage_percentage}%
-                        </span>
-                      </div>
-                    </td>
                     <td className="p-4">
                       <div className="text-sm text-slate-400">
                         {req.test_case_count} TC / {req.script_count} Scripts
@@ -745,10 +789,29 @@ export default function RequirementsClient() {
                         </Button>
                       </div>
                     </td>
+                    {/* Coverage — the KPI everyone scans. Sits last with room to
+                        breathe; a coverage-based label says how much work remains
+                        without needing a backend gap count. */}
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${getCoverageColor(req.coverage_percentage)}`}
+                            style={{ width: `${req.coverage_percentage}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium text-slate-200 tabular-nums w-9 text-right shrink-0">
+                          {req.coverage_percentage}%
+                        </span>
+                      </div>
+                      <div className={`mt-1 text-xs ${getCoverageLabel(req.coverage_percentage).className}`}>
+                        {getCoverageLabel(req.coverage_percentage).text}
+                      </div>
+                    </td>
                   </tr>
                   {expandedId === req.id && (
                     <tr className="border-b border-slate-700 bg-slate-900/40">
-                      <td colSpan={10} className="px-4 pb-4 pt-1">
+                      <td colSpan={8} className="px-4 pb-4 pt-1">
                         {req.source?.toLowerCase() === 'jira' && req.metadata?.jira && (
                           <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1.5 rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs">
                             {req.metadata.jira.key && (
