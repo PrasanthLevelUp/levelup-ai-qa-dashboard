@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Requirements — redesign preview (v3)</title>
+<title>Requirements — redesign preview (v4)</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<style> body { background:#0b1120; } </style>
+<style> body { background:#0b1120; } .group\/issue:hover .issue-ext { opacity:1; } </style>
 </head>
 <body class="text-slate-200">
-<!-- Faithful static preview of the Requirements page (v3, round-3 review).
+<!-- Faithful static preview of the Requirements page (v4, round-4 review / pre-merge).
      Mirrors the exact Tailwind classes in requirements-client.tsx. Data from the
      uploaded screenshots. NOT the live app (needs backend + DB + auth). -->
 <div class="p-8 space-y-6 max-w-[1440px] mx-auto">
@@ -52,7 +52,7 @@
   <div class="rounded-xl bg-[#1a1f2e] border border-slate-700 overflow-x-auto">
     <table class="w-full table-fixed">
       <colgroup>
-        <col style="width:104px" /><col /><col style="width:104px" /><col style="width:140px" /><col style="width:160px" /><col style="width:128px" /><col style="width:124px" /><col style="width:112px" />
+        <col style="width:104px" /><col /><col style="width:104px" /><col style="width:140px" /><col style="width:112px" /><col style="width:124px" /><col style="width:108px" /><col style="width:180px" />
       </colgroup>
       <thead>
         <tr class="border-b border-slate-700 text-slate-300">
@@ -60,88 +60,88 @@
           <th class="text-left p-4 font-semibold">Requirement</th>
           <th class="text-left p-4 font-semibold">Priority</th>
           <th class="text-left p-4 font-semibold">Status</th>
-          <th class="text-left p-4 font-semibold">Coverage</th>
           <th class="text-left p-4 font-semibold">Tests</th>
           <th class="text-left p-4 font-semibold">Sync</th>
           <th class="text-right p-4 font-semibold">Actions</th>
+          <th class="text-left p-4 font-semibold">Coverage</th>
         </tr>
       </thead>
       <tbody>
-        <!-- Row 1: Jira, 80% -> blue, needs tests -->
+        <!-- Row 1: Jira, 80% -> blue, Nearly covered -->
         <tr class="border-b border-slate-700 hover:bg-slate-800/50">
           <td class="p-4 align-top"><div class="flex items-start gap-1.5"><span class="text-slate-500 mt-0.5">▸</span><span class="font-mono text-sm text-violet-400">REQ-005</span></div></td>
           <td class="p-4">
             <div class="font-medium text-white">Allow users to sort products by different criteria</div>
             <div class="text-sm text-slate-400 mt-1 truncate">As a customer, I want to sort the product list, so that I can quickly find…</div>
-            <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
+            <div class="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1.5 text-xs text-slate-500">
               <span class="inline-flex items-center gap-1.5 text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>Jira</span>
-              <span class="text-slate-600">•</span><a href="#" class="text-slate-400 hover:text-blue-300"><span class="font-mono">SCRUM-7 ↗</span></a>
+              <span class="text-slate-600">·</span><a href="#" class="group/issue text-slate-500 hover:text-blue-300"><span class="inline-flex items-center gap-1 font-mono">SCRUM-7 <span class="issue-ext opacity-0 transition-opacity">↗</span></span></a>
             </div>
           </td>
           <td class="p-4"><span class="inline-flex px-2 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs">Medium</span></td>
           <td class="p-4"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-blue-500/30 bg-blue-500/10 text-blue-300 text-xs">⏱ In Progress</span></td>
-          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-blue-500" style="width:80%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">80%</span></div><div class="mt-1 text-xs text-orange-400/90">Needs tests</div></td>
           <td class="p-4"><div class="text-sm text-slate-400">6 TC / 3 Scripts</div></td>
           <td class="p-4"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-green-500/20 bg-green-500/10 text-green-400 text-xs">✓ Synced</span></td>
-          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚙ ✎ 🗑</span></td>
+          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚗ ✎ 🗑</span></td>
+          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-blue-500" style="width:80%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">80%</span></div><div class="mt-1 text-xs text-blue-400/90">Nearly covered</div></td>
         </tr>
-        <!-- Row 2: Jira, 100% -> green -->
+        <!-- Row 2: Jira, 100% -> green, Fully covered -->
         <tr class="border-b border-slate-700 hover:bg-slate-800/50">
           <td class="p-4 align-top"><div class="flex items-start gap-1.5"><span class="text-slate-500 mt-0.5">▸</span><span class="font-mono text-sm text-violet-400">REQ-004</span></div></td>
           <td class="p-4">
             <div class="font-medium text-white">Registered user can purchase a product successfully using the standard checkout flow</div>
             <div class="text-sm text-slate-400 mt-1 truncate">Business Goal As a registered customer, I want to purchase product…</div>
-            <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
+            <div class="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1.5 text-xs text-slate-500">
               <span class="inline-flex items-center gap-1.5 text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span>Jira</span>
-              <span class="text-slate-600">•</span><a href="#" class="text-slate-400 hover:text-blue-300"><span class="font-mono">SCRUM-6 ↗</span></a>
+              <span class="text-slate-600">·</span><a href="#" class="group/issue text-slate-500 hover:text-blue-300"><span class="inline-flex items-center gap-1 font-mono">SCRUM-6 <span class="issue-ext opacity-0 transition-opacity">↗</span></span></a>
             </div>
           </td>
           <td class="p-4"><span class="inline-flex px-2 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs">Medium</span></td>
           <td class="p-4"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-blue-500/30 bg-blue-500/10 text-blue-300 text-xs">⏱ In Progress</span></td>
-          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-green-500" style="width:100%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">100%</span></div></td>
           <td class="p-4"><div class="text-sm text-slate-400">12 TC / 8 Scripts</div></td>
           <td class="p-4"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-green-500/20 bg-green-500/10 text-green-400 text-xs">✓ Synced</span></td>
-          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚙ ✎ 🗑</span></td>
+          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚗ ✎ 🗑</span></td>
+          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-green-500" style="width:100%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">100%</span></div><div class="mt-1 text-xs text-green-400/90">Fully covered</div></td>
         </tr>
-        <!-- Row 3: Created, 30% -> orange (new buckets), no tests -->
+        <!-- Row 3: Created, 30% -> orange, Partial coverage -->
         <tr class="border-b border-slate-700 hover:bg-slate-800/50">
           <td class="p-4 align-top"><div class="flex items-start gap-1.5"><span class="text-slate-500 mt-0.5">▸</span><span class="font-mono text-sm text-violet-400">REQ-003</span></div></td>
           <td class="p-4">
             <div class="font-medium text-white">Complete Product Checkout</div>
             <div class="text-sm text-slate-400 mt-1 truncate">The system shall allow a user to purchase a product through the co…</div>
-            <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
+            <div class="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1.5 text-xs text-slate-500">
               <span class="inline-flex items-center gap-1.5 text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>Created</span>
             </div>
           </td>
           <td class="p-4"><span class="inline-flex px-2 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs">Medium</span></td>
           <td class="p-4"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-600 bg-slate-700/30 text-slate-300 text-xs">⏱ Not Tested</span></td>
-          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-orange-500" style="width:30%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">30%</span></div><div class="mt-1 text-xs text-orange-400/90">Needs tests</div></td>
           <td class="p-4"><div class="text-sm text-slate-400">2 TC / 0 Scripts</div></td>
           <td class="p-4"><span class="text-slate-600 text-xs">—</span></td>
-          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚙ ✎ 🗑</span></td>
+          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚗ ✎ 🗑</span></td>
+          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-orange-500" style="width:30%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">30%</span></div><div class="mt-1 text-xs text-orange-400/90">Partial coverage</div></td>
         </tr>
-        <!-- Row 4: Created, 0% -> neutral bar, no tests yet -->
+        <!-- Row 4: Created, 0% -> neutral bar, No test coverage -->
         <tr class="border-b border-slate-700 hover:bg-slate-800/50">
           <td class="p-4 align-top"><div class="flex items-start gap-1.5"><span class="text-slate-500 mt-0.5">▸</span><span class="font-mono text-sm text-violet-400">REQ-002</span></div></td>
           <td class="p-4">
             <div class="font-medium text-white">User can reset a forgotten password</div>
             <div class="text-sm text-slate-400 mt-1 truncate">The system shall let a user request a reset link by email…</div>
-            <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
+            <div class="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1.5 text-xs text-slate-500">
               <span class="inline-flex items-center gap-1.5 text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>Created</span>
             </div>
           </td>
           <td class="p-4"><span class="inline-flex px-2 py-0.5 rounded-md border border-red-500/30 bg-red-500/10 text-red-300 text-xs">High</span></td>
           <td class="p-4"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-600 bg-slate-700/30 text-slate-300 text-xs">⏱ Not Tested</span></td>
-          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-slate-500" style="width:0%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">0%</span></div><div class="mt-1 text-xs text-orange-400/90">No tests yet</div></td>
           <td class="p-4"><div class="text-sm text-slate-400">0 TC / 0 Scripts</div></td>
           <td class="p-4"><span class="text-slate-600 text-xs">—</span></td>
-          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚙ ✎ 🗑</span></td>
+          <td class="p-4 text-right"><span class="text-violet-300 text-sm">⚗ ✎ 🗑</span></td>
+          <td class="p-4"><div class="flex items-center gap-2"><div class="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full bg-slate-500" style="width:0%"></div></div><span class="text-sm font-medium text-slate-200 tabular-nums w-9 text-right">0%</span></div><div class="mt-1 text-xs text-red-400/90">No test coverage</div></td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <p class="text-xs text-slate-500 pt-2">Refined preview (v3) — mock data. Round-3 review applied: slim <b>REQ-ID</b> column restored · <b>Created</b> (not LevelUp) for manual origin · broader coverage buckets (90+ green · 60–89 blue · 30–59 orange · 1–29 red) · action hint (<span class="text-orange-400/90">Needs tests / No tests yet</span>) under incomplete coverage. Real component: <code>app/requirements/_components/requirements-client.tsx</code>.</p>
+  <p class="text-xs text-slate-500 pt-2">Preview v4 (pre-merge) — mock data. Round-4 review applied: <b>Coverage is now the last column</b> (180px, roomy) · quieter GitHub-style metadata (<code>Jira · SCRUM-7</code>, ↗ appears on hover) · coverage-based wording (<span class="text-red-400/90">No test coverage</span> / <span class="text-orange-400/90">Partial coverage</span> / <span class="text-blue-400/90">Nearly covered</span> / <span class="text-green-400/90">Fully covered</span>). Real component: <code>app/requirements/_components/requirements-client.tsx</code>.</p>
 </div>
 </body>
 </html>

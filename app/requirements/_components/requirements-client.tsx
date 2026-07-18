@@ -234,6 +234,16 @@ export default function RequirementsClient() {
     return 'text-green-400';
   };
 
+  // Coverage-based wording — more informative than a generic "Needs tests", and
+  // honest without a backend gap count (derived purely from the percentage).
+  //   0% No test coverage · 1–59% Partial coverage · 60–99% Nearly covered · 100% Fully covered
+  const getCoverageLabel = (percentage: number) => {
+    if (percentage === 0) return { text: 'No test coverage', className: 'text-red-400/90' };
+    if (percentage < 60) return { text: 'Partial coverage', className: 'text-orange-400/90' };
+    if (percentage < 100) return { text: 'Nearly covered', className: 'text-blue-400/90' };
+    return { text: 'Fully covered', className: 'text-green-400/90' };
+  };
+
   const getStatusBadge = (status: string) => {
     const configs: Record<string, { color: string; icon: any }> = {
       Passed: { color: 'bg-green-500/10 text-green-400 border-green-500/20', icon: CheckCircle },
@@ -305,10 +315,14 @@ export default function RequirementsClient() {
     const key = req.metadata?.jira?.key || req.source_id;
     if (!key) return null;
     const url = req.metadata?.jira?.url;
+    // GitHub-style: the key reads as quiet text; the external-link icon only
+    // appears on hover so it doesn't repeat as visual noise on every row.
     const inner = (
       <span className="inline-flex items-center gap-1 font-mono">
         {key}
-        {url && <ExternalLink className="h-3 w-3" />}
+        {url && (
+          <ExternalLink className="h-3 w-3 opacity-0 group-hover/issue:opacity-100 transition-opacity" />
+        )}
       </span>
     );
     return url ? (
@@ -318,7 +332,7 @@ export default function RequirementsClient() {
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
         title="Open in Jira"
-        className="text-slate-400 hover:text-blue-300 transition-colors"
+        className="group/issue text-slate-500 hover:text-blue-300 transition-colors"
       >
         {inner}
       </a>
@@ -620,18 +634,19 @@ export default function RequirementsClient() {
         <div className="overflow-x-auto">
           {/* A slim REQ-ID column stays first — QA teams scan and reference
               requirements by ID ("can you check REQ-045?"). Everything else about
-              a requirement's identity (Origin · issue key ↗) lives inside the
-              flexible Title column, which dominates the row. */}
+              a requirement's identity (Origin · issue key) lives inside the
+              flexible Title column, which dominates the row. Coverage is the KPI
+              everyone scans, so it sits LAST with room for the bar to breathe. */}
           <table className="w-full table-fixed">
             <colgroup>
               <col style={{ width: '104px' }} />{/* ID */}
               <col />{/* Requirement — flexible */}
               <col style={{ width: '104px' }} />{/* Priority */}
               <col style={{ width: '140px' }} />{/* Status */}
-              <col style={{ width: '160px' }} />{/* Coverage */}
-              <col style={{ width: '128px' }} />{/* Tests */}
+              <col style={{ width: '112px' }} />{/* Tests */}
               <col style={{ width: '124px' }} />{/* Sync */}
-              <col style={{ width: '112px' }} />{/* Actions */}
+              <col style={{ width: '108px' }} />{/* Actions */}
+              <col style={{ width: '180px' }} />{/* Coverage — KPI, last, roomy */}
             </colgroup>
             <thead>
               <tr className="border-b border-slate-700">
@@ -639,10 +654,10 @@ export default function RequirementsClient() {
                 <th className="text-left p-4 font-semibold text-slate-300">Requirement</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Priority</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Status</th>
-                <th className="text-left p-4 font-semibold text-slate-300">Coverage</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Tests</th>
                 <th className="text-left p-4 font-semibold text-slate-300">Sync</th>
                 <th className="text-right p-4 font-semibold text-slate-300">Actions</th>
+                <th className="text-left p-4 font-semibold text-slate-300">Coverage</th>
               </tr>
             </thead>
             <tbody>
@@ -698,11 +713,11 @@ export default function RequirementsClient() {
                           {req.description}
                         </div>
                       )}
-                      <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-slate-500">
+                      <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1 mt-1.5 text-xs text-slate-500">
                         {getOriginChip(req)}
                         {getIssueKeyLink(req) && (
                           <>
-                            <span className="text-slate-600">•</span>
+                            <span className="text-slate-600">·</span>
                             {getIssueKeyLink(req)}
                           </>
                         )}
@@ -710,26 +725,6 @@ export default function RequirementsClient() {
                     </td>
                     <td className="p-4">{getPriorityBadge(req.priority)}</td>
                     <td className="p-4">{getStatusBadge(req.status)}</td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${getCoverageColor(req.coverage_percentage)}`}
-                            style={{ width: `${req.coverage_percentage}%` }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium text-slate-200 tabular-nums w-9 text-right shrink-0">
-                          {req.coverage_percentage}%
-                        </span>
-                      </div>
-                      {/* On a requirements page the useful signal is the ACTION:
-                          which requirements still need coverage. */}
-                      {req.coverage_percentage < 100 && (
-                        <div className="mt-1 text-xs text-orange-400/90">
-                          {req.test_case_count === 0 ? 'No tests yet' : 'Needs tests'}
-                        </div>
-                      )}
-                    </td>
                     <td className="p-4">
                       <div className="text-sm text-slate-400">
                         {req.test_case_count} TC / {req.script_count} Scripts
@@ -792,6 +787,25 @@ export default function RequirementsClient() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                      </div>
+                    </td>
+                    {/* Coverage — the KPI everyone scans. Sits last with room to
+                        breathe; a coverage-based label says how much work remains
+                        without needing a backend gap count. */}
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${getCoverageColor(req.coverage_percentage)}`}
+                            style={{ width: `${req.coverage_percentage}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-medium text-slate-200 tabular-nums w-9 text-right shrink-0">
+                          {req.coverage_percentage}%
+                        </span>
+                      </div>
+                      <div className={`mt-1 text-xs ${getCoverageLabel(req.coverage_percentage).className}`}>
+                        {getCoverageLabel(req.coverage_percentage).text}
                       </div>
                     </td>
                   </tr>
